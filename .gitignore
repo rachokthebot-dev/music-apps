@@ -1,0 +1,17 @@
+node_modules/
+.next/
+.DS_Store
+.env
+.env.local
+.env.*.local
+*.tsbuildinfo
+next-env.d.ts
+npm-debug.log*
+
+# Data & runtime
+apps/data/
+apps/.venv/
+*.db
+
+# Generated
+apps/*/src/generated/

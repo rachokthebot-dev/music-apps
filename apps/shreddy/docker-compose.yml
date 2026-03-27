@@ -1,0 +1,13 @@
+services:
+  shreddy:
+    build: .
+    ports:
+      - "3000:3000"
+    volumes:
+      - shreddy-data:/app/data
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+    restart: unless-stopped
+
+volumes:
+  shreddy-data:

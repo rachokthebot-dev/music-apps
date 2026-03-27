@@ -1,0 +1,8 @@
+app/node_modules
+app/.next
+app/*.db
+.venv
+data/
+*.db
+.git
+.DS_Store

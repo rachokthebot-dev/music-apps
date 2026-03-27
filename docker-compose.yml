@@ -1,0 +1,24 @@
+services:
+  shreddy:
+    build:
+      context: apps/shreddy
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    volumes:
+      - shreddy-data:/app/data
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+
+  lickbank:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.lickbank
+    ports:
+      - "3001:3001"
+    volumes:
+      - lickbank-data:/app/data
+
+volumes:
+  shreddy-data:
+  lickbank-data:

@@ -1,0 +1,107 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model Song {
+  id                 String    @id @default(uuid())
+  title              String
+  originalFilename   String
+  originalFilePath   String
+  normalizedAudioPath String?
+  mimeType           String
+  durationSec        Float?
+  processingStatus   String    @default("pending") // pending, processing, ready, error
+  errorMessage       String?
+  pinned             Boolean   @default(false)
+  folderId           String?
+  musicalKey         String    @default("")
+  bpm                Float?
+  beatTimestamps     String?   // JSON array of beat times in seconds
+  notes              String    @default("")
+  lastPositionSec    Float     @default(0)
+  lastTempo          Float?
+  lastPitch          Float?
+  lastSelectedSections String?  // JSON array of section IDs
+  artist             String    @default("")
+  album              String    @default("")
+  genre              String    @default("")
+  year               String    @default("")
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  sections         Section[]
+  importJob        ImportJob?
+  folder           Folder?            @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  practiceSessions PracticeSession[]
+}
+
+model Folder {
+  id         String   @id @default(uuid())
+  name       String
+  orderIndex Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  songs Song[]
+}
+
+model Section {
+  id         String   @id @default(uuid())
+  songId     String
+  name       String
+  startSec   Float
+  endSec     Float
+  orderIndex    Int      @default(0)
+  autoDetected  Boolean  @default(false)
+  masteryRating Int?     // 1-5 stars
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  song         Song                @relation(fields: [songId], references: [id], onDelete: Cascade)
+  practiceLogs SectionPracticeLog[]
+}
+
+model ImportJob {
+  id              String   @id @default(uuid())
+  songId          String   @unique
+  status          String   @default("pending") // pending, processing, completed, error
+  progressMessage String?
+  errorMessage    String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  song Song @relation(fields: [songId], references: [id], onDelete: Cascade)
+}
+
+model PracticeSession {
+  id          String    @id @default(uuid())
+  songId      String
+  startedAt   DateTime  @default(now())
+  endedAt     DateTime?
+  durationSec Float?
+  tempo       Float?
+  pitch       Float?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  song        Song                @relation(fields: [songId], references: [id], onDelete: Cascade)
+  sectionLogs SectionPracticeLog[]
+}
+
+model SectionPracticeLog {
+  id          String   @id @default(uuid())
+  sessionId   String
+  sectionId   String
+  loopCount   Int      @default(0)
+  durationSec Float    @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  session PracticeSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  section Section         @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+}

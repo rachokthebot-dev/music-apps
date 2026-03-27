@@ -1,0 +1,113 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model Source {
+  id               String   @id @default(uuid())
+  title            String
+  artist           String   @default("")
+  youtubeUrl       String
+  videoPath        String?
+  audioPath        String?
+  durationSec      Float?
+  thumbnailUrl     String?
+  waveformData     String?
+  processingStatus String   @default("pending")
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  licks     Lick[]
+  importJob ImportJob?
+}
+
+model Lick {
+  id              String   @id @default(uuid())
+  name            String
+  sourceId        String
+  startSec        Float
+  endSec          Float
+  durationSec     Float
+  videoClipPath   String?
+  audioClipPath   String?
+  folderId        String?
+  orderIndex      Int      @default(0)
+  lastPositionSec Float    @default(0)
+  lastTempo       Float    @default(1.0)
+  lastPitch       Int      @default(0)
+  notes           String   @default("")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  source           Source             @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  folder           Folder?            @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  sections         Section[]
+  practiceSessions PracticeSession[]
+}
+
+model Folder {
+  id         String   @id @default(uuid())
+  name       String
+  orderIndex Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  licks Lick[]
+}
+
+model Section {
+  id         String   @id @default(uuid())
+  lickId     String
+  name       String
+  startSec   Float
+  endSec     Float
+  orderIndex Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  lick         Lick                 @relation(fields: [lickId], references: [id], onDelete: Cascade)
+  practiceLogs SectionPracticeLog[]
+}
+
+model ImportJob {
+  id              String   @id @default(uuid())
+  sourceId        String   @unique
+  status          String   @default("pending")
+  progressMessage String?
+  errorMessage    String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  source Source @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+}
+
+model PracticeSession {
+  id          String    @id @default(uuid())
+  lickId      String
+  startedAt   DateTime  @default(now())
+  endedAt     DateTime?
+  durationSec Float?
+  tempo       Float?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  lick        Lick                 @relation(fields: [lickId], references: [id], onDelete: Cascade)
+  sectionLogs SectionPracticeLog[]
+}
+
+model SectionPracticeLog {
+  id          String   @id @default(uuid())
+  sessionId   String
+  sectionId   String
+  loopCount   Int      @default(0)
+  durationSec Float    @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  session PracticeSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  section Section         @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+}

@@ -1,0 +1,14 @@
+{
+  "name": "music-apps",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev:shreddy": "npm run dev --workspace=apps/shreddy",
+    "dev:lickbank": "npm run dev --workspace=apps/lickbank",
+    "build:shreddy": "npm run build --workspace=apps/shreddy",
+    "build:lickbank": "npm run build --workspace=apps/lickbank"
+  }
+}

@@ -1,0 +1,36 @@
+FROM node:20-slim
+
+# Install ffmpeg and yt-dlp
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ffmpeg \
+    curl \
+    ca-certificates \
+    && curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp \
+    && chmod a+rx /usr/local/bin/yt-dlp \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Copy package files and install deps
+COPY apps/lickbank/package.json apps/lickbank/package-lock.json* ./
+RUN npm ci
+
+# Copy app source
+COPY apps/lickbank/ .
+
+# Generate Prisma client
+RUN npx prisma generate
+
+# Create data directories
+RUN mkdir -p /app/data/sources /app/data/clips /app/data/tmp
+
+# Build
+RUN npm run build
+
+EXPOSE 3001
+
+ENV NODE_ENV=production
+ENV HOSTNAME=0.0.0.0
+ENV PORT=3001
+
+CMD ["npm", "start"]
