@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useRef, useEffect } from "react";
-import { Play, Square, Music, ChevronDown, Guitar, Shuffle, SkipForward, Volume2, Drum, Trash2 } from "lucide-react";
+import { Play, Square, Music, ChevronDown, ChevronUp, Guitar, Shuffle, SkipForward, Volume2, Drum, Trash2 } from "lucide-react";
 import { progressions, getAllGenres, type Progression } from "@/lib/progressions";
 import { getProgressionInKey, ALL_KEYS, type Chord, type ComplexityLevel } from "@/lib/music-theory";
 import {
@@ -23,10 +23,12 @@ import { getVoicings } from "@/lib/chord-voicings";
 import { usePracticeStats } from "@/hooks/usePracticeStats";
 import { loadCustomProgressions, addCustomProgression, deleteCustomProgression } from "@/lib/custom-progressions";
 import { AddProgressionDialog, AddProgressionButton } from "@/components/add-progression-dialog";
+import { AppSwitcher } from "@music-apps/shared/app-switcher";
 
 export default function Home() {
   const [customProgressions, setCustomProgressions] = useState<Progression[]>([]);
   const [showAddDialog, setShowAddDialog] = useState(false);
+  const [showChords, setShowChords] = useState(false);
   const [selectedProgression, setSelectedProgression] = useState<Progression>(progressions[0]);
   const [selectedKey, setSelectedKey] = useState("C");
   const [bpm, setBpm] = useState(120);
@@ -243,7 +245,7 @@ export default function Home() {
           <Music className="w-6 h-6 md:w-7 md:h-7 text-primary" />
           <h1 className="text-xl md:text-2xl font-bold tracking-tight">ChordCraft</h1>
         </div>
-        <span className="text-xs md:text-sm text-muted-foreground">Chord Progression Trainer</span>
+        <AppSwitcher currentAppId="chordcraft" />
       </header>
 
       <main className="flex-1 flex flex-col md:flex-row overflow-hidden">
@@ -519,75 +521,87 @@ export default function Home() {
                 </span>
               )}
             </div>
-            <p className="text-sm text-muted-foreground mt-1">
-              {selectedProgression.numerals.join(" - ")} in {selectedKey}
-              {complexityLevel !== "basic" && (
-                <span className="ml-2 text-xs px-1.5 py-0.5 rounded bg-secondary">
-                  {complexityLevel === "intermediate" ? "7th chords" : "extended"}
-                </span>
-              )}
-            </p>
+            {complexityLevel !== "basic" && (
+              <span className="text-xs px-1.5 py-0.5 rounded bg-secondary text-muted-foreground">
+                {complexityLevel === "intermediate" ? "7th chords" : "extended"}
+              </span>
+            )}
           </div>
 
-          {/* Chord display */}
-          <div className="flex-1 flex items-start">
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 md:gap-4 w-full">
-              {chords.map((chord, i) => {
-                const isExpanded = expandedChordIndex === i;
-                const voicings = getVoicings(chord.name);
-                const hasVoicings = voicings.length > 0;
+          {/* Chord sequence — always visible, highlights active chord */}
+          <div className="flex flex-wrap gap-1.5 mb-4">
+            {chords.map((chord, i) => (
+              <button
+                key={`seq-${i}`}
+                onClick={() => handleChordTap(chord, i)}
+                className={`px-2.5 py-1.5 md:px-3 md:py-2 rounded-lg text-sm md:text-base font-medium transition-all ${
+                  activeChordIndex === i
+                    ? "bg-primary text-primary-foreground shadow-md scale-105"
+                    : "bg-secondary text-secondary-foreground hover:bg-accent"
+                }`}
+              >
+                <span className="text-[10px] text-muted-foreground mr-1">{selectedProgression.numerals[i]}</span>
+                {chord.name}
+              </button>
+            ))}
+          </div>
 
-                return (
-                  <div key={`${chord.name}-${i}`} className="flex flex-col">
-                    <button
-                      onClick={() => handleChordTap(chord, i)}
-                      className={`relative flex flex-col items-center justify-center p-4 md:p-5 rounded-xl border-2 transition-all duration-150 active:scale-95 ${
-                        activeChordIndex === i
-                          ? "border-primary bg-primary/10 shadow-lg shadow-primary/20 scale-[1.03]"
-                          : isExpanded
-                          ? "border-primary/50 bg-card"
-                          : "border-border bg-card hover:border-muted-foreground/30"
-                      }`}
-                    >
-                      {/* Bar number */}
-                      <span className="absolute top-1.5 left-2 text-[10px] text-muted-foreground">
-                        {i + 1}
-                      </span>
-                      {/* Guitar icon hint */}
-                      {hasVoicings && (
-                        <span className="absolute top-1.5 right-2">
-                          <Guitar className="w-3 h-3 text-muted-foreground/50" />
-                        </span>
-                      )}
-                      {/* Numeral */}
-                      <span className="text-xs text-muted-foreground mb-1">
-                        {selectedProgression.numerals[i]}
-                      </span>
-                      {/* Chord name */}
-                      <span
-                        className={`text-lg md:text-xl font-bold ${
-                          activeChordIndex === i ? "text-primary" : "text-card-foreground"
-                        }`}
-                      >
-                        {chord.name}
-                      </span>
-                      {/* Mini chord diagram */}
-                      {hasVoicings && !isExpanded && (
-                        <div className="mt-2 opacity-70">
-                          <ChordDiagram chordName={chord.name} compact />
-                        </div>
-                      )}
-                    </button>
+          {/* Show/hide chord diagrams toggle */}
+          <button
+            onClick={() => setShowChords(!showChords)}
+            className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors mb-4"
+          >
+            <Guitar className="w-4 h-4" />
+            {showChords ? "Hide Chords" : "Show Chords"}
+            {showChords ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+          </button>
 
-                    {/* Expanded position explorer */}
-                    {isExpanded && hasVoicings && (
-                      <PositionExplorer chordName={chord.name} />
-                    )}
-                  </div>
-                );
-              })}
+          {/* Chord diagrams — deduplicated, shown on toggle */}
+          {showChords && (
+            <div className="flex-1 flex items-start">
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 md:gap-4 w-full">
+                {chords
+                  .filter((chord, i, arr) => arr.findIndex((c) => c.name === chord.name) === i)
+                  .map((chord) => {
+                    const voicings = getVoicings(chord.name);
+                    const hasVoicings = voicings.length > 0;
+                    const chordIndex = chords.findIndex((c) => c.name === chord.name);
+                    const isExpanded = expandedChordIndex === chordIndex;
+
+                    return (
+                      <div key={chord.name} className="flex flex-col">
+                        <button
+                          onClick={() => handleChordTap(chord, chordIndex)}
+                          className={`relative flex flex-col items-center justify-center p-4 md:p-5 rounded-xl border-2 transition-all duration-150 active:scale-95 ${
+                            isExpanded
+                              ? "border-primary/50 bg-card"
+                              : "border-border bg-card hover:border-muted-foreground/30"
+                          }`}
+                        >
+                          {hasVoicings && (
+                            <span className="absolute top-1.5 right-2">
+                              <Guitar className="w-3 h-3 text-muted-foreground/50" />
+                            </span>
+                          )}
+                          <span className="text-lg md:text-xl font-bold text-card-foreground">
+                            {chord.name}
+                          </span>
+                          {hasVoicings && !isExpanded && (
+                            <div className="mt-2 opacity-70">
+                              <ChordDiagram chordName={chord.name} compact />
+                            </div>
+                          )}
+                        </button>
+
+                        {isExpanded && hasVoicings && (
+                          <PositionExplorer chordName={chord.name} />
+                        )}
+                      </div>
+                    );
+                  })}
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Audio init prompt */}
           {!audioReady && (

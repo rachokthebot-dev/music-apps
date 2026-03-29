@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { CLIPS_DIR } from "@/lib/paths";
 import { unlink } from "fs/promises";
 import path from "path";
+import { extractClip } from "@/lib/extract-clip";
 
 export async function GET(
   _request: Request,
@@ -45,6 +46,44 @@ export async function PATCH(
       if (field in body) {
         data[field] = body[field];
       }
+    }
+
+    // Handle boundary changes — requires re-extraction
+    const boundaryChange = "startSec" in body || "endSec" in body;
+    if (boundaryChange) {
+      const existing = await prisma.lick.findUnique({ where: { id }, include: { source: true } });
+      if (!existing) {
+        return NextResponse.json({ error: "Lick not found" }, { status: 404 });
+      }
+
+      const newStart = body.startSec ?? existing.startSec;
+      const newEnd = body.endSec ?? existing.endSec;
+
+      if (newStart < 0 || newEnd <= newStart) {
+        return NextResponse.json({ error: "Invalid time range" }, { status: 400 });
+      }
+
+      data.startSec = newStart;
+      data.endSec = newEnd;
+      data.durationSec = newEnd - newStart;
+
+      // Delete old clip files
+      const oldFiles = [existing.videoClipPath, existing.audioClipPath]
+        .filter(Boolean)
+        .map((f) => path.join(CLIPS_DIR, f!));
+      for (const file of oldFiles) {
+        await unlink(file).catch(() => {});
+      }
+
+      // Re-extract clips with new boundaries
+      const { videoClipPath, audioClipPath } = await extractClip(
+        id,
+        existing.sourceId,
+        newStart,
+        newEnd
+      );
+      data.videoClipPath = videoClipPath;
+      data.audioClipPath = audioClipPath;
     }
 
     if (Object.keys(data).length === 0) {

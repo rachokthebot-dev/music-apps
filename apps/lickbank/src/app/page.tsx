@@ -13,6 +13,7 @@ import {
   DialogFooter,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { AppSwitcher } from "@music-apps/shared/app-switcher";
 
 function formatTime(sec: number): string {
   const m = Math.floor(sec / 60);
@@ -263,6 +264,7 @@ export default function LibraryPage() {
           <h1 className="text-xl font-bold tracking-tight">LickBank</h1>
         </div>
         <div className="flex items-center gap-2">
+          <AppSwitcher currentAppId="lickbank" />
           <Button variant="ghost" size="icon" onClick={toggleDarkMode}>
             {darkMode ? (
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

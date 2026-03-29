@@ -544,15 +544,15 @@ export default function PracticePage({
         <div className="max-w-4xl mx-auto p-4 lg:p-6 space-y-4">
           {/* Video Player */}
           {lick.videoClipPath && (
-            <div className="rounded-xl overflow-hidden bg-black" style={crop !== "full" ? { maxHeight: "40vh" } : undefined}>
+            <div className="rounded-xl overflow-hidden bg-black max-h-[45vh]" style={crop !== "full" ? { maxHeight: "35vh" } : undefined}>
               <video
                 ref={videoRef}
                 src={`/api/media/${lick.videoClipPath}`}
-                className="w-full aspect-video"
+                className="w-full aspect-video max-h-[45vh] object-contain"
                 style={crop !== "full" ? {
                   ...CROP_PRESETS.find((p) => p.value === crop)?.style,
                   height: "56.25vw",
-                  maxHeight: "60vh",
+                  maxHeight: "35vh",
                 } : undefined}
                 onLoadedMetadata={() => {
                   const video = videoRef.current;

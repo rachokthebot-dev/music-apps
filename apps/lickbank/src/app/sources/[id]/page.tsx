@@ -83,6 +83,10 @@ export default function ClipperPage({
   const [creatingFolder, setCreatingFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
 
+  // Lick boundary adjustment
+  const [adjustingLick, setAdjustingLick] = useState<{ id: string; edge: "start" | "end" } | null>(null);
+  const [adjustingBoundary, setAdjustingBoundary] = useState(false);
+
   // Resolve params
   useEffect(() => {
     params.then(({ id }) => setSourceId(id));
@@ -237,6 +241,67 @@ export default function ClipperPage({
       setDragging(null);
       window.removeEventListener("pointermove", handleMove);
       window.removeEventListener("pointerup", handleUp);
+    };
+
+    window.addEventListener("pointermove", handleMove);
+    window.addEventListener("pointerup", handleUp);
+  };
+
+  const handleLickBoundaryPointerDown = (
+    lickId: string,
+    edge: "start" | "end",
+    e: React.PointerEvent
+  ) => {
+    e.stopPropagation();
+    e.preventDefault();
+    setAdjustingLick({ id: lickId, edge });
+
+    const handleMove = (moveEvent: PointerEvent) => {
+      const time = getTimeFromPosition(moveEvent.clientX);
+      setSource((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          licks: prev.licks.map((l) => {
+            if (l.id !== lickId) return l;
+            if (edge === "start") {
+              const newStart = Math.max(0, Math.min(time, l.endSec - 0.5));
+              return { ...l, startSec: newStart, durationSec: l.endSec - newStart };
+            } else {
+              const newEnd = Math.min(duration, Math.max(time, l.startSec + 0.5));
+              return { ...l, endSec: newEnd, durationSec: newEnd - l.startSec };
+            }
+          }),
+        };
+      });
+    };
+
+    const handleUp = async () => {
+      setAdjustingLick(null);
+      window.removeEventListener("pointermove", handleMove);
+      window.removeEventListener("pointerup", handleUp);
+
+      // Save the new boundaries to the server
+      const lick = source?.licks.find((l) => l.id === lickId);
+      if (!lick) return;
+
+      setAdjustingBoundary(true);
+      try {
+        await fetch(`/api/licks/${lickId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            startSec: lick.startSec,
+            endSec: lick.endSec,
+          }),
+        });
+        // Refresh source to get updated data
+        fetchSource();
+      } catch {
+        // Silently fail — will refresh on next load
+      } finally {
+        setAdjustingBoundary(false);
+      }
     };
 
     window.addEventListener("pointermove", handleMove);
@@ -402,17 +467,42 @@ export default function ClipperPage({
                 />
               )}
 
-              {/* Existing lick markers */}
+              {/* Existing lick markers with draggable handles */}
               {source.licks.map((lick) => {
                 const lickStartPct = duration > 0 ? (lick.startSec / duration) * 100 : 0;
-                const lickWidthPct = duration > 0 ? ((lick.endSec - lick.startSec) / duration) * 100 : 0;
+                const lickEndPct = duration > 0 ? (lick.endSec / duration) * 100 : 0;
+                const lickWidthPct = lickEndPct - lickStartPct;
                 return (
-                  <div
-                    key={lick.id}
-                    className="absolute top-0 bottom-0 bg-emerald-500/20 border-x border-emerald-500/40 pointer-events-none"
-                    style={{ left: `${lickStartPct}%`, width: `${lickWidthPct}%` }}
-                    title={lick.name}
-                  />
+                  <div key={lick.id}>
+                    {/* Lick region background */}
+                    <div
+                      className="absolute top-0 bottom-0 bg-emerald-500/20 pointer-events-none"
+                      style={{ left: `${lickStartPct}%`, width: `${lickWidthPct}%` }}
+                    />
+                    {/* Lick name label */}
+                    <div
+                      className="absolute top-0.5 text-[9px] font-medium text-emerald-400 pointer-events-none truncate px-1"
+                      style={{ left: `${lickStartPct}%`, maxWidth: `${lickWidthPct}%` }}
+                    >
+                      {lick.name}
+                    </div>
+                    {/* Start handle */}
+                    <div
+                      className="absolute top-0 bottom-0 w-5 cursor-ew-resize z-30 flex items-center justify-center group"
+                      style={{ left: `calc(${lickStartPct}% - 10px)` }}
+                      onPointerDown={(e) => handleLickBoundaryPointerDown(lick.id, "start", e)}
+                    >
+                      <div className="w-1 h-8 bg-emerald-500 rounded-full group-hover:bg-emerald-400 group-active:bg-emerald-300 shadow" />
+                    </div>
+                    {/* End handle */}
+                    <div
+                      className="absolute top-0 bottom-0 w-5 cursor-ew-resize z-30 flex items-center justify-center group"
+                      style={{ left: `calc(${lickEndPct}% - 10px)` }}
+                      onPointerDown={(e) => handleLickBoundaryPointerDown(lick.id, "end", e)}
+                    >
+                      <div className="w-1 h-8 bg-emerald-500 rounded-full group-hover:bg-emerald-400 group-active:bg-emerald-300 shadow" />
+                    </div>
+                  </div>
                 );
               })}
 
@@ -582,11 +672,18 @@ export default function ClipperPage({
             </div>
           )}
 
+          {/* Re-extraction status */}
+          {adjustingBoundary && (
+            <div className="px-4 py-2 rounded-lg text-sm font-medium bg-amber-500/20 text-amber-400 animate-pulse">
+              Re-extracting clip with new boundaries...
+            </div>
+          )}
+
           {/* Existing licks from this source */}
           {source.licks.length > 0 && (
             <div className="pt-6">
               <h3 className="text-sm font-medium mb-3">
-                Clipped Licks ({source.licks.length})
+                Clipped Licks ({source.licks.length}) — drag handles on waveform to adjust
               </h3>
               <div className="space-y-2">
                 {source.licks.map((lick) => (

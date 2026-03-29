@@ -33,6 +33,7 @@ import {
   Clock,
   CalendarPlus,
 } from "lucide-react";
+import { AppSwitcher } from "@music-apps/shared/app-switcher";
 
 interface Folder {
   id: string;
@@ -142,13 +143,20 @@ export default function LibraryPage() {
 
   const fetchSongs = useCallback(async () => {
     try {
-      const res = await fetch("/api/songs");
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 10000);
+      const res = await fetch("/api/songs", { signal: controller.signal });
+      clearTimeout(timeout);
       if (!res.ok) throw new Error("Failed to load songs");
       const data = await res.json();
       setSongs(data);
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load songs");
+      if (err instanceof DOMException && err.name === "AbortError") {
+        setError("Request timed out. Check your connection and try again.");
+      } else {
+        setError(err instanceof Error ? err.message : "Failed to load songs");
+      }
     } finally {
       setLoading(false);
     }
@@ -444,6 +452,7 @@ export default function LibraryPage() {
       <div className="flex items-center justify-between mb-4">
         <h1 className="text-xl font-semibold tracking-tight text-foreground">Shreddy</h1>
         <div className="flex items-center gap-1">
+          <AppSwitcher currentAppId="shreddy" />
           <Link
             href="/stats"
             className="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted active:scale-90 transition-all"

@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useRef, useEffect } from "react";
 import { Play, SkipForward, Headphones, Music, ChevronUp, ChevronDown, Volume2 } from "lucide-react";
+import { AppSwitcher } from "@music-apps/shared/app-switcher";
 import { progressions, type Progression } from "@/lib/progressions";
 import { getProgressionInKey, ALL_KEYS, type Chord } from "@/lib/music-theory";
 import { playProgressionOnce, ensureAudioContext, stopPlayback } from "@/lib/audio-engine";
@@ -264,7 +265,7 @@ export default function EarTrainingPage() {
           <Headphones className="w-6 h-6 md:w-7 md:h-7 text-primary" />
           <h1 className="text-xl md:text-2xl font-bold tracking-tight">Ear Training</h1>
         </div>
-        <span className="text-xs md:text-sm text-muted-foreground">ChordCraft</span>
+        <AppSwitcher currentAppId="chordcraft" />
       </header>
 
       <main className="flex-1 flex flex-col overflow-y-auto">
