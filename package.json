@@ -9,6 +9,8 @@
     "dev:shreddy": "npm run dev --workspace=apps/shreddy",
     "dev:lickbank": "npm run dev --workspace=apps/lickbank",
     "build:shreddy": "npm run build --workspace=apps/shreddy",
-    "build:lickbank": "npm run build --workspace=apps/lickbank"
+    "build:lickbank": "npm run build --workspace=apps/lickbank",
+    "dev:chordcraft": "npm run dev --workspace=apps/chordcraft",
+    "build:chordcraft": "npm run build --workspace=apps/chordcraft"
   }
 }

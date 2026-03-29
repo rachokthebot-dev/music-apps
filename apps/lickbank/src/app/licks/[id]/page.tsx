@@ -405,8 +405,11 @@ export default function PracticePage({
     const video = videoRef.current;
     if (!video) return;
     if (video.paused) {
-      video.play();
-      loopStartTimeRef.current = Date.now();
+      video.play().then(() => {
+        loopStartTimeRef.current = Date.now();
+      }).catch(() => {
+        // Browser blocked autoplay — ignore, user will tap again
+      });
     } else {
       video.pause();
     }
