@@ -1,8 +1,8 @@
 "use client";
 
 import { useState, useCallback, useRef, useEffect } from "react";
-import { Play, Square, Music, ChevronDown, Guitar, Shuffle, SkipForward, Volume2, Drum } from "lucide-react";
-import { progressions, allGenres, type Progression } from "@/lib/progressions";
+import { Play, Square, Music, ChevronDown, Guitar, Shuffle, SkipForward, Volume2, Drum, Trash2 } from "lucide-react";
+import { progressions, getAllGenres, type Progression } from "@/lib/progressions";
 import { getProgressionInKey, ALL_KEYS, type Chord, type ComplexityLevel } from "@/lib/music-theory";
 import {
   playProgression,
@@ -21,8 +21,12 @@ import {
 import { ChordDiagram } from "@/components/chord-diagram";
 import { getVoicings } from "@/lib/chord-voicings";
 import { usePracticeStats } from "@/hooks/usePracticeStats";
+import { loadCustomProgressions, addCustomProgression, deleteCustomProgression } from "@/lib/custom-progressions";
+import { AddProgressionDialog, AddProgressionButton } from "@/components/add-progression-dialog";
 
 export default function Home() {
+  const [customProgressions, setCustomProgressions] = useState<Progression[]>([]);
+  const [showAddDialog, setShowAddDialog] = useState(false);
   const [selectedProgression, setSelectedProgression] = useState<Progression>(progressions[0]);
   const [selectedKey, setSelectedKey] = useState("C");
   const [bpm, setBpm] = useState(120);
@@ -42,6 +46,14 @@ export default function Home() {
 
   const { startSession, endSession, recordActivity } = usePracticeStats();
 
+  // Load custom progressions from localStorage on mount
+  useEffect(() => {
+    setCustomProgressions(loadCustomProgressions());
+  }, []);
+
+  const allProgressions = [...progressions, ...customProgressions];
+  const allGenres = getAllGenres(allProgressions);
+
   useEffect(() => {
     bpmRef.current = bpm;
     if (isPlaying) {
@@ -54,14 +66,27 @@ export default function Home() {
   // Genre filtering: multi-select
   const filteredProgressions =
     selectedGenres.size > 0
-      ? progressions.filter((p) => p.genres.some((g) => selectedGenres.has(g)))
-      : progressions;
+      ? allProgressions.filter((p) => p.genres.some((g) => selectedGenres.has(g)))
+      : allProgressions;
 
   // Genre counts
   const genreCounts = allGenres.reduce<Record<string, number>>((acc, genre) => {
-    acc[genre] = progressions.filter((p) => p.genres.includes(genre)).length;
+    acc[genre] = allProgressions.filter((p) => p.genres.includes(genre)).length;
     return acc;
   }, {});
+
+  const handleAddProgression = useCallback((prog: Progression) => {
+    const updated = addCustomProgression(prog);
+    setCustomProgressions(updated);
+    setSelectedProgression(prog);
+  }, []);
+
+  const handleDeleteProgression = useCallback((id: string) => {
+    const updated = deleteCustomProgression(id);
+    setCustomProgressions(updated);
+    // If deleted the selected one, go to first built-in
+    setSelectedProgression((prev) => prev.id === id ? progressions[0] : prev);
+  }, []);
 
   const handleStartAudio = useCallback(async () => {
     await ensureAudioContext();
@@ -235,7 +260,7 @@ export default function Home() {
                     : "bg-secondary text-secondary-foreground hover:bg-accent"
                 }`}
               >
-                All ({progressions.length})
+                All ({allProgressions.length})
               </button>
               {allGenres.map((genre) => (
                 <button
@@ -254,27 +279,55 @@ export default function Home() {
 
             {/* Progression list */}
             <div className="space-y-1">
-              {filteredProgressions.map((prog) => (
-                <button
-                  key={prog.id}
-                  onClick={() => handleProgressionSelect(prog)}
-                  className={`w-full text-left px-3 py-2.5 md:py-3 rounded-lg transition-colors ${
-                    selectedProgression.id === prog.id
-                      ? "bg-accent text-accent-foreground"
-                      : "hover:bg-secondary"
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="font-medium text-sm">{prog.name}</span>
-                    <span className={`text-[10px] ${difficultyColor[prog.difficulty]}`}>
-                      {prog.difficulty}
-                    </span>
+              {filteredProgressions.map((prog) => {
+                const isCustom = prog.id.startsWith("custom-");
+                return (
+                  <div key={prog.id} className="group relative">
+                    <button
+                      onClick={() => handleProgressionSelect(prog)}
+                      className={`w-full text-left px-3 py-2.5 md:py-3 rounded-lg transition-colors ${
+                        selectedProgression.id === prog.id
+                          ? "bg-accent text-accent-foreground"
+                          : "hover:bg-secondary"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-medium text-sm">{prog.name}</span>
+                        <span className="flex items-center gap-1.5">
+                          {isCustom && (
+                            <span className="text-[9px] px-1 py-0.5 rounded bg-primary/10 text-primary font-medium">
+                              custom
+                            </span>
+                          )}
+                          <span className={`text-[10px] ${difficultyColor[prog.difficulty]}`}>
+                            {prog.difficulty}
+                          </span>
+                        </span>
+                      </div>
+                      <div className="text-xs text-muted-foreground mt-0.5">
+                        {prog.numerals.join(" - ")}
+                      </div>
+                    </button>
+                    {isCustom && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteProgression(prog.id);
+                        }}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-md opacity-0 group-hover:opacity-100 hover:bg-destructive/20 hover:text-destructive transition-all"
+                        title="Delete progression"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
                   </div>
-                  <div className="text-xs text-muted-foreground mt-0.5">
-                    {prog.numerals.join(" - ")}
-                  </div>
-                </button>
-              ))}
+                );
+              })}
+            </div>
+
+            {/* Add custom progression */}
+            <div className="mt-2">
+              <AddProgressionButton onClick={() => setShowAddDialog(true)} />
             </div>
           </div>
         </aside>
@@ -549,6 +602,12 @@ export default function Home() {
           )}
         </div>
       </main>
+
+      <AddProgressionDialog
+        open={showAddDialog}
+        onClose={() => setShowAddDialog(false)}
+        onSave={handleAddProgression}
+      />
     </div>
   );
 }

@@ -154,6 +154,14 @@ export const progressions: Progression[] = [
   },
 ];
 
-export const allGenres = Array.from(
+export const builtInGenres = Array.from(
   new Set(progressions.flatMap((p) => p.genres))
 ).sort();
+
+/** Compute all genres from a combined list (built-in + custom) */
+export function getAllGenres(allProgressions: Progression[]): string[] {
+  return Array.from(new Set(allProgressions.flatMap((p) => p.genres))).sort();
+}
+
+/** @deprecated Use getAllGenres() with full list instead */
+export const allGenres = builtInGenres;
