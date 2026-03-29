@@ -5,3 +5,8 @@ export { shiftPitch, pitchFilename, validateSemitones } from "./ffmpeg-pitch";
 
 export { calculateStreak, buildDailyBreakdown, getDateRanges } from "./practice-stats";
 export type { DailyBreakdown } from "./practice-stats";
+
+export { APP_REGISTRY, getAppUrl } from "./app-registry";
+export type { AppEntry } from "./app-registry";
+
+export { AppSwitcher } from "./app-switcher";

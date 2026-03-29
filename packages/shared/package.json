@@ -8,6 +8,8 @@
     ".": "./src/index.ts",
     "./youtube-utils": "./src/youtube-utils.ts",
     "./ffmpeg-pitch": "./src/ffmpeg-pitch.ts",
-    "./practice-stats": "./src/practice-stats.ts"
+    "./practice-stats": "./src/practice-stats.ts",
+    "./app-registry": "./src/app-registry.ts",
+    "./app-switcher": "./src/app-switcher.tsx"
   }
 }
