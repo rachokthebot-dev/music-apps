@@ -159,6 +159,21 @@ export default function EarTrainingPage() {
     setProgQuestion(q);
   }, [progDifficulty]);
 
+  // Pre-unlock audio on first touch (iOS Safari requires user gesture)
+  useEffect(() => {
+    const unlock = () => {
+      ensureAudioContext();
+      document.removeEventListener("touchstart", unlock);
+      document.removeEventListener("touchend", unlock);
+    };
+    document.addEventListener("touchstart", unlock, { passive: true });
+    document.addEventListener("touchend", unlock, { passive: true });
+    return () => {
+      document.removeEventListener("touchstart", unlock);
+      document.removeEventListener("touchend", unlock);
+    };
+  }, []);
+
   // Generate first question on mount / difficulty change
   useEffect(() => {
     newProgQuestion();

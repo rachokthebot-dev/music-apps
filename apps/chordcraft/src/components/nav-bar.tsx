@@ -13,6 +13,9 @@ const tabs = [
 export function NavBar() {
   const pathname = usePathname();
 
+  // Hide NavBar on the dashboard page — it's a standalone view
+  if (pathname === "/dashboard") return null;
+
   return (
     <nav className="border-t border-border bg-card/80 backdrop-blur-sm shrink-0">
       <div className="flex justify-center">

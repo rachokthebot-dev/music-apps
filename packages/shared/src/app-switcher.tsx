@@ -50,7 +50,13 @@ export function AppSwitcher({ currentAppId }: AppSwitcherProps) {
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full mt-2 w-64 md:w-72 rounded-xl border border-border bg-card shadow-lg shadow-black/20 z-50 animate-in fade-in slide-in-from-top-1 duration-150">
+        <div
+          className="fixed mt-2 w-64 md:w-72 rounded-xl border border-border bg-card shadow-lg shadow-black/20 z-50 animate-in fade-in slide-in-from-top-1 duration-150"
+          style={{
+            top: menuRef.current ? menuRef.current.getBoundingClientRect().bottom : 0,
+            right: 8,
+          }}
+        >
           <div className="px-3 py-2 border-b border-border">
             <span className="text-[10px] md:text-xs font-semibold text-muted-foreground uppercase tracking-wider">
               Music Apps
@@ -80,7 +86,7 @@ export function AppSwitcher({ currentAppId }: AppSwitcherProps) {
                         </span>
                       )}
                     </div>
-                    <span className="text-xs text-muted-foreground">{app.description}</span>
+                    <span className="text-xs text-muted-foreground truncate">{app.description}</span>
                   </div>
                 </a>
               );

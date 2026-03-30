@@ -53,6 +53,21 @@ export default function Home() {
     setCustomProgressions(loadCustomProgressions());
   }, []);
 
+  // Pre-unlock audio on first touch (iOS Safari requires user gesture)
+  useEffect(() => {
+    const unlock = () => {
+      ensureAudioContext();
+      document.removeEventListener("touchstart", unlock);
+      document.removeEventListener("touchend", unlock);
+    };
+    document.addEventListener("touchstart", unlock, { passive: true });
+    document.addEventListener("touchend", unlock, { passive: true });
+    return () => {
+      document.removeEventListener("touchstart", unlock);
+      document.removeEventListener("touchend", unlock);
+    };
+  }, []);
+
   const allProgressions = [...progressions, ...customProgressions];
   const allGenres = getAllGenres(allProgressions);
 
@@ -96,9 +111,9 @@ export default function Home() {
   }, []);
 
   const handlePlay = useCallback(async () => {
-    if (!audioReady) {
-      await handleStartAudio();
-    }
+    // Always ensure audio context — iOS Safari can suspend it silently
+    await ensureAudioContext();
+    setAudioReady(true);
 
     if (isPlaying) {
       stopPlayback();
@@ -128,17 +143,16 @@ export default function Home() {
         endSession();
       },
     });
-  }, [audioReady, isPlaying, chords, handleStartAudio, bassOn, drumsOn, selectedProgression.id, selectedKey, complexityLevel, startSession, endSession, recordActivity]);
+  }, [isPlaying, chords, bassOn, drumsOn, selectedProgression.id, selectedKey, complexityLevel, startSession, endSession, recordActivity]);
 
   const handleChordTap = useCallback(
     async (chord: Chord, index: number) => {
-      if (!audioReady) {
-        await handleStartAudio();
-      }
-      playChord(chord);
+      // playChord now calls ensureAudioContext internally
+      await playChord(chord);
+      setAudioReady(true);
       setExpandedChordIndex((prev) => (prev === index ? null : index));
     },
-    [audioReady, handleStartAudio]
+    []
   );
 
   const handleProgressionSelect = useCallback(
@@ -250,7 +264,7 @@ export default function Home() {
 
       <main className="flex-1 flex flex-col md:flex-row overflow-hidden">
         {/* Sidebar: Progression picker */}
-        <aside className="md:w-72 lg:w-80 border-b md:border-b-0 md:border-r border-border overflow-y-auto shrink-0 max-h-[40vh] md:max-h-none">
+        <aside className="md:w-72 lg:w-80 border-b md:border-b-0 md:border-r border-border overflow-y-auto shrink-0 max-h-[35vh] md:max-h-none">
           <div className="p-3">
             {/* Genre filter pills with counts and multi-select */}
             <div className="flex flex-wrap gap-1.5 mb-3">
@@ -334,8 +348,8 @@ export default function Home() {
           </div>
         </aside>
 
-        {/* Main content */}
-        <div className="flex-1 flex flex-col p-4 md:p-6 overflow-y-auto">
+        {/* Main content — scrollable on mobile, static on tablet+ */}
+        <div className="flex-1 flex flex-col p-4 md:p-6 overflow-y-auto md:overflow-hidden">
           {/* Controls row */}
           <div className="flex flex-wrap items-center gap-3 mb-4">
             {/* Key selector */}

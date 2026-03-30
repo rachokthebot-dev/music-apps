@@ -19,6 +19,9 @@ let drumVolume: Tone.Volume | null = null;
 let bassEnabled = true;
 let drumsEnabled = true;
 
+// iOS audio unlock state
+let iosUnlocked = false;
+
 function getChordVolume(): Tone.Volume {
   if (!chordVolume) {
     chordVolume = new Tone.Volume(-8).toDestination();
@@ -128,13 +131,36 @@ function getHihat(): Tone.NoiseSynth {
   return hihat;
 }
 
-export async function ensureAudioContext(): Promise<void> {
-  if (Tone.getContext().state !== "running") {
-    await Tone.start();
+// Unlock audio on iOS Safari by playing a silent buffer through a fresh AudioContext.
+// This must run in the synchronous call stack of a user gesture (click/touchend).
+function unlockiOS(): void {
+  if (iosUnlocked) return;
+  try {
+    const ctx = Tone.getContext().rawContext as AudioContext;
+    // Play a tiny silent buffer — this is what actually unlocks audio on iOS
+    const buffer = ctx.createBuffer(1, 1, ctx.sampleRate);
+    const source = ctx.createBufferSource();
+    source.buffer = buffer;
+    source.connect(ctx.destination);
+    source.start(0);
+    if (ctx.state === "suspended") {
+      ctx.resume();
+    }
+    iosUnlocked = true;
+  } catch {
+    // ignore
   }
 }
 
-export function playChord(chord: Chord, duration: string = "2n"): void {
+export async function ensureAudioContext(): Promise<void> {
+  // Unlock iOS audio first (synchronous, must be in user gesture call stack)
+  unlockiOS();
+  // Then start Tone.js
+  await Tone.start();
+}
+
+export async function playChord(chord: Chord, duration: string = "2n"): Promise<void> {
+  await ensureAudioContext();
   const s = getSynth();
   const notes = chordToNotes(chord.root, chord.quality, 3);
   s.triggerAttackRelease(notes, duration);
