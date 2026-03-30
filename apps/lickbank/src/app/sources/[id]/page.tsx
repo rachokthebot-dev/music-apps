@@ -103,7 +103,8 @@ export default function ClipperPage({
       const data: Source = await res.json();
       setSource(data);
       if (data.durationSec) {
-        setClipEnd(data.durationSec);
+        setDuration((prev) => prev || data.durationSec!);
+        setClipEnd((prev) => prev || data.durationSec!);
       }
     } catch {
       setError("Failed to load source");
@@ -436,8 +437,8 @@ export default function ClipperPage({
       </header>
 
       <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
-        {/* Left: Video + Waveform + Play */}
-        <div className="md:flex-1 md:min-w-0 overflow-y-auto p-3 md:p-4 space-y-3">
+        {/* Left: Video + Waveform + Play (sticky on desktop) */}
+        <div className="md:flex-1 md:min-w-0 p-3 md:p-4 space-y-3 shrink-0 md:overflow-hidden flex flex-col">
           {/* Video Player */}
           {source.videoPath && (
             <div className="rounded-xl overflow-hidden bg-black">
