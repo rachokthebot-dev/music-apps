@@ -131,21 +131,26 @@ function getHihat(): Tone.NoiseSynth {
   return hihat;
 }
 
-// Unlock audio on iOS Safari by playing a silent buffer through a fresh AudioContext.
-// This must run in the synchronous call stack of a user gesture (click/touchend).
+// On iOS, Web Audio uses the "ambient" audio session by default, which respects
+// the silent mode switch and produces no audible output. Playing an HTML5 <audio>
+// element forces iOS to switch to "playback" mode, making Web Audio audible.
+// A tiny base64-encoded silent MP3 is used as the source.
+const SILENT_MP3 = "data:audio/mp3;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU4Ljc2LjEwMAAAAAAAAAAAAAAA//tQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWGluZwAAAA8AAAACAAABhgC7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7//////////////////////////////////////////////////////////////////8AAAAATGF2YzU4LjEzAAAAAAAAAAAAAAAAJAAAAAAAAAAAAYYoRBqnAAAAAAD/+1DEAAAHAAGf9AAAIVABL/AAAAEAAAAACQAAABMQABhGFjAIBg+D5/KAgGP5QEAwfP/E4Pn/+XB9/ygIBj////////////lAQDB8/Lg+/5QEAx/KAgGH4fB8/lAQDP////8uD58HwfKAgGD4Pg+D5//+UHwfB8/ygfB8oP///////lAQDH8oCAdB8Hw==";
+
 function unlockiOS(): void {
   if (iosUnlocked) return;
   try {
+    // 1. Play a silent HTML5 audio element to switch iOS audio session to "playback"
+    const audio = new Audio(SILENT_MP3);
+    audio.setAttribute("playsinline", "");
+    audio.play().catch(() => {});
+
+    // 2. Also resume the Web Audio context
     const ctx = Tone.getContext().rawContext as AudioContext;
-    // Play a tiny silent buffer — this is what actually unlocks audio on iOS
-    const buffer = ctx.createBuffer(1, 1, ctx.sampleRate);
-    const source = ctx.createBufferSource();
-    source.buffer = buffer;
-    source.connect(ctx.destination);
-    source.start(0);
     if (ctx.state === "suspended") {
       ctx.resume();
     }
+
     iosUnlocked = true;
   } catch {
     // ignore
