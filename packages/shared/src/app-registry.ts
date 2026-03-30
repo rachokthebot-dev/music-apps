@@ -32,6 +32,13 @@ export const APP_REGISTRY: AppEntry[] = [
     port: 3002,
     path: "/",
   },
+  {
+    id: "dashboard",
+    name: "Dashboard",
+    description: "Practice overview",
+    port: 3002,
+    path: "/dashboard",
+  },
 ];
 
 /** Build the URL for an app based on the current window location.

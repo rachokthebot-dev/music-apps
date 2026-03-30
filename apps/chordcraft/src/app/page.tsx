@@ -238,7 +238,7 @@ export default function Home() {
   ];
 
   return (
-    <div className="flex flex-col min-h-screen">
+    <div className="flex flex-col flex-1 min-h-0">
       {/* Header */}
       <header className="border-b border-border px-4 md:px-6 py-3 md:py-4 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-2">
@@ -541,7 +541,7 @@ export default function Home() {
                 }`}
               >
                 <span className="text-[10px] text-muted-foreground mr-1">{selectedProgression.numerals[i]}</span>
-                {chord.name}
+                {showChords && chord.name}
               </button>
             ))}
           </div>

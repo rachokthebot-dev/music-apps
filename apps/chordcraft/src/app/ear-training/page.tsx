@@ -5,7 +5,8 @@ import { Play, SkipForward, Headphones, Music, ChevronUp, ChevronDown, Volume2 }
 import { AppSwitcher } from "@music-apps/shared/app-switcher";
 import { progressions, type Progression } from "@/lib/progressions";
 import { getProgressionInKey, ALL_KEYS, type Chord } from "@/lib/music-theory";
-import { playProgressionOnce, ensureAudioContext, stopPlayback } from "@/lib/audio-engine";
+import { playProgressionOnce, playChord, ensureAudioContext, stopPlayback } from "@/lib/audio-engine";
+import { getProgressionInKey as getRootChord } from "@/lib/music-theory";
 import {
   ALL_INTERVALS,
   type Interval,
@@ -177,6 +178,13 @@ export default function EarTrainingPage() {
     });
   }, [progQuestion, progIsPlaying]);
 
+  const handlePlayRoot = useCallback(async () => {
+    if (!progQuestion) return;
+    await ensureAudioContext();
+    const rootChord = getRootChord(["I"], progQuestion.key, "basic")[0];
+    playChord(rootChord, "2n");
+  }, [progQuestion]);
+
   const handleProgAnswer = useCallback(
     (chosenId: string) => {
       if (progAnswer !== null || !progQuestion) return;
@@ -258,7 +266,7 @@ export default function EarTrainingPage() {
   };
 
   return (
-    <div className="flex flex-col min-h-screen">
+    <div className="flex flex-col flex-1 min-h-0">
       {/* Header */}
       <header className="border-b border-border px-4 md:px-6 py-3 md:py-4 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-2">
@@ -315,6 +323,7 @@ export default function EarTrainingPage() {
               difficultyDescription={difficultyDescriptions.progression[progDifficulty]}
               onSetDifficulty={setProgDifficulty}
               onPlay={handlePlayProgression}
+              onPlayRoot={handlePlayRoot}
               onAnswer={handleProgAnswer}
               onNext={newProgQuestion}
             />
@@ -352,6 +361,7 @@ function ProgressionMode({
   difficultyDescription,
   onSetDifficulty,
   onPlay,
+  onPlayRoot,
   onAnswer,
   onNext,
 }: {
@@ -365,6 +375,7 @@ function ProgressionMode({
   difficultyDescription: string;
   onSetDifficulty: (d: ProgressionDifficulty) => void;
   onPlay: () => void;
+  onPlayRoot: () => void;
   onAnswer: (id: string) => void;
   onNext: () => void;
 }) {
@@ -419,6 +430,16 @@ function ProgressionMode({
           >
             <Play className="w-5 h-5 md:w-6 md:h-6" />
             {isPlaying ? "Playing..." : "Play"}
+          </button>
+
+          <button
+            onClick={onPlayRoot}
+            disabled={isPlaying}
+            className="flex items-center gap-2 px-4 py-3 rounded-xl font-medium text-sm bg-secondary text-secondary-foreground hover:bg-accent transition-colors active:scale-95"
+            title="Play the root chord to establish the key"
+          >
+            <Music className="w-4 h-4" />
+            Root
           </button>
 
           {answered && (

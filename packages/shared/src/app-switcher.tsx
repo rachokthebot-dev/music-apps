@@ -50,7 +50,7 @@ export function AppSwitcher({ currentAppId }: AppSwitcherProps) {
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full mt-2 w-56 md:w-64 rounded-xl border border-border bg-card shadow-lg shadow-black/20 z-50 overflow-hidden animate-in fade-in slide-in-from-top-1 duration-150">
+        <div className="absolute right-0 top-full mt-2 w-64 md:w-72 rounded-xl border border-border bg-card shadow-lg shadow-black/20 z-50 animate-in fade-in slide-in-from-top-1 duration-150">
           <div className="px-3 py-2 border-b border-border">
             <span className="text-[10px] md:text-xs font-semibold text-muted-foreground uppercase tracking-wider">
               Music Apps
@@ -113,6 +113,8 @@ function AppIcon({ appId }: { appId: string }) {
       return <div className={`${iconClass} bg-blue-500/15 text-blue-400`}>L</div>;
     case "chordcraft":
       return <div className={`${iconClass} bg-purple-500/15 text-purple-400`}>C</div>;
+    case "dashboard":
+      return <div className={`${iconClass} bg-emerald-500/15 text-emerald-400`}>D</div>;
     default:
       return <div className={`${iconClass} bg-secondary text-muted-foreground`}>{appId[0]?.toUpperCase()}</div>;
   }
