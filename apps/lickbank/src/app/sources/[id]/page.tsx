@@ -22,6 +22,7 @@ interface Source {
   id: string;
   title: string;
   artist: string | null;
+  youtubeUrl: string;
   videoPath: string | null;
   audioPath: string | null;
   durationSec: number | null;
@@ -313,7 +314,10 @@ export default function ClipperPage({
     const video = videoRef.current;
     if (!video) return;
     if (video.paused) {
-      video.play();
+      video.play().catch(() => {
+        // iPad Safari may reject play() if video codec is unsupported
+        setError("Video playback failed — the video format may not be supported on this device. Try re-importing the video.");
+      });
     } else {
       video.pause();
       previewingRef.current = false;
@@ -441,7 +445,7 @@ export default function ClipperPage({
         <div className="md:flex-1 md:min-w-0 p-3 md:p-4 space-y-3 shrink-0 md:overflow-hidden flex flex-col">
           {/* Video Player */}
           {source.videoPath && (
-            <div className="rounded-xl overflow-hidden bg-black">
+            <div className="relative rounded-xl overflow-hidden bg-black cursor-pointer group/video" onClick={handlePlayPause}>
               <video
                 ref={videoRef}
                 src={`/api/media/${source.videoPath}`}
@@ -449,8 +453,17 @@ export default function ClipperPage({
                 onLoadedMetadata={handleVideoLoaded}
                 playsInline
                 controls={false}
-                onClick={handlePlayPause}
               />
+              {/* Play/Pause overlay */}
+              {!isPlaying && (
+                <div className="absolute inset-0 flex items-center justify-center bg-black/20">
+                  <div className="w-16 h-16 rounded-full bg-black/60 flex items-center justify-center backdrop-blur-sm">
+                    <svg width="28" height="28" viewBox="0 0 24 24" fill="white">
+                      <polygon points="8,4 20,12 8,20" />
+                    </svg>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -542,41 +555,6 @@ export default function ClipperPage({
             </div>
           </div>
 
-          {/* Play + Preview controls */}
-          <div className="flex items-center justify-center gap-3">
-            <button
-              className="w-11 h-11 rounded-full bg-primary text-primary-foreground flex items-center justify-center hover:bg-primary/90 active:scale-95 transition-all shadow-lg"
-              onClick={handlePlayPause}
-            >
-              {isPlaying ? (
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-                  <rect x="6" y="4" width="4" height="16" rx="1" />
-                  <rect x="14" y="4" width="4" height="16" rx="1" />
-                </svg>
-              ) : (
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-                  <polygon points="8,4 20,12 8,20" />
-                </svg>
-              )}
-            </button>
-            <Button
-              variant={loopPreview ? "default" : "outline"}
-              size="sm"
-              onClick={() => setLoopPreview(!loopPreview)}
-              title="Loop preview"
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-1">
-                <polyline points="17 1 21 5 17 9" />
-                <path d="M3 11V9a4 4 0 0 1 4-4h14" />
-                <polyline points="7 23 3 19 7 15" />
-                <path d="M21 13v2a4 4 0 0 1-4 4H3" />
-              </svg>
-              Loop
-            </Button>
-            <Button variant="outline" size="sm" onClick={handlePreview}>
-              Preview
-            </Button>
-          </div>
 
           {/* Save feedback */}
           {saveMessage && (
@@ -597,104 +575,149 @@ export default function ClipperPage({
           )}
         </div>
 
-        {/* Right: Controls + Sections */}
-        <aside className="md:w-80 lg:w-96 border-t md:border-t-0 md:border-l border-border overflow-y-auto p-3 md:p-4 space-y-4 shrink-0">
-          {/* Clip Boundaries */}
-          <div className="bg-card border border-border rounded-xl p-3 space-y-2.5">
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-medium">Clip Range</span>
-              <span className="text-xs text-muted-foreground">
+        {/* Right: Controls + Licks */}
+        <aside className="md:w-80 lg:w-96 border-t md:border-t-0 md:border-l border-border overflow-y-auto p-3 md:p-4 space-y-3 shrink-0">
+          {/* Clip Range Card */}
+          <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-3 space-y-3">
+            <div className="flex items-center gap-2">
+              <div className="w-6 h-6 rounded-md bg-amber-500/20 flex items-center justify-center">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-amber-500">
+                  <circle cx="12" cy="12" r="10" />
+                  <polyline points="12 6 12 12 16 14" />
+                </svg>
+              </div>
+              <span className="text-sm font-semibold flex-1">Clip Range</span>
+              <span className="text-xs font-mono text-amber-500 bg-amber-500/10 px-2 py-0.5 rounded-full">
                 {formatTime(clipEnd - clipStart)}
               </span>
             </div>
 
-            {/* Start controls */}
+            {/* Start row */}
             <div className="flex items-center gap-1.5">
-              <span className="text-xs text-muted-foreground w-9">Start</span>
-              <button
-                className="px-1.5 py-1 text-xs rounded-md bg-muted hover:bg-muted/80 active:scale-95 transition-all"
-                onClick={() => nudge("start", -0.1)}
-              >
-                -0.1
-              </button>
-              <span className="text-sm font-mono min-w-[3rem] text-center">
-                {formatTime(clipStart)}
-              </span>
-              <button
-                className="px-1.5 py-1 text-xs rounded-md bg-muted hover:bg-muted/80 active:scale-95 transition-all"
-                onClick={() => nudge("start", 0.1)}
-              >
-                +0.1
-              </button>
+              <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide w-10">Start</span>
+              <div className="flex items-center gap-0.5 bg-muted rounded-lg px-1 py-0.5">
+                <button
+                  className="px-1.5 py-1 text-xs rounded-md hover:bg-background active:scale-95 transition-all text-muted-foreground"
+                  onClick={() => nudge("start", -0.1)}
+                >
+                  -
+                </button>
+                <span className="text-sm font-mono min-w-[3rem] text-center font-medium">
+                  {formatTime(clipStart)}
+                </span>
+                <button
+                  className="px-1.5 py-1 text-xs rounded-md hover:bg-background active:scale-95 transition-all text-muted-foreground"
+                  onClick={() => nudge("start", 0.1)}
+                >
+                  +
+                </button>
+              </div>
               <div className="flex-1" />
-              <Button variant="outline" size="sm" onClick={handleSetStart}>
-                Set
-              </Button>
+              <button
+                className="text-xs font-medium text-amber-500 hover:text-amber-400 px-2 py-1 rounded-md hover:bg-amber-500/10 transition-colors"
+                onClick={handleSetStart}
+              >
+                Set to playhead
+              </button>
             </div>
 
-            {/* End controls */}
+            {/* End row */}
             <div className="flex items-center gap-1.5">
-              <span className="text-xs text-muted-foreground w-9">End</span>
-              <button
-                className="px-1.5 py-1 text-xs rounded-md bg-muted hover:bg-muted/80 active:scale-95 transition-all"
-                onClick={() => nudge("end", -0.1)}
-              >
-                -0.1
-              </button>
-              <span className="text-sm font-mono min-w-[3rem] text-center">
-                {formatTime(clipEnd)}
-              </span>
-              <button
-                className="px-1.5 py-1 text-xs rounded-md bg-muted hover:bg-muted/80 active:scale-95 transition-all"
-                onClick={() => nudge("end", 0.1)}
-              >
-                +0.1
-              </button>
+              <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide w-10">End</span>
+              <div className="flex items-center gap-0.5 bg-muted rounded-lg px-1 py-0.5">
+                <button
+                  className="px-1.5 py-1 text-xs rounded-md hover:bg-background active:scale-95 transition-all text-muted-foreground"
+                  onClick={() => nudge("end", -0.1)}
+                >
+                  -
+                </button>
+                <span className="text-sm font-mono min-w-[3rem] text-center font-medium">
+                  {formatTime(clipEnd)}
+                </span>
+                <button
+                  className="px-1.5 py-1 text-xs rounded-md hover:bg-background active:scale-95 transition-all text-muted-foreground"
+                  onClick={() => nudge("end", 0.1)}
+                >
+                  +
+                </button>
+              </div>
               <div className="flex-1" />
-              <Button variant="outline" size="sm" onClick={handleSetEnd}>
-                Set
-              </Button>
+              <button
+                className="text-xs font-medium text-amber-500 hover:text-amber-400 px-2 py-1 rounded-md hover:bg-amber-500/10 transition-colors"
+                onClick={handleSetEnd}
+              >
+                Set to playhead
+              </button>
             </div>
 
-            <Button className="w-full" onClick={() => setSaveOpen(true)}>
+            <Button className="w-full bg-amber-500 hover:bg-amber-600 text-white" onClick={() => setSaveOpen(true)}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-1.5">
+                <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+                <polyline points="17 21 17 13 7 13 7 21" />
+                <polyline points="7 3 7 8 15 8" />
+              </svg>
               Save Lick
             </Button>
           </div>
 
-          {/* Existing licks from this source */}
-          {source.licks.length > 0 && (
-            <div>
-              <h3 className="text-sm font-medium mb-2">
-                Clipped Licks ({source.licks.length})
+          {/* Clipped Licks */}
+          <div>
+            <div className="flex items-center gap-2 mb-2">
+              <h3 className="text-sm font-semibold flex-1">
+                Clipped Licks
+                {source.licks.length > 0 && (
+                  <span className="ml-1.5 text-xs font-normal text-muted-foreground">
+                    ({source.licks.length})
+                  </span>
+                )}
               </h3>
-              <p className="text-[11px] text-muted-foreground mb-2">Drag handles on waveform to adjust</p>
+              {source.licks.length > 0 && (
+                <span className="text-[10px] text-muted-foreground">Drag handles to adjust</span>
+              )}
+            </div>
+
+            {source.licks.length > 0 ? (
               <div className="space-y-1.5">
                 {source.licks.map((lick) => (
                   <button
                     key={lick.id}
-                    className="w-full flex items-center gap-2 px-3 py-2 rounded-lg bg-card border border-border hover:border-ring transition-colors text-left"
+                    className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl bg-card border border-border hover:border-emerald-500/40 hover:bg-emerald-500/5 transition-all text-left group"
                     onClick={() => router.push(`/licks/${lick.id}`)}
                   >
+                    <div className="w-8 h-8 rounded-lg bg-emerald-500/15 flex items-center justify-center shrink-0">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-emerald-500">
+                        <polygon points="5 3 19 12 5 21 5 3" />
+                      </svg>
+                    </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium truncate">{lick.name}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {formatTime(lick.startSec)} - {formatTime(lick.endSec)} ({formatTime(lick.durationSec)})
+                      <p className="text-[11px] text-muted-foreground font-mono">
+                        {formatTime(lick.startSec)} - {formatTime(lick.endSec)}
+                        <span className="ml-1 text-muted-foreground/60">({formatTime(lick.durationSec)})</span>
                       </p>
                     </div>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground shrink-0">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground/40 group-hover:text-emerald-500 transition-colors shrink-0">
                       <path d="M9 18l6-6-6-6" />
                     </svg>
                   </button>
                 ))}
               </div>
-            </div>
-          )}
-
-          {source.licks.length === 0 && (
-            <div className="text-center py-6 text-muted-foreground text-sm">
-              No licks clipped yet. Select a region and save.
-            </div>
-          )}
+            ) : (
+              <div className="flex flex-col items-center justify-center py-8 text-center">
+                <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center mb-3">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground">
+                    <circle cx="12" cy="12" r="10" />
+                    <line x1="15" y1="9" x2="9" y2="15" />
+                    <line x1="9" y1="9" x2="15" y2="15" />
+                  </svg>
+                </div>
+                <p className="text-sm font-medium text-muted-foreground">No licks yet</p>
+                <p className="text-xs text-muted-foreground/60 mt-1 max-w-[200px]">
+                  Drag the amber handles on the waveform to select a region, then save it as a lick.
+                </p>
+              </div>
+            )}
+          </div>
         </aside>
       </div>
 

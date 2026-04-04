@@ -20,8 +20,9 @@ export async function downloadVideo(
   // Download video (720p max)
   await new Promise<void>((resolve, reject) => {
     const proc = spawn("yt-dlp", [
-      "-f", "bestvideo[height<=720]+bestaudio/best[height<=720]",
+      "-f", "bestvideo[height<=720][vcodec^=avc1]+bestaudio[acodec^=mp4a]/bestvideo[height<=720]+bestaudio/best[height<=720]",
       "--merge-output-format", "mp4",
+      "--postprocessor-args", "ffmpeg:-c:v libx264 -c:a aac -movflags +faststart",
       "-o", videoPath,
       "--no-playlist",
       "--max-filesize", "500m",

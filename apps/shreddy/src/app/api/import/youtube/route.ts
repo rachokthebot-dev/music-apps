@@ -32,6 +32,19 @@ function isYouTubeUrl(url: string): boolean {
   }
 }
 
+// Allow cross-origin requests from LickBank
+function corsHeaders() {
+  return {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type",
+  };
+}
+
+export async function OPTIONS() {
+  return new NextResponse(null, { status: 204, headers: corsHeaders() });
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -39,13 +52,13 @@ export async function POST(request: NextRequest) {
     const analyzeSections = body.analyzeSections !== false;
 
     if (!url) {
-      return NextResponse.json({ error: "No URL provided" }, { status: 400 });
+      return NextResponse.json({ error: "No URL provided" }, { status: 400, headers: corsHeaders() });
     }
 
     if (!isYouTubeUrl(url)) {
       return NextResponse.json(
         { error: "Only YouTube URLs are supported" },
-        { status: 400 }
+        { status: 400, headers: corsHeaders() }
       );
     }
 
@@ -58,7 +71,7 @@ export async function POST(request: NextRequest) {
       const maxMin = Math.floor(maxDuration / 60);
       return NextResponse.json(
         { error: `Video is too long (${Math.floor(meta.duration / 60)} min). Maximum is ${maxMin} minutes.` },
-        { status: 400 }
+        { status: 400, headers: corsHeaders() }
       );
     }
 
@@ -86,9 +99,9 @@ export async function POST(request: NextRequest) {
     // Download and process in background
     downloadAndProcess(songId, url, { skipSections: !analyzeSections });
 
-    return NextResponse.json(song, { status: 201 });
+    return NextResponse.json(song, { status: 201, headers: corsHeaders() });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Import failed";
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json({ error: message }, { status: 500, headers: corsHeaders() });
   }
 }

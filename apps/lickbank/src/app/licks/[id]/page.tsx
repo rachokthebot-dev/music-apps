@@ -124,6 +124,10 @@ export default function PracticePage({
   // Crop
   const [crop, setCrop] = useState<CropValue>("full");
 
+  // A-B loop
+  const [abA, setAbA] = useState<number | null>(null);
+  const [abB, setAbB] = useState<number | null>(null);
+
   // Add section dialog
   const [addSectionOpen, setAddSectionOpen] = useState(false);
   const [sectionName, setSectionName] = useState("");
@@ -359,38 +363,29 @@ export default function PracticePage({
       setCurrentTime(ct);
       setIsPlaying(!video.paused);
 
-      // Section looping
-      if (loopEnabled && selectedSections.size > 0 && lick) {
-        const activeSections = lick.sections.filter((s) =>
-          selectedSections.has(s.id)
-        );
-        if (activeSections.length > 0) {
-          const loopStart = Math.min(...activeSections.map((s) => s.startSec));
-          const loopEnd = Math.max(...activeSections.map((s) => s.endSec));
+      // A-B loop takes priority
+      if (abA !== null && abB !== null) {
+        if (ct >= abB - 0.05 || ct < abA - 0.1) {
+          video.currentTime = abA;
+          loopStartTimeRef.current = Date.now();
+        }
+      } else if (loopEnabled && lick) {
+        let loopStart = 0;
+        let loopEnd = duration;
 
-          if (ct >= loopEnd || ct < loopStart - 0.1) {
-            video.currentTime = loopStart;
-
-            // Track loop count for each selected section
-            activeSections.forEach((s) => {
-              const existing = sectionLogsRef.current.get(s.id);
-              if (existing) {
-                existing.loopCount += 1;
-                if (loopStartTimeRef.current !== null) {
-                  existing.durationSec += Math.floor(
-                    (Date.now() - loopStartTimeRef.current) / 1000
-                  );
-                }
-              } else {
-                sectionLogsRef.current.set(s.id, {
-                  sectionId: s.id,
-                  loopCount: 1,
-                  durationSec: 0,
-                });
-              }
-            });
-            loopStartTimeRef.current = Date.now();
+        if (selectedSections.size > 0) {
+          const activeSections = lick.sections.filter((s) =>
+            selectedSections.has(s.id)
+          );
+          if (activeSections.length > 0) {
+            loopStart = Math.min(...activeSections.map((s) => s.startSec));
+            loopEnd = Math.max(...activeSections.map((s) => s.endSec));
           }
+        }
+
+        if (loopEnd > 0 && (ct >= loopEnd - 0.05 || (selectedSections.size > 0 && ct < loopStart - 0.1))) {
+          video.currentTime = loopStart;
+          loopStartTimeRef.current = Date.now();
         }
       }
 
@@ -399,7 +394,7 @@ export default function PracticePage({
     rafRef.current = requestAnimationFrame(update);
 
     return () => cancelAnimationFrame(rafRef.current);
-  }, [loopEnabled, selectedSections, lick]);
+  }, [loopEnabled, selectedSections, lick, duration, abA, abB]);
 
   const handlePlayPause = () => {
     const video = videoRef.current;
@@ -503,7 +498,7 @@ export default function PracticePage({
     return (
       <div className="flex flex-col items-center justify-center h-screen gap-3">
         <p className="text-destructive">{error || "Lick not found"}</p>
-        <Button variant="outline" onClick={() => router.push("/")}>
+        <Button variant="outline" onClick={() => router.back()}>
           Back to Library
         </Button>
       </div>
@@ -515,8 +510,8 @@ export default function PracticePage({
   return (
     <div className="flex flex-col h-screen">
       {/* Header */}
-      <header className="flex items-center gap-3 px-4 py-3 border-b border-border bg-card">
-        <Button variant="ghost" size="sm" onClick={() => router.push("/")}>
+      <header className="flex items-center gap-3 px-4 py-2 border-b border-border bg-card">
+        <Button variant="ghost" size="sm" onClick={() => router.back()}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M19 12H5M12 19l-7-7 7-7" />
           </svg>
@@ -540,20 +535,16 @@ export default function PracticePage({
         </div>
       </header>
 
-      <div className="flex-1 overflow-y-auto">
-        <div className="max-w-4xl mx-auto p-4 lg:p-6 space-y-4">
+      <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+        <div className="max-w-4xl mx-auto w-full flex flex-col flex-1 min-h-0 px-4 lg:px-6 pt-2 gap-2">
           {/* Video Player */}
           {lick.videoClipPath && (
-            <div className="rounded-xl overflow-hidden bg-black max-h-[45vh]" style={crop !== "full" ? { maxHeight: "35vh" } : undefined}>
+            <div className="flex-1 min-h-0 max-h-[55vh] rounded-xl overflow-hidden bg-black">
               <video
                 ref={videoRef}
                 src={`/api/media/${lick.videoClipPath}`}
-                className="w-full aspect-video max-h-[45vh] object-contain"
-                style={crop !== "full" ? {
-                  ...CROP_PRESETS.find((p) => p.value === crop)?.style,
-                  height: "56.25vw",
-                  maxHeight: "35vh",
-                } : undefined}
+                className="w-full h-full object-contain"
+                style={crop !== "full" ? CROP_PRESETS.find((p) => p.value === crop)?.style : undefined}
                 onLoadedMetadata={() => {
                   const video = videoRef.current;
                   if (video) {
@@ -564,6 +555,7 @@ export default function PracticePage({
                     }
                   }
                 }}
+                preload="auto"
                 playsInline
                 controls={false}
                 onClick={handlePlayPause}
@@ -574,7 +566,7 @@ export default function PracticePage({
           {/* Timeline */}
           <div
             ref={timelineRef}
-            className="relative w-full h-14 bg-muted rounded-xl cursor-pointer select-none overflow-hidden"
+            className="relative w-full h-8 shrink-0 bg-muted rounded-lg cursor-pointer select-none overflow-hidden"
             onClick={handleTimelineClick}
           >
             {/* Section blocks */}
@@ -605,6 +597,23 @@ export default function PracticePage({
               );
             })}
 
+            {/* A-B loop region */}
+            {abA !== null && abB !== null && duration > 0 && (
+              <div
+                className="absolute top-0 bottom-0 bg-amber-500/25 border-x-2 border-amber-500/60 pointer-events-none z-5"
+                style={{
+                  left: `${(abA / duration) * 100}%`,
+                  width: `${((abB - abA) / duration) * 100}%`,
+                }}
+              />
+            )}
+            {abA !== null && abB === null && duration > 0 && (
+              <div
+                className="absolute top-0 bottom-0 w-0.5 bg-amber-500 pointer-events-none z-5"
+                style={{ left: `${(abA / duration) * 100}%` }}
+              />
+            )}
+
             {/* Playhead */}
             <div
               className="absolute top-0 bottom-0 w-0.5 bg-white shadow-lg pointer-events-none z-10"
@@ -621,9 +630,9 @@ export default function PracticePage({
           </div>
 
           {/* Controls */}
-          <div className="flex flex-col gap-4">
-            {/* Play/Pause + Loop */}
-            <div className="flex items-center justify-center gap-4">
+          <div className="shrink-0 flex flex-col gap-1.5 pb-2">
+            {/* Play/Pause + Loop + A-B */}
+            <div className="flex items-center justify-center gap-3">
               <Button
                 variant={loopEnabled ? "default" : "outline"}
                 size="icon-lg"
@@ -639,22 +648,59 @@ export default function PracticePage({
               </Button>
 
               <button
-                className="w-16 h-16 rounded-full bg-primary text-primary-foreground flex items-center justify-center hover:bg-primary/90 active:scale-95 transition-all shadow-lg"
+                className="w-12 h-12 rounded-full bg-primary text-primary-foreground flex items-center justify-center hover:bg-primary/90 active:scale-95 transition-all shadow-lg"
                 onClick={handlePlayPause}
               >
                 {isPlaying ? (
-                  <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
                     <rect x="6" y="4" width="4" height="16" rx="1" />
                     <rect x="14" y="4" width="4" height="16" rx="1" />
                   </svg>
                 ) : (
-                  <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
                     <polygon points="8,4 20,12 8,20" />
                   </svg>
                 )}
               </button>
 
-              <div className="w-10" /> {/* Spacer for centering */}
+              {/* A-B loop */}
+              <div className="flex items-center gap-1">
+                <button
+                  className={`px-2.5 py-1.5 rounded-full text-sm font-bold transition-colors ${
+                    abA !== null
+                      ? "bg-amber-500 text-white"
+                      : "bg-muted text-muted-foreground hover:text-foreground"
+                  }`}
+                  onClick={() => {
+                    if (abA !== null && abB !== null) {
+                      setAbA(null);
+                      setAbB(null);
+                    } else {
+                      setAbA(currentTime);
+                    }
+                  }}
+                  title={abA !== null ? `A: ${formatTime(abA)} — tap to clear` : "Set A point"}
+                >
+                  A
+                </button>
+                <button
+                  className={`px-2.5 py-1.5 rounded-full text-sm font-bold transition-colors ${
+                    abB !== null
+                      ? "bg-amber-500 text-white"
+                      : "bg-muted text-muted-foreground hover:text-foreground"
+                  } ${abA === null ? "opacity-40 pointer-events-none" : ""}`}
+                  onClick={() => {
+                    if (abB !== null) {
+                      setAbB(null);
+                    } else if (abA !== null && currentTime > abA) {
+                      setAbB(currentTime);
+                    }
+                  }}
+                  title={abB !== null ? `B: ${formatTime(abB)} — tap to clear` : "Set B point"}
+                >
+                  B
+                </button>
+              </div>
             </div>
 
             {/* Speed control */}
@@ -662,7 +708,7 @@ export default function PracticePage({
               {SPEED_OPTIONS.map((s) => (
                 <button
                   key={s}
-                  className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
+                  className={`px-2.5 py-1 rounded-full text-sm font-medium transition-colors ${
                     speed === s
                       ? "bg-primary text-primary-foreground"
                       : "bg-muted hover:bg-muted/80 text-muted-foreground hover:text-foreground"
@@ -674,124 +720,64 @@ export default function PracticePage({
               ))}
             </div>
 
-            {/* Pitch control */}
-            <div className="flex items-center justify-center gap-2">
-              <span className="text-xs text-muted-foreground mr-1">Pitch:</span>
-              <button
-                className="w-8 h-8 rounded-full bg-muted hover:bg-muted/80 text-foreground flex items-center justify-center text-lg font-medium disabled:opacity-40"
-                onClick={() => setPitch((p) => Math.max(-12, p - 1))}
-                disabled={pitch <= -12 || pitchProcessing}
-              >
-                -
-              </button>
-              <button
-                className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors min-w-[3.5rem] text-center ${
-                  pitch === 0
-                    ? "bg-muted text-muted-foreground"
-                    : "bg-primary text-primary-foreground"
-                }`}
-                onClick={() => setPitch(0)}
-                disabled={pitchProcessing}
-              >
-                {pitchProcessing ? "..." : `${pitch >= 0 ? "+" : ""}${pitch}st`}
-              </button>
-              <button
-                className="w-8 h-8 rounded-full bg-muted hover:bg-muted/80 text-foreground flex items-center justify-center text-lg font-medium disabled:opacity-40"
-                onClick={() => setPitch((p) => Math.min(12, p + 1))}
-                disabled={pitch >= 12 || pitchProcessing}
-              >
-                +
-              </button>
-            </div>
-
-            {/* Crop control */}
-            <div className="flex items-center justify-center gap-1.5">
-              <span className="text-xs text-muted-foreground mr-1">Crop:</span>
-              {CROP_PRESETS.map((preset) => (
+            {/* Pitch + Crop row */}
+            <div className="flex items-center justify-center gap-4 flex-wrap">
+              {/* Pitch control */}
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs text-muted-foreground">Pitch:</span>
                 <button
-                  key={preset.value}
-                  className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
-                    crop === preset.value
-                      ? "bg-primary text-primary-foreground"
-                      : "bg-muted hover:bg-muted/80 text-muted-foreground hover:text-foreground"
-                  }`}
-                  onClick={() => setCrop(preset.value)}
+                  className="w-7 h-7 rounded-full bg-muted hover:bg-muted/80 text-foreground flex items-center justify-center text-base font-medium disabled:opacity-40"
+                  onClick={() => setPitch((p) => Math.max(-12, p - 1))}
+                  disabled={pitch <= -12 || pitchProcessing}
                 >
-                  {preset.label}
+                  -
                 </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Section management */}
-          <div className="pt-4">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-sm font-medium">Sections</h3>
-              <Button variant="outline" size="sm" onClick={openAddSectionDialog}>
-                + Add Section
-              </Button>
-            </div>
-
-            {lick.sections.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                No sections yet. Add sections to loop specific parts.
-              </p>
-            ) : (
-              <div className="space-y-2">
-                {lick.sections.map((section, idx) => {
-                  const color = SECTION_COLORS[idx % SECTION_COLORS.length];
-                  const isSelected = selectedSections.has(section.id);
-                  return (
-                    <div
-                      key={section.id}
-                      className={`flex items-center gap-3 px-3 py-2.5 rounded-lg border transition-colors cursor-pointer ${
-                        isSelected
-                          ? `${color.active} ${color.border}`
-                          : `bg-card border-border hover:border-ring`
-                      }`}
-                      onClick={() => {
-                        setSelectedSections((prev) => {
-                          const next = new Set(prev);
-                          if (next.has(section.id)) next.delete(section.id);
-                          else next.add(section.id);
-                          return next;
-                        });
-                      }}
-                    >
-                      <div
-                        className={`w-3 h-3 rounded-full ${
-                          isSelected ? color.active : color.bg
-                        }`}
-                      />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium truncate">{section.name}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {formatTime(section.startSec)} - {formatTime(section.endSec)}
-                        </p>
-                      </div>
-                      <button
-                        className="p-1.5 rounded-lg hover:bg-destructive/20 text-muted-foreground hover:text-destructive transition-colors"
-                        title="Delete section"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDeleteSection(section.id);
-                        }}
-                      >
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <polyline points="3 6 5 6 21 6" />
-                          <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                        </svg>
-                      </button>
-                    </div>
-                  );
-                })}
+                <button
+                  className={`px-2.5 py-1 rounded-full text-sm font-medium transition-colors min-w-[3rem] text-center ${
+                    pitch === 0
+                      ? "bg-muted text-muted-foreground"
+                      : "bg-primary text-primary-foreground"
+                  }`}
+                  onClick={() => setPitch(0)}
+                  disabled={pitchProcessing}
+                >
+                  {pitchProcessing ? "..." : `${pitch >= 0 ? "+" : ""}${pitch}st`}
+                </button>
+                <button
+                  className="w-7 h-7 rounded-full bg-muted hover:bg-muted/80 text-foreground flex items-center justify-center text-base font-medium disabled:opacity-40"
+                  onClick={() => setPitch((p) => Math.min(12, p + 1))}
+                  disabled={pitch >= 12 || pitchProcessing}
+                >
+                  +
+                </button>
               </div>
-            )}
+
+              <div className="w-px h-5 bg-border" />
+
+              {/* Crop control */}
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs text-muted-foreground">Crop:</span>
+                {CROP_PRESETS.map((preset) => (
+                  <button
+                    key={preset.value}
+                    className={`px-2.5 py-1 rounded-full text-sm font-medium transition-colors ${
+                      crop === preset.value
+                        ? "bg-primary text-primary-foreground"
+                        : "bg-muted hover:bg-muted/80 text-muted-foreground hover:text-foreground"
+                    }`}
+                    onClick={() => setCrop(preset.value)}
+                  >
+                    {preset.label}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
+
         </div>
       </div>
 
-      {/* Add Section Dialog */}
+      {/* Add Section Dialog -- kept for programmatic use */}
       <Dialog open={addSectionOpen} onOpenChange={setAddSectionOpen}>
         <DialogContent>
           <DialogHeader>

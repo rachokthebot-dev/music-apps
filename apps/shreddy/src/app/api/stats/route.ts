@@ -2,6 +2,16 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { calculateStreak, buildDailyBreakdown, getDateRanges } from "@music-apps/shared";
 
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type",
+};
+
+export async function OPTIONS() {
+  return new NextResponse(null, { headers: corsHeaders });
+}
+
 export async function GET() {
   try {
     const { todayStart, weekStart } = getDateRanges();
@@ -89,9 +99,9 @@ export async function GET() {
       streak,
       dailyBreakdown,
       topSongs: topSongDetails,
-    });
+    }, { headers: corsHeaders });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to get stats";
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json({ error: message }, { status: 500, headers: corsHeaders });
   }
 }

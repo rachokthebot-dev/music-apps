@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useState, useEffect, useCallback } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -61,6 +61,7 @@ interface SourceItem {
   id: string;
   title: string;
   artist: string | null;
+  youtubeUrl: string;
   thumbnailUrl: string | null;
   processingStatus: string;
   durationSec: number | null;
@@ -70,15 +71,37 @@ interface SourceItem {
 
 type Tab = "licks" | "sources";
 
-export default function LibraryPage() {
+export default function LibraryPageWrapper() {
+  return (
+    <Suspense>
+      <LibraryPage />
+    </Suspense>
+  );
+}
+
+function LibraryPage() {
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<Tab>("licks");
+  const searchParams = useSearchParams();
+  const [activeTab, setActiveTab] = useState<Tab>(searchParams.get("tab") === "sources" ? "sources" : "licks");
   const [licks, setLicks] = useState<Lick[]>([]);
   const [folders, setFolders] = useState<Folder[]>([]);
   const [sources, setSources] = useState<SourceItem[]>([]);
-  const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
+  const [selectedFolder, _setSelectedFolder] = useState<string | null>(searchParams.get("folder"));
+
+  const setSelectedFolder = useCallback((folderId: string | null) => {
+    _setSelectedFolder(folderId);
+    const params = new URLSearchParams();
+    if (folderId) params.set("folder", folderId);
+    if (activeTab !== "licks") params.set("tab", activeTab);
+    const qs = params.toString();
+    window.history.replaceState(null, "", qs ? `/?${qs}` : "/");
+  }, [activeTab]);
   const [loading, setLoading] = useState(true);
   const [darkMode, setDarkMode] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+
+  // Three-dot menu for song cards
+  const [openSourceMenuId, setOpenSourceMenuId] = useState<string | null>(null);
 
   // Import dialog
   const [importOpen, setImportOpen] = useState(false);
@@ -100,10 +123,30 @@ export default function LibraryPage() {
   // Mobile sidebar
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
+  // Rename source/lick
+  const [renamingSource, setRenamingSource] = useState<SourceItem | null>(null);
+  const [renamingLick, setRenamingLick] = useState<Lick | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+
+  // Three-dot menu for lick cards
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+
+  // Import to Shreddy
+  const [shreddyImporting, setShreddyImporting] = useState<string | null>(null);
+  const [shreddyMessage, setShreddyMessage] = useState<{ id: string; type: "success" | "error"; text: string } | null>(null);
+
   useEffect(() => {
     const isDark = document.documentElement.classList.contains("dark");
     setDarkMode(isDark);
   }, []);
+
+  // Close three-dot menus on outside click
+  useEffect(() => {
+    if (!openMenuId && !openSourceMenuId) return;
+    function handleClick() { setOpenMenuId(null); setOpenSourceMenuId(null); }
+    document.addEventListener("click", handleClick);
+    return () => document.removeEventListener("click", handleClick);
+  }, [openMenuId, openSourceMenuId]);
 
   const toggleDarkMode = useCallback(() => {
     const next = !darkMode;
@@ -240,18 +283,130 @@ export default function LibraryPage() {
     }
   };
 
-  const filteredLicks = selectedFolder
-    ? licks.filter((l) => l.folderId === selectedFolder)
-    : licks;
+  const handleRenameSource = async () => {
+    if (!renamingSource || !renameValue.trim()) return;
+    try {
+      const res = await fetch(`/api/sources/${renamingSource.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: renameValue.trim() }),
+      });
+      if (res.ok) {
+        setRenamingSource(null);
+        setRenameValue("");
+        fetchData();
+      }
+    } catch {
+      // silently fail
+    }
+  };
+
+  const handleRenameLick = async () => {
+    if (!renamingLick || !renameValue.trim()) return;
+    try {
+      const res = await fetch(`/api/licks/${renamingLick.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: renameValue.trim() }),
+      });
+      if (res.ok) {
+        setRenamingLick(null);
+        setRenameValue("");
+        fetchData();
+      }
+    } catch {
+      // silently fail
+    }
+  };
+
+  const handleImportToShreddy = async (source: SourceItem) => {
+    if (!source.youtubeUrl) return;
+    setShreddyImporting(source.id);
+    setShreddyMessage(null);
+    try {
+      const shreddyPort = 3000;
+      const res = await fetch(`http://${window.location.hostname}:${shreddyPort}/api/import/youtube`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: source.youtubeUrl }),
+      });
+      if (res.ok) {
+        setShreddyMessage({ id: source.id, type: "success", text: "Sent to Shreddy!" });
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setShreddyMessage({ id: source.id, type: "error", text: data.error || "Failed" });
+      }
+    } catch {
+      setShreddyMessage({ id: source.id, type: "error", text: "Could not reach Shreddy" });
+    } finally {
+      setShreddyImporting(null);
+      setTimeout(() => setShreddyMessage(null), 3000);
+    }
+  };
+
+  const searchLower = searchQuery.toLowerCase();
+  const filteredLicks = licks.filter((l) => {
+    if (selectedFolder && l.folderId !== selectedFolder) return false;
+    if (searchQuery && !l.name.toLowerCase().includes(searchLower) && !l.source.title.toLowerCase().includes(searchLower)) return false;
+    return true;
+  });
+
+  const filteredSources = sources.filter((s) => {
+    if (searchQuery && !s.title.toLowerCase().includes(searchLower) && !(s.artist ?? "").toLowerCase().includes(searchLower)) return false;
+    return true;
+  });
 
   const selectedFolderName = selectedFolder
     ? folders.find((f) => f.id === selectedFolder)?.name
     : "All Licks";
 
+  // Color-code licks by source song
+  const SOURCE_COLORS = [
+    "border-l-blue-500", "border-l-emerald-500", "border-l-amber-500",
+    "border-l-rose-500", "border-l-violet-500", "border-l-cyan-500",
+    "border-l-orange-500", "border-l-pink-500", "border-l-teal-500", "border-l-indigo-500",
+  ];
+  const sourceColorMap = new Map<string, string>();
+  const sourcesWithMultipleLicks = new Set<string>();
+  // Count licks per source
+  const sourceCountMap = new Map<string, number>();
+  for (const l of licks) {
+    sourceCountMap.set(l.sourceId, (sourceCountMap.get(l.sourceId) ?? 0) + 1);
+  }
+  for (const [sid, count] of sourceCountMap) {
+    if (count > 1) sourcesWithMultipleLicks.add(sid);
+  }
+  let colorIdx = 0;
+  for (const l of licks) {
+    if (sourcesWithMultipleLicks.has(l.sourceId) && !sourceColorMap.has(l.sourceId)) {
+      sourceColorMap.set(l.sourceId, SOURCE_COLORS[colorIdx % SOURCE_COLORS.length]);
+      colorIdx++;
+    }
+  }
+  // Map folders to their dominant source color
+  const folderColorMap = new Map<string, string>();
+  for (const folder of folders) {
+    const folderLicks = licks.filter((l) => l.folderId === folder.id);
+    // Count sources in this folder
+    const srcCounts = new Map<string, number>();
+    for (const l of folderLicks) {
+      srcCounts.set(l.sourceId, (srcCounts.get(l.sourceId) ?? 0) + 1);
+    }
+    // Use the most common source's color
+    let maxCount = 0;
+    let dominantSrc = "";
+    for (const [sid, count] of srcCounts) {
+      if (count > maxCount) { maxCount = count; dominantSrc = sid; }
+    }
+    if (dominantSrc && sourceColorMap.has(dominantSrc)) {
+      folderColorMap.set(folder.id, sourceColorMap.get(dominantSrc)!);
+    }
+  }
+
   return (
     <div className="flex flex-col h-screen">
       {/* Header */}
-      <header className="flex items-center justify-between px-4 py-3 border-b border-border bg-card">
+      <header className="flex items-center justify-between px-4 py-2 border-b border-border bg-card">
         <div className="flex items-center gap-3">
           <button
             className="lg:hidden p-2 rounded-lg hover:bg-muted"
@@ -262,9 +417,30 @@ export default function LibraryPage() {
             </svg>
           </button>
           <h1 className="text-xl font-bold tracking-tight">LickBank</h1>
+          <div className="flex items-center gap-1 ml-2">
+            <button
+              className={`px-3 py-1 rounded-full text-sm font-medium transition-colors ${
+                activeTab === "licks"
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:text-foreground hover:bg-muted"
+              }`}
+              onClick={() => { setActiveTab("licks"); setSearchQuery(""); }}
+            >
+              Licks
+            </button>
+            <button
+              className={`px-3 py-1 rounded-full text-sm font-medium transition-colors ${
+                activeTab === "sources"
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:text-foreground hover:bg-muted"
+              }`}
+              onClick={() => { setActiveTab("sources"); setSearchQuery(""); }}
+            >
+              Songs
+            </button>
+          </div>
         </div>
         <div className="flex items-center gap-2">
-          <AppSwitcher currentAppId="lickbank" />
           <Button variant="ghost" size="icon" onClick={toggleDarkMode}>
             {darkMode ? (
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -313,39 +489,15 @@ export default function LibraryPage() {
               </DialogFooter>
             </DialogContent>
           </Dialog>
+          <AppSwitcher currentAppId="lickbank" />
         </div>
       </header>
 
-      {/* Tab Toggle */}
-      <div className="flex items-center gap-1 px-4 py-2 border-b border-border bg-card">
-        <button
-          className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${
-            activeTab === "licks"
-              ? "bg-primary text-primary-foreground"
-              : "text-muted-foreground hover:text-foreground hover:bg-muted"
-          }`}
-          onClick={() => setActiveTab("licks")}
-        >
-          Licks
-        </button>
-        <button
-          className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${
-            activeTab === "sources"
-              ? "bg-primary text-primary-foreground"
-              : "text-muted-foreground hover:text-foreground hover:bg-muted"
-          }`}
-          onClick={() => setActiveTab("sources")}
-        >
-          Sources
-        </button>
-      </div>
 
       <div className="flex flex-1 overflow-hidden">
-        {/* Sidebar - only visible on Licks tab */}
+        {/* Sidebar */}
         <aside
           className={`${
-            activeTab === "sources" ? "hidden" : ""
-          } ${
             sidebarOpen ? "translate-x-0" : "-translate-x-full"
           } lg:translate-x-0 fixed lg:static inset-y-0 left-0 z-40 w-64 bg-card border-r border-border transition-transform duration-200 flex flex-col pt-14 lg:pt-0`}
         >
@@ -356,6 +508,23 @@ export default function LibraryPage() {
               onClick={() => setSidebarOpen(false)}
             />
           )}
+          {/* Search */}
+          <div className="p-3 border-b border-border">
+            <div className="relative">
+              <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="11" cy="11" r="8" />
+                <path d="M21 21l-4.35-4.35" />
+              </svg>
+              <input
+                type="text"
+                placeholder={activeTab === "licks" ? "Search licks..." : "Search songs..."}
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-9 pr-3 py-1.5 rounded-lg bg-muted text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+              />
+            </div>
+          </div>
+          {activeTab === "licks" && (
           <div className="p-3 border-b border-border">
             <Dialog open={folderDialogOpen} onOpenChange={setFolderDialogOpen}>
               <DialogTrigger render={<Button variant="outline" className="w-full" size="sm" />}>
@@ -381,42 +550,68 @@ export default function LibraryPage() {
               </DialogContent>
             </Dialog>
           </div>
+          )}
           <nav className="flex-1 overflow-y-auto p-2">
-            <button
-              onClick={() => {
-                setSelectedFolder(null);
-                setSidebarOpen(false);
-              }}
-              className={`w-full text-left px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                selectedFolder === null
-                  ? "bg-primary text-primary-foreground"
-                  : "hover:bg-muted text-foreground"
-              }`}
-            >
-              All Licks
-              <span className="ml-auto float-right text-xs opacity-60">
-                {licks.length}
-              </span>
-            </button>
-            {folders.map((folder) => (
-              <button
-                key={folder.id}
-                onClick={() => {
-                  setSelectedFolder(folder.id);
-                  setSidebarOpen(false);
-                }}
-                className={`w-full text-left px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                  selectedFolder === folder.id
-                    ? "bg-primary text-primary-foreground"
-                    : "hover:bg-muted text-foreground"
-                }`}
-              >
-                {folder.name}
-                <span className="ml-auto float-right text-xs opacity-60">
-                  {folder._count.licks}
-                </span>
-              </button>
-            ))}
+            {activeTab === "licks" ? (
+              <>
+                <button
+                  onClick={() => {
+                    setSelectedFolder(null);
+                    setSidebarOpen(false);
+                  }}
+                  className={`w-full text-left px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                    selectedFolder === null
+                      ? "bg-primary text-primary-foreground"
+                      : "hover:bg-muted text-foreground"
+                  }`}
+                >
+                  All Licks
+                  <span className="ml-auto float-right text-xs opacity-60">
+                    {licks.length}
+                  </span>
+                </button>
+                {folders.map((folder) => {
+                  const fColor = folderColorMap.get(folder.id);
+                  return (
+                    <button
+                      key={folder.id}
+                      onClick={() => {
+                        setSelectedFolder(folder.id);
+                        setSidebarOpen(false);
+                      }}
+                      className={`w-full text-left px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                        selectedFolder === folder.id
+                          ? "bg-primary text-primary-foreground"
+                          : "hover:bg-muted text-foreground"
+                      } ${fColor && selectedFolder !== folder.id ? `border-l-2 ${fColor}` : ""}`}
+                    >
+                      {folder.name}
+                      <span className="ml-auto float-right text-xs opacity-60">
+                        {folder._count.licks}
+                      </span>
+                    </button>
+                  );
+                })}
+              </>
+            ) : (
+              <>
+                {sources.map((source) => {
+                  const color = sourceColorMap.get(source.id);
+                  return (
+                    <button
+                      key={source.id}
+                      onClick={() => router.push(`/sources/${source.id}`)}
+                      className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors hover:bg-muted truncate ${
+                        color ? `border-l-2 ${color}` : ""
+                      }`}
+                    >
+                      <span className="font-medium truncate block">{source.title}</span>
+                      <span className="text-xs text-muted-foreground">{source._count.licks} licks</span>
+                    </button>
+                  );
+                })}
+              </>
+            )}
           </nav>
         </aside>
 
@@ -446,70 +641,88 @@ export default function LibraryPage() {
                   {filteredLicks.map((lick) => (
                     <div
                       key={lick.id}
-                      className="group relative bg-card border border-border rounded-xl overflow-hidden hover:border-ring transition-colors cursor-pointer"
+                      className={`group relative bg-card rounded-xl hover:bg-muted/50 transition-colors cursor-pointer ${
+                        sourceColorMap.has(lick.sourceId) ? `border-l-2 ${sourceColorMap.get(lick.sourceId)}` : ""
+                      }`}
                       onClick={() => router.push(`/licks/${lick.id}`)}
                     >
                       {/* Thumbnail */}
-                      {lick.source.thumbnailUrl && (
-                        <div className="aspect-video bg-muted overflow-hidden">
+                      <div className="relative aspect-video bg-muted overflow-hidden rounded-xl">
+                        {lick.source.thumbnailUrl ? (
                           <img
                             src={lick.source.thumbnailUrl}
                             alt={lick.name}
                             className="w-full h-full object-cover"
                           />
-                          <div className="absolute top-2 right-2 bg-black/70 text-white text-xs px-1.5 py-0.5 rounded">
-                            {formatTime(lick.durationSec)}
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center">
+                            <span className="text-muted-foreground text-sm">No thumbnail</span>
                           </div>
-                        </div>
-                      )}
-                      {!lick.source.thumbnailUrl && (
-                        <div className="aspect-video bg-muted flex items-center justify-center">
-                          <span className="text-muted-foreground text-sm">No thumbnail</span>
-                          <div className="absolute top-2 right-2 bg-black/70 text-white text-xs px-1.5 py-0.5 rounded">
-                            {formatTime(lick.durationSec)}
-                          </div>
-                        </div>
-                      )}
-
-                      <div className="p-3">
-                        <h3 className="font-medium text-sm truncate">{lick.name}</h3>
-                        <p className="text-xs text-muted-foreground truncate mt-0.5">
-                          {lick.source.title}
-                        </p>
-                        {lick.folder && (
-                          <span className="inline-block mt-1.5 text-xs bg-muted px-2 py-0.5 rounded-full">
-                            {lick.folder.name}
-                          </span>
                         )}
+                        <div className="absolute bottom-1.5 right-1.5 bg-black/80 text-white text-[11px] font-medium px-1.5 py-0.5 rounded">
+                          {formatTime(lick.durationSec)}
+                        </div>
                       </div>
 
-                      {/* Quick actions (stop propagation to prevent navigation) */}
-                      <div className="absolute bottom-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button
-                          className="p-1.5 rounded-lg bg-card/90 border border-border hover:bg-muted text-muted-foreground hover:text-foreground"
-                          title="Move to folder"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setMoveTarget(lick);
-                          }}
-                        >
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
-                          </svg>
-                        </button>
-                        <button
-                          className="p-1.5 rounded-lg bg-card/90 border border-border hover:bg-destructive/20 text-muted-foreground hover:text-destructive"
-                          title="Delete"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setDeleteTarget(lick);
-                          }}
-                        >
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <polyline points="3 6 5 6 21 6" />
-                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                          </svg>
-                        </button>
+                      {/* Info row */}
+                      <div className="flex items-start gap-2 px-1 pt-2 pb-1">
+                        <div className="flex-1 min-w-0">
+                          <h3 className="font-medium text-sm leading-snug line-clamp-2">{lick.name}</h3>
+                          <p className="text-xs text-muted-foreground truncate mt-0.5">
+                            {lick.source.title}
+                          </p>
+                          {lick.folder && (
+                            <span className="inline-block mt-1 text-[11px] bg-muted px-1.5 py-0.5 rounded">
+                              {lick.folder.name}
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Three-dot menu */}
+                        <div className="relative" onClick={(e) => e.stopPropagation()}>
+                          <button
+                            className="p-1 rounded-full hover:bg-muted-foreground/15 text-muted-foreground transition-colors"
+                            onClick={() => setOpenMenuId(openMenuId === lick.id ? null : lick.id)}
+                          >
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                              <circle cx="12" cy="5" r="2" />
+                              <circle cx="12" cy="12" r="2" />
+                              <circle cx="12" cy="19" r="2" />
+                            </svg>
+                          </button>
+                          {openMenuId === lick.id && (
+                            <div className="absolute right-0 top-8 w-36 bg-card border border-border rounded-lg shadow-lg shadow-black/20 z-50 py-1 animate-in fade-in slide-in-from-top-1 duration-100">
+                              <button
+                                className="w-full text-left px-3 py-2 text-sm hover:bg-muted transition-colors"
+                                onClick={() => {
+                                  setRenamingLick(lick);
+                                  setRenameValue(lick.name);
+                                  setOpenMenuId(null);
+                                }}
+                              >
+                                Rename
+                              </button>
+                              <button
+                                className="w-full text-left px-3 py-2 text-sm hover:bg-muted transition-colors"
+                                onClick={() => {
+                                  setMoveTarget(lick);
+                                  setOpenMenuId(null);
+                                }}
+                              >
+                                Move to folder
+                              </button>
+                              <button
+                                className="w-full text-left px-3 py-2 text-sm text-rose-400 hover:bg-muted transition-colors"
+                                onClick={() => {
+                                  setDeleteTarget(lick);
+                                  setOpenMenuId(null);
+                                }}
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </div>
                   ))}
@@ -519,84 +732,128 @@ export default function LibraryPage() {
           ) : (
             /* Sources Tab */
             <>
-              <div className="mb-4">
-                <h2 className="text-lg font-semibold">Imported Videos</h2>
-              </div>
-
               {loading ? (
                 <div className="flex items-center justify-center h-48">
                   <p className="text-muted-foreground">Loading...</p>
                 </div>
-              ) : sources.length === 0 ? (
+              ) : filteredSources.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-48 gap-3">
-                  <p className="text-muted-foreground">No videos imported yet.</p>
+                  <p className="text-muted-foreground">No songs imported yet.</p>
                   <p className="text-sm text-muted-foreground">
                     Import a YouTube video to get started.
                   </p>
                 </div>
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-                  {sources.map((source) => {
+                  {filteredSources.map((source) => {
                     const isReady = source.processingStatus === "ready";
                     const isError = source.processingStatus === "error";
                     const isProcessing = source.processingStatus === "processing" || source.processingStatus === "pending";
+                    const color = sourceColorMap.get(source.id);
                     return (
                       <div
                         key={source.id}
-                        className={`group relative bg-card border border-border rounded-xl overflow-hidden transition-colors ${
-                          isReady ? "hover:border-ring cursor-pointer" : "opacity-60"
-                        }`}
+                        className={`group relative bg-card rounded-xl transition-colors ${
+                          isReady ? "hover:bg-muted/50 cursor-pointer" : "opacity-60"
+                        } ${color ? `border-l-2 ${color}` : ""}`}
                         onClick={() => isReady && router.push(`/sources/${source.id}`)}
                       >
                         {/* Thumbnail */}
-                        {source.thumbnailUrl ? (
-                          <div className="aspect-video bg-muted overflow-hidden relative">
+                        <div className="relative aspect-video bg-muted overflow-hidden rounded-xl">
+                          {source.thumbnailUrl ? (
                             <img
                               src={source.thumbnailUrl}
                               alt={source.title}
                               className="w-full h-full object-cover"
                             />
-                            {source.durationSec && (
-                              <div className="absolute top-2 right-2 bg-black/70 text-white text-xs px-1.5 py-0.5 rounded">
-                                {formatTime(source.durationSec)}
-                              </div>
-                            )}
-                            {/* Status badge */}
-                            {isProcessing && (
-                              <div className="absolute top-2 left-2 bg-amber-500/90 text-white text-xs px-2 py-0.5 rounded flex items-center gap-1">
-                                <svg className="animate-spin h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
-                                  <path d="M12 2a10 10 0 0 1 10 10" strokeLinecap="round" />
-                                </svg>
-                                Processing
-                              </div>
-                            )}
-                            {isError && (
-                              <div className="absolute top-2 left-2 bg-destructive/90 text-white text-xs px-2 py-0.5 rounded">
-                                Error
-                              </div>
-                            )}
-                          </div>
-                        ) : (
-                          <div className="aspect-video bg-muted flex items-center justify-center">
-                            <span className="text-muted-foreground text-sm">No thumbnail</span>
-                          </div>
-                        )}
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center">
+                              <span className="text-muted-foreground text-sm">No thumbnail</span>
+                            </div>
+                          )}
+                          {source.durationSec && (
+                            <div className="absolute bottom-1.5 right-1.5 bg-black/80 text-white text-[11px] font-medium px-1.5 py-0.5 rounded">
+                              {formatTime(source.durationSec)}
+                            </div>
+                          )}
+                          {isProcessing && (
+                            <div className="absolute top-1.5 left-1.5 bg-amber-500/90 text-white text-xs px-2 py-0.5 rounded flex items-center gap-1">
+                              <svg className="animate-spin h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                                <path d="M12 2a10 10 0 0 1 10 10" strokeLinecap="round" />
+                              </svg>
+                              Processing
+                            </div>
+                          )}
+                          {isError && (
+                            <div className="absolute top-1.5 left-1.5 bg-destructive/90 text-white text-xs px-2 py-0.5 rounded">
+                              Error
+                            </div>
+                          )}
+                        </div>
 
-                        <div className="p-3">
-                          <h3 className="font-medium text-sm truncate">{source.title}</h3>
-                          <div className="flex items-center gap-2 mt-1">
-                            <span className="text-xs text-muted-foreground">
+                        {/* Info row */}
+                        <div className="flex items-start gap-2 px-1 pt-2 pb-1">
+                          <div className="flex-1 min-w-0">
+                            <h3 className="font-medium text-sm leading-snug line-clamp-2">{source.title}</h3>
+                            <p className="text-xs text-muted-foreground mt-0.5">
                               {source._count.licks} {source._count.licks === 1 ? "lick" : "licks"}
-                            </span>
-                            {source.artist && (
-                              <>
-                                <span className="text-xs text-border">|</span>
-                                <span className="text-xs text-muted-foreground truncate">
-                                  {source.artist}
-                                </span>
-                              </>
-                            )}
+                              {source.artist && ` · ${source.artist}`}
+                            </p>
                           </div>
+
+                          {/* Three-dot menu */}
+                          {isReady && (
+                            <div className="relative" onClick={(e) => e.stopPropagation()}>
+                              <button
+                                className="p-1 rounded-full hover:bg-muted-foreground/15 text-muted-foreground transition-colors"
+                                onClick={() => setOpenSourceMenuId(openSourceMenuId === source.id ? null : source.id)}
+                              >
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                                  <circle cx="12" cy="5" r="2" />
+                                  <circle cx="12" cy="12" r="2" />
+                                  <circle cx="12" cy="19" r="2" />
+                                </svg>
+                              </button>
+                              {openSourceMenuId === source.id && (
+                                <div className="absolute right-0 top-8 w-40 bg-card border border-border rounded-lg shadow-lg shadow-black/20 z-50 py-1 animate-in fade-in slide-in-from-top-1 duration-100">
+                                  <button
+                                    className="w-full text-left px-3 py-2 text-sm hover:bg-muted transition-colors"
+                                    onClick={() => {
+                                      setRenamingSource(source);
+                                      setRenameValue(source.title);
+                                      setOpenSourceMenuId(null);
+                                    }}
+                                  >
+                                    Rename
+                                  </button>
+                                  <button
+                                    className="w-full text-left px-3 py-2 text-sm hover:bg-muted transition-colors"
+                                    disabled={shreddyImporting === source.id}
+                                    onClick={() => {
+                                      handleImportToShreddy(source);
+                                      setOpenSourceMenuId(null);
+                                    }}
+                                  >
+                                    {shreddyImporting === source.id
+                                      ? "Sending..."
+                                      : shreddyMessage?.id === source.id
+                                      ? shreddyMessage.text
+                                      : "Send to Shreddy"}
+                                  </button>
+                                  {source.youtubeUrl && (
+                                    <a
+                                      href={source.youtubeUrl}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="block w-full text-left px-3 py-2 text-sm hover:bg-muted transition-colors"
+                                    >
+                                      Open on YouTube
+                                    </a>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          )}
                         </div>
                       </div>
                     );
@@ -626,6 +883,56 @@ export default function LibraryPage() {
               onClick={() => deleteTarget && handleDeleteLick(deleteTarget)}
             >
               Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Rename source dialog */}
+      <Dialog open={renamingSource !== null} onOpenChange={(open) => { if (!open) setRenamingSource(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Rename Song</DialogTitle>
+          </DialogHeader>
+          <Input
+            placeholder="New title"
+            value={renameValue}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setRenameValue(e.target.value)}
+            onKeyDown={(e: React.KeyboardEvent) => {
+              if (e.key === "Enter") handleRenameSource();
+            }}
+          />
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setRenamingSource(null)}>
+              Cancel
+            </Button>
+            <Button onClick={handleRenameSource} disabled={!renameValue.trim()}>
+              Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Rename lick dialog */}
+      <Dialog open={renamingLick !== null} onOpenChange={(open) => { if (!open) setRenamingLick(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Rename Lick</DialogTitle>
+          </DialogHeader>
+          <Input
+            placeholder="New name"
+            value={renameValue}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setRenameValue(e.target.value)}
+            onKeyDown={(e: React.KeyboardEvent) => {
+              if (e.key === "Enter") handleRenameLick();
+            }}
+          />
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setRenamingLick(null)}>
+              Cancel
+            </Button>
+            <Button onClick={handleRenameLick} disabled={!renameValue.trim()}>
+              Save
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { Suspense, useEffect, useState, useCallback } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -110,11 +110,26 @@ const SORT_OPTIONS: { value: SortMode; label: string; icon: React.ReactNode }[] 
   { value: "recent", label: "Recent", icon: <Clock className="size-3.5" /> },
 ];
 
-export default function LibraryPage() {
+export default function LibraryPageWrapper() {
+  return (
+    <Suspense>
+      <LibraryPage />
+    </Suspense>
+  );
+}
+
+function LibraryPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [songs, setSongs] = useState<Song[]>([]);
   const [folders, setFolders] = useState<Folder[]>([]);
-  const [activeFolder, setActiveFolder] = useState<string | null>(null);
+  const [activeFolder, _setActiveFolder] = useState<string | null>(searchParams.get("folder"));
+
+  const setActiveFolder = useCallback((folderId: string | null) => {
+    _setActiveFolder(folderId);
+    const url = folderId ? `/?folder=${folderId}` : "/";
+    router.replace(url, { scroll: false });
+  }, [router]);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [searchQuery, setSearchQuery] = useState("");
@@ -452,7 +467,6 @@ export default function LibraryPage() {
       <div className="flex items-center justify-between mb-4">
         <h1 className="text-xl font-semibold tracking-tight text-foreground">Shreddy</h1>
         <div className="flex items-center gap-1">
-          <AppSwitcher currentAppId="shreddy" />
           <Link
             href="/stats"
             className="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted active:scale-90 transition-all"
@@ -495,15 +509,18 @@ export default function LibraryPage() {
             )}
           </Button>
         </div>
-        <label className="flex items-center gap-1.5 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={analyzeSections}
-            onChange={(e) => setAnalyzeSections(e.target.checked)}
-            className="size-3.5 rounded"
-          />
-          <span className="text-[11px] text-muted-foreground">Analyze structure (AI)</span>
-        </label>
+        <div className="flex items-center gap-2">
+          <label className="flex items-center gap-1.5 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={analyzeSections}
+              onChange={(e) => setAnalyzeSections(e.target.checked)}
+              className="size-3.5 rounded"
+            />
+            <span className="text-[11px] text-muted-foreground">Analyze structure (AI)</span>
+          </label>
+          <AppSwitcher currentAppId="shreddy" />
+        </div>
         <input
           id="file-upload"
           type="file"

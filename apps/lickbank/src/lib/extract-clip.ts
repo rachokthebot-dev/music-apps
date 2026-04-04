@@ -23,8 +23,10 @@ export async function extractClip(
       [
         "-i", sourceVideoPath,
         "-ss", startSec.toString(),
-        "-to", endSec.toString(),
-        "-c", "copy",
+        "-t", (endSec - startSec).toString(),
+        "-c:v", "libx264", "-preset", "fast", "-crf", "22",
+        "-c:a", "aac",
+        "-movflags", "+faststart",
         "-y",
         videoClipPath,
       ],

@@ -102,7 +102,7 @@ async function fetchAppStats(appId: string): Promise<AppStats | null> {
   const app = APP_REGISTRY.find((a) => a.id === appId);
   if (!app) return null;
   try {
-    const baseUrl = getAppUrl(app).replace(app.path, "");
+    const baseUrl = `${window.location.protocol}//${window.location.hostname}:${app.port}`;
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 5000);
     const res = await fetch(`${baseUrl}/api/stats`, { signal: controller.signal });

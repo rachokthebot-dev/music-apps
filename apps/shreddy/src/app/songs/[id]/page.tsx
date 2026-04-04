@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef, useCallback, useMemo } from "react";
 import { use } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -146,6 +147,7 @@ export default function PracticePage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = use(params);
+  const router = useRouter();
   const [song, setSong] = useState<Song | null>(null);
   const [playing, setPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
@@ -757,10 +759,10 @@ export default function PracticePage({
   if (loadError) {
     return (
       <main className="flex-1 max-w-2xl mx-auto w-full px-4 py-8">
-        <Link href="/" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground mb-6">
+        <button onClick={() => router.back()} className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground mb-6">
           <ArrowLeft className="size-4" />
           Library
-        </Link>
+        </button>
         <div className="text-center py-12">
           <div className="inline-flex items-center justify-center size-14 rounded-full bg-destructive/10 mb-4">
             <X className="size-6 text-destructive" />
@@ -780,10 +782,10 @@ export default function PracticePage({
   if (song.processingStatus !== "ready") {
     return (
       <main className="flex-1 max-w-2xl mx-auto w-full px-4 py-8">
-        <Link href="/" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground mb-6">
+        <button onClick={() => router.back()} className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground mb-6">
           <ArrowLeft className="size-4" />
           Library
-        </Link>
+        </button>
         <h1 className="text-xl font-semibold mb-4 text-foreground">{song.title}</h1>
         <div className="flex items-center gap-2 text-muted-foreground">
           <Loader2 className="size-4 animate-spin" />
@@ -808,12 +810,12 @@ export default function PracticePage({
       <div className="mb-4">
         {/* Header row: back + title + metadata */}
         <div className="flex items-start gap-3 mb-4">
-          <Link
-            href="/"
+          <button
+            onClick={() => router.back()}
             className="p-2 -ml-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted active:scale-90 transition-all mt-0.5 shrink-0"
           >
             <ArrowLeft className="size-5" />
-          </Link>
+          </button>
           <div className="flex-1 min-w-0">
             {editingTitle ? (
               <div className="flex items-center gap-2">

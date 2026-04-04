@@ -27,6 +27,38 @@ export async function GET(
   }
 }
 
+export async function PATCH(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await params;
+    const body = await request.json();
+
+    const updateData: Record<string, string> = {};
+    if (typeof body.title === "string" && body.title.trim()) {
+      updateData.title = body.title.trim();
+    }
+    if (typeof body.artist === "string") {
+      updateData.artist = body.artist.trim();
+    }
+
+    if (Object.keys(updateData).length === 0) {
+      return NextResponse.json({ error: "No valid fields to update" }, { status: 400 });
+    }
+
+    const source = await prisma.source.update({
+      where: { id },
+      data: updateData,
+    });
+
+    return NextResponse.json(source);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to update source";
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
+
 export async function DELETE(
   _request: Request,
   { params }: { params: Promise<{ id: string }> }

@@ -41,20 +41,20 @@ export function AppSwitcher({ currentAppId }: AppSwitcherProps) {
     <div ref={menuRef} className="relative">
       <button
         onClick={() => setOpen(!open)}
-        className="flex items-center gap-1.5 px-2 py-1 md:px-2.5 md:py-1.5 rounded-lg text-xs md:text-sm font-medium bg-secondary text-secondary-foreground hover:bg-accent transition-colors"
+        className="flex items-center justify-center w-9 h-9 rounded-lg bg-secondary text-secondary-foreground hover:bg-accent transition-colors"
         aria-expanded={open}
         aria-haspopup="true"
+        title={currentApp?.name ?? "Apps"}
       >
         <GridIcon />
-        <span className="hidden sm:inline">{currentApp?.name ?? "Apps"}</span>
       </button>
 
       {open && (
         <div
           className="fixed mt-2 w-64 md:w-72 rounded-xl border border-border bg-card shadow-lg shadow-black/20 z-50 animate-in fade-in slide-in-from-top-1 duration-150"
           style={{
-            top: menuRef.current ? menuRef.current.getBoundingClientRect().bottom : 0,
-            right: 8,
+            top: menuRef.current ? menuRef.current.getBoundingClientRect().bottom + 4 : 0,
+            right: menuRef.current ? window.innerWidth - menuRef.current.getBoundingClientRect().right : 8,
           }}
         >
           <div className="px-3 py-2 border-b border-border">
