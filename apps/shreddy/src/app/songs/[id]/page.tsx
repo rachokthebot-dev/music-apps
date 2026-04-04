@@ -181,6 +181,12 @@ export default function PracticePage({
   const [sectionStart, setSectionStart] = useState("");
   const [sectionEnd, setSectionEnd] = useState("");
 
+  // Interactive section border editing
+  const [editMode, setEditMode] = useState(false);
+  const [dragBorderIdx, setDragBorderIdx] = useState<number | null>(null);
+  const [dragSections, setDragSections] = useState<Section[] | null>(null);
+  const waveformRef = useRef<HTMLDivElement>(null);
+
   const [sessionId, setSessionId] = useState<string | null>(null);
   const sessionIdRef = useRef<string | null>(null);
   const [activePlayTime, setActivePlayTime] = useState(0);
@@ -744,6 +750,73 @@ export default function PracticePage({
     setSectionEnd(formatTime(currentTime));
   }
 
+  // Interactive border dragging
+  const displaySections = dragSections ?? song?.sections ?? [];
+
+  function handleBorderPointerDown(borderIdx: number, e: React.PointerEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!song) return;
+    setDragBorderIdx(borderIdx);
+    setDragSections([...song.sections]);
+
+    const onMove = (ev: PointerEvent) => {
+      if (!waveformRef.current || !song) return;
+      const rect = waveformRef.current.getBoundingClientRect();
+      const pct = Math.max(0, Math.min(1, (ev.clientX - rect.left) / rect.width));
+      const timeSec = pct * duration;
+
+      setDragSections(prev => {
+        if (!prev) return prev;
+        const sections = [...prev];
+        const left = sections[borderIdx];
+        const right = sections[borderIdx + 1];
+        if (!left || !right) return prev;
+
+        // Minimum section width of 0.5 seconds
+        const minLeft = (borderIdx > 0 ? sections[borderIdx - 1].endSec : left.startSec) + 0.5;
+        const maxRight = (borderIdx + 2 < sections.length ? sections[borderIdx + 2].startSec : right.endSec) - 0.5;
+        const clampedTime = Math.max(minLeft, Math.min(maxRight, timeSec));
+
+        sections[borderIdx] = { ...left, endSec: clampedTime };
+        sections[borderIdx + 1] = { ...right, startSec: clampedTime };
+        return sections;
+      });
+    };
+
+    const onUp = async () => {
+      document.removeEventListener("pointermove", onMove);
+      document.removeEventListener("pointerup", onUp);
+      setDragBorderIdx(null);
+
+      // Persist the changes and update local song state (no refetch to avoid stopping music)
+      setDragSections(prev => {
+        if (!prev || !song) return null;
+        const left = prev[borderIdx];
+        const right = prev[borderIdx + 1];
+        if (left && right) {
+          // Save to API in background
+          fetch(`/api/sections/${left.id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ endSec: left.endSec }),
+          }).catch(() => {});
+          fetch(`/api/sections/${right.id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ startSec: right.startSec }),
+          }).catch(() => {});
+          // Update local song state with new section boundaries
+          setSong(s => s ? { ...s, sections: prev } : s);
+        }
+        return null;
+      });
+    };
+
+    document.addEventListener("pointermove", onMove);
+    document.addEventListener("pointerup", onUp);
+  }
+
   // Format practice time
   function formatPracticeTime(sec: number): string {
     if (sec < 60) return `${sec}s`;
@@ -888,8 +961,10 @@ export default function PracticePage({
         {/* === LARGE WAVEFORM BAR (Cinema Transport) === */}
         {duration > 0 && song.sections.length > 0 ? (
           <div className="mb-3">
-            <div className="relative h-20 rounded-2xl overflow-hidden bg-gradient-to-b from-zinc-800 to-zinc-900 shadow-inner">
-              {song.sections.map((section, idx) => {
+            <div ref={waveformRef} className={`relative h-20 rounded-2xl overflow-hidden bg-gradient-to-b from-zinc-800 to-zinc-900 shadow-inner transition-all ${
+            editMode ? "ring-2 ring-yellow-500/50 ring-offset-1 ring-offset-background" : ""
+          }`}>
+              {displaySections.map((section, idx) => {
                 const leftPct = (section.startSec / duration) * 100;
                 const widthPct = ((section.endSec - section.startSec) / duration) * 100;
                 const isSelected = selectedSectionIds.includes(section.id);
@@ -910,7 +985,7 @@ export default function PracticePage({
                     style={{
                       left: `${leftPct}%`,
                       width: `${widthPct}%`,
-                      borderRight: idx < song.sections.length - 1 ? "1px solid rgba(255,255,255,0.08)" : "none",
+                      borderRight: idx < displaySections.length - 1 ? "1px solid rgba(255,255,255,0.08)" : "none",
                     }}
                   >
                     {widthPct > 4 && (
@@ -918,6 +993,28 @@ export default function PracticePage({
                         {section.name}
                       </span>
                     )}
+                  </div>
+                );
+              })}
+              {/* Drag handles for edit mode */}
+              {editMode && displaySections.map((section, idx) => {
+                if (idx >= displaySections.length - 1) return null;
+                const borderPct = (section.endSec / duration) * 100;
+                const isDragging = dragBorderIdx === idx;
+                return (
+                  <div
+                    key={`border-${idx}`}
+                    className={`absolute inset-y-0 z-30 flex items-center justify-center cursor-ew-resize touch-none ${
+                      isDragging ? "" : "group/handle"
+                    }`}
+                    style={{ left: `calc(${borderPct}% - 12px)`, width: "24px" }}
+                    onPointerDown={(e) => handleBorderPointerDown(idx, e)}
+                  >
+                    <div className={`w-1 h-12 rounded-full transition-all ${
+                      isDragging
+                        ? "bg-yellow-400 shadow-[0_0_8px_rgba(250,204,21,0.6)] w-1.5"
+                        : "bg-white/50 group-hover/handle:bg-yellow-400 group-hover/handle:shadow-[0_0_6px_rgba(250,204,21,0.4)]"
+                    }`} />
                   </div>
                 );
               })}
@@ -1115,9 +1212,22 @@ export default function PracticePage({
         <div className="flex items-center gap-2 mb-2 px-1">
           <h2 className="text-sm font-semibold text-foreground">Sections</h2>
           <span className="text-[11px] text-muted-foreground">Tap to loop</span>
-          <Button variant="outline" size="sm" onClick={openNewSection} className="gap-1 h-7 text-xs ml-auto">
-            <Plus className="size-3" /> Add
-          </Button>
+          <div className="flex items-center gap-1.5 ml-auto">
+            {song.sections.length > 1 && (
+              <Button
+                variant={editMode ? "default" : "outline"}
+                size="sm"
+                onClick={() => setEditMode(!editMode)}
+                className="gap-1 h-7 text-xs"
+              >
+                <Pencil className="size-3" />
+                {editMode ? "Done" : "Edit"}
+              </Button>
+            )}
+            <Button variant="outline" size="sm" onClick={openNewSection} className="gap-1 h-7 text-xs">
+              <Plus className="size-3" /> Add
+            </Button>
+          </div>
         </div>
         {song.sections.length === 0 ? (
           <div className="text-center py-6">
@@ -1258,12 +1368,20 @@ export default function PracticePage({
             )}
           </button>
           {notesOpen && (
-            <textarea
-              value={notesDraft}
-              onChange={(e) => handleNotesChange(e.target.value)}
-              placeholder="Add practice notes, chord progressions, reminders..."
-              className="w-full mt-3 p-3 text-sm border border-border rounded-lg bg-background resize-y min-h-[100px] focus:outline-none focus:ring-2 focus:ring-ring/30 text-foreground placeholder:text-muted-foreground"
-            />
+            <div className="mt-3 flex border border-border rounded-lg bg-background overflow-hidden min-h-[200px]">
+              <div className="w-9 shrink-0 bg-muted/30 border-r border-border py-3 select-none">
+                {(notesDraft || "\n").split("\n").map((_, i) => (
+                  <div key={i} className="text-[11px] text-muted-foreground/50 text-right pr-2 font-mono leading-[1.5rem]">{i + 1}</div>
+                ))}
+              </div>
+              <textarea
+                value={notesDraft}
+                onChange={(e) => handleNotesChange(e.target.value)}
+                placeholder="Add practice notes..."
+                className="flex-1 p-3 text-sm leading-[1.5rem] bg-transparent resize-none min-h-[200px] focus:outline-none text-foreground placeholder:text-muted-foreground"
+                style={{ fontFamily: "'Courier New', Courier, monospace" }}
+              />
+            </div>
           )}
         </div>
       </div>

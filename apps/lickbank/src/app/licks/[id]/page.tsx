@@ -98,7 +98,7 @@ export default function PracticePage({
   const timelineRef = useRef<HTMLDivElement>(null);
   const rafRef = useRef<number>(0);
   const sessionIdRef = useRef<string | null>(null);
-  const sessionStartRef = useRef<number>(Date.now());
+  const activePlayTimeRef = useRef(0);
   const sectionLogsRef = useRef<Map<string, SectionLog>>(new Map());
   const flushTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const loopStartTimeRef = useRef<number | null>(null);
@@ -176,7 +176,7 @@ export default function PracticePage({
         if (res.ok) {
           const session = await res.json();
           sessionIdRef.current = session.id;
-          sessionStartRef.current = Date.now();
+          activePlayTimeRef.current = 0;
         }
       } catch {
         // silently fail
@@ -192,7 +192,7 @@ export default function PracticePage({
     return () => {
       // End session
       if (sessionIdRef.current) {
-        const durationSec = Math.floor((Date.now() - sessionStartRef.current) / 1000);
+        const durationSec = activePlayTimeRef.current;
         flushSectionLogs();
         fetch(`/api/practice-sessions/${sessionIdRef.current}`, {
           method: "PATCH",
@@ -395,6 +395,15 @@ export default function PracticePage({
 
     return () => cancelAnimationFrame(rafRef.current);
   }, [loopEnabled, selectedSections, lick, duration, abA, abB]);
+
+  // Track active play time (only when video is playing)
+  useEffect(() => {
+    if (!isPlaying) return;
+    const timer = setInterval(() => {
+      activePlayTimeRef.current += 1;
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [isPlaying]);
 
   const handlePlayPause = () => {
     const video = videoRef.current;

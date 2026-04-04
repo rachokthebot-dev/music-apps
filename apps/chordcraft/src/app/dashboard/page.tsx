@@ -5,12 +5,20 @@ import { LayoutDashboard, Clock, Flame, Calendar, TrendingUp, Guitar, Music, Hea
 import { getAppUrl, APP_REGISTRY } from "@music-apps/shared/app-registry";
 import { AppSwitcher } from "@music-apps/shared/app-switcher";
 
+interface TopItem {
+  name: string;
+  subtitle: string;
+  totalTimeSec: number;
+  sessionCount: number;
+}
+
 interface AppStats {
   todaySec: number;
   weekSec: number;
   allTimeSec: number;
   streak: number;
   dailyBreakdown: { date: string; totalSec: number }[];
+  topItems: TopItem[];
 }
 
 interface DashboardData {
@@ -25,6 +33,7 @@ const emptyStats: AppStats = {
   allTimeSec: 0,
   streak: 0,
   dailyBreakdown: [],
+  topItems: [],
 };
 
 function formatDuration(totalSec: number): string {
@@ -92,7 +101,7 @@ function getChordCraftStats(): AppStats {
       checkDate.setDate(checkDate.getDate() - 1);
     }
 
-    return { todaySec, weekSec, allTimeSec, streak, dailyBreakdown };
+    return { todaySec, weekSec, allTimeSec, streak, dailyBreakdown, topItems: [] };
   } catch {
     return emptyStats;
   }
@@ -109,12 +118,31 @@ async function fetchAppStats(appId: string): Promise<AppStats | null> {
     clearTimeout(timeout);
     if (!res.ok) return null;
     const data = await res.json();
+    // Normalize topSongs (Shreddy) and topLicks (LickBank) to topItems
+    const topItems: TopItem[] = [];
+    for (const item of data.topSongs ?? []) {
+      topItems.push({
+        name: item.title ?? "Unknown",
+        subtitle: item.artist ?? "",
+        totalTimeSec: item.totalTimeSec ?? 0,
+        sessionCount: item.sessionCount ?? 0,
+      });
+    }
+    for (const item of data.topLicks ?? []) {
+      topItems.push({
+        name: item.name ?? "Unknown",
+        subtitle: item.sourceTitle ?? "",
+        totalTimeSec: item.totalTimeSec ?? 0,
+        sessionCount: item.sessionCount ?? 0,
+      });
+    }
     return {
       todaySec: data.today?.durationSec ?? 0,
       weekSec: data.week?.durationSec ?? 0,
       allTimeSec: data.allTime?.durationSec ?? 0,
       streak: data.streak ?? 0,
       dailyBreakdown: data.dailyBreakdown ?? [],
+      topItems,
     };
   } catch {
     return null;
@@ -124,6 +152,7 @@ async function fetchAppStats(appId: string): Promise<AppStats | null> {
 export default function DashboardPage() {
   const [data, setData] = useState<DashboardData>({ shreddy: null, lickbank: null, chordcraft: null });
   const [loading, setLoading] = useState(true);
+  const [selectedApp, setSelectedApp] = useState<string | null>(null);
 
   const loadAll = useCallback(async () => {
     const [shreddy, lickbank] = await Promise.all([
@@ -222,27 +251,112 @@ export default function DashboardPage() {
               {apps.map((app) => {
                 const Icon = app.icon;
                 const stats = app.stats;
+                const isExpanded = selectedApp === app.id;
                 return (
-                  <div key={app.id} className="bg-card border border-border rounded-xl p-4 md:p-5 flex items-center gap-4">
-                    <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${app.bg}`}>
-                      <Icon className={`w-5 h-5 ${app.color}`} />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="font-semibold text-sm">{app.name}</div>
-                      {stats ? (
-                        <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-muted-foreground mt-0.5">
-                          <span>Today: {formatDuration(stats.todaySec)}</span>
-                          <span>Week: {formatDuration(stats.weekSec)}</span>
-                          <span>Total: {formatDuration(stats.allTimeSec)}</span>
+                  <div key={app.id} className="bg-card border border-border rounded-xl overflow-hidden">
+                    <button
+                      className="w-full p-4 md:p-5 flex items-center gap-4 hover:bg-muted/30 transition-colors"
+                      onClick={() => setSelectedApp(isExpanded ? null : app.id)}
+                    >
+                      <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${app.bg}`}>
+                        <Icon className={`w-5 h-5 ${app.color}`} />
+                      </div>
+                      <div className="flex-1 min-w-0 text-left">
+                        <div className="font-semibold text-sm">{app.name}</div>
+                        {stats ? (
+                          <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-muted-foreground mt-0.5">
+                            <span>Today: {formatDuration(stats.todaySec)}</span>
+                            <span>Week: {formatDuration(stats.weekSec)}</span>
+                            <span>Total: {formatDuration(stats.allTimeSec)}</span>
+                          </div>
+                        ) : (
+                          <span className="text-xs text-muted-foreground/50">Not available</span>
+                        )}
+                      </div>
+                      {stats && stats.streak > 0 && (
+                        <div className="flex items-center gap-1 px-2 py-1 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-300 text-xs font-medium">
+                          <Flame className="w-3 h-3" />
+                          {stats.streak}
                         </div>
-                      ) : (
-                        <span className="text-xs text-muted-foreground/50">Not available</span>
                       )}
-                    </div>
-                    {stats && stats.streak > 0 && (
-                      <div className="flex items-center gap-1 px-2 py-1 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-300 text-xs font-medium">
-                        <Flame className="w-3 h-3" />
-                        {stats.streak}
+                      <svg
+                        width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+                        className={`text-muted-foreground transition-transform ${isExpanded ? "rotate-180" : ""}`}
+                      >
+                        <polyline points="6 9 12 15 18 9" />
+                      </svg>
+                    </button>
+
+                    {/* Expanded detail view */}
+                    {isExpanded && stats && (
+                      <div className="border-t border-border px-4 md:px-5 py-4 space-y-4">
+                        {/* App 7-day chart */}
+                        {stats.dailyBreakdown.length > 0 && (
+                          <div>
+                            <h3 className="text-xs font-semibold text-muted-foreground mb-3">Last 7 Days</h3>
+                            <div className="flex items-end gap-2 h-24">
+                              {stats.dailyBreakdown.map((day) => {
+                                const maxSec = Math.max(...stats.dailyBreakdown.map((d) => d.totalSec), 1);
+                                const height = day.totalSec > 0 ? Math.max((day.totalSec / maxSec) * 100, 4) : 0;
+                                const dayLabel = new Date(day.date + "T12:00:00").toLocaleDateString("en-US", { weekday: "short" });
+                                const isToday = day.date === new Date().toISOString().split("T")[0];
+                                return (
+                                  <div key={day.date} className="flex-1 flex flex-col items-center gap-1 h-full justify-end">
+                                    {day.totalSec > 0 && (
+                                      <span className="text-[9px] text-muted-foreground">{formatDuration(day.totalSec)}</span>
+                                    )}
+                                    <div
+                                      className={`w-full rounded-t-sm ${isToday ? app.color.replace("text-", "bg-") : app.color.replace("text-", "bg-").replace("400", "500/40")}`}
+                                      style={{ height: `${height}%`, minHeight: day.totalSec > 0 ? "3px" : "0px" }}
+                                    />
+                                    <span className={`text-[9px] ${isToday ? `${app.color} font-semibold` : "text-muted-foreground"}`}>
+                                      {dayLabel}
+                                    </span>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Top songs/licks */}
+                        {stats.topItems.length > 0 && (
+                          <div>
+                            <h3 className="text-xs font-semibold text-muted-foreground mb-2">
+                              Most Practiced This Week
+                            </h3>
+                            <div className="space-y-1.5">
+                              {stats.topItems.map((item, idx) => {
+                                const maxTime = stats.topItems[0]?.totalTimeSec ?? 1;
+                                const barPct = Math.max((item.totalTimeSec / maxTime) * 100, 2);
+                                return (
+                                  <div key={idx} className="relative">
+                                    <div
+                                      className={`absolute inset-y-0 left-0 rounded-md ${app.bg} opacity-60`}
+                                      style={{ width: `${barPct}%` }}
+                                    />
+                                    <div className="relative flex items-center justify-between px-3 py-2">
+                                      <div className="min-w-0">
+                                        <span className="text-sm font-medium">{item.name}</span>
+                                        {item.subtitle && (
+                                          <span className="text-xs text-muted-foreground ml-2">{item.subtitle}</span>
+                                        )}
+                                      </div>
+                                      <div className="flex items-center gap-3 shrink-0 ml-2">
+                                        <span className="text-xs text-muted-foreground">{item.sessionCount} sessions</span>
+                                        <span className="text-sm font-semibold">{formatDuration(item.totalTimeSec)}</span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+
+                        {stats.topItems.length === 0 && stats.allTimeSec > 0 && (
+                          <p className="text-xs text-muted-foreground">No detailed breakdown available for this week.</p>
+                        )}
                       </div>
                     )}
                   </div>
