@@ -1,12 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { calculateStreak, buildDailyBreakdown, getDateRanges } from "@music-apps/shared";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type",
-};
+import { calculateStreak, buildDailyBreakdown, getDateRanges, corsHeaders } from "@music-apps/shared";
 
 export async function OPTIONS() {
   return new NextResponse(null, { headers: corsHeaders });
@@ -67,21 +61,24 @@ export async function GET() {
       take: 5,
     });
 
-    const topSongDetails = await Promise.all(
-      topSongs.map(async (s) => {
-        const song = await prisma.song.findUnique({
-          where: { id: s.songId },
-          select: { title: true, artist: true },
-        });
-        return {
-          songId: s.songId,
-          title: song?.title ?? "Unknown",
-          artist: song?.artist ?? "",
-          totalTimeSec: s._sum.durationSec ?? 0,
-          sessionCount: s._count,
-        };
-      })
-    );
+    // Batch fetch song details (avoids N+1)
+    const songIds = topSongs.map((s) => s.songId);
+    const songs = await prisma.song.findMany({
+      where: { id: { in: songIds } },
+      select: { id: true, title: true, artist: true },
+    });
+    const songMap = new Map(songs.map((s) => [s.id, s]));
+
+    const topSongDetails = topSongs.map((s) => {
+      const song = songMap.get(s.songId);
+      return {
+        songId: s.songId,
+        title: song?.title ?? "Unknown",
+        artist: song?.artist ?? "",
+        totalTimeSec: s._sum.durationSec ?? 0,
+        sessionCount: s._count,
+      };
+    });
 
     return NextResponse.json({
       today: {

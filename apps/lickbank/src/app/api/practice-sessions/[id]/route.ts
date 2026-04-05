@@ -1,5 +1,12 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { z } from "zod";
+
+const sessionPatchSchema = z.object({
+  endedAt: z.string().datetime().optional(),
+  durationSec: z.number().int().min(0).optional(),
+  tempo: z.number().min(0.1).max(5).optional(),
+}).strict();
 
 export async function PATCH(
   request: Request,
@@ -7,15 +14,17 @@ export async function PATCH(
 ) {
   try {
     const { id } = await params;
-    const body = await request.json();
-
-    const allowedFields = ["endedAt", "durationSec", "tempo"];
-    const data: Record<string, unknown> = {};
-    for (const field of allowedFields) {
-      if (field in body) {
-        data[field] = field === "endedAt" ? new Date(body[field]) : body[field];
-      }
+    const raw = await request.json();
+    const parsed = sessionPatchSchema.safeParse(raw);
+    if (!parsed.success) {
+      return NextResponse.json({ error: parsed.error.flatten().fieldErrors }, { status: 400 });
     }
+    const body = parsed.data;
+
+    const data: Record<string, unknown> = {};
+    if (body.endedAt !== undefined) data.endedAt = new Date(body.endedAt);
+    if (body.durationSec !== undefined) data.durationSec = body.durationSec;
+    if (body.tempo !== undefined) data.tempo = body.tempo;
 
     if (Object.keys(data).length === 0) {
       return NextResponse.json(

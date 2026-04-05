@@ -3,6 +3,19 @@ import { prisma } from "@/lib/prisma";
 
 export async function POST(request: Request) {
   try {
+    // Clean up orphan sessions (open > 4 hours with no endedAt)
+    const fourHoursAgo = new Date(Date.now() - 4 * 60 * 60 * 1000);
+    await prisma.practiceSession.updateMany({
+      where: {
+        endedAt: null,
+        startedAt: { lt: fourHoursAgo },
+      },
+      data: {
+        endedAt: new Date(),
+        durationSec: 0,
+      },
+    });
+
     const { lickId } = await request.json();
 
     if (!lickId) {

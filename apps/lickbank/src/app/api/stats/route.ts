@@ -1,12 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { calculateStreak, buildDailyBreakdown, getDateRanges } from "@music-apps/shared";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type",
-};
+import { calculateStreak, buildDailyBreakdown, getDateRanges, corsHeaders } from "@music-apps/shared";
 
 export async function OPTIONS() {
   return new NextResponse(null, { headers: corsHeaders });
@@ -67,25 +61,29 @@ export async function GET() {
       take: 5,
     });
 
-    const topLicks = await Promise.all(
-      topLicksRaw.map(async (entry) => {
-        const lick = await prisma.lick.findUnique({
-          where: { id: entry.lickId },
-          select: {
-            name: true,
-            source: { select: { title: true, artist: true } },
-          },
-        });
-        return {
-          lickId: entry.lickId,
-          name: lick?.name ?? "Unknown",
-          sourceTitle: lick?.source?.title ?? "",
-          artist: lick?.source?.artist ?? "",
-          totalTimeSec: entry._sum.durationSec ?? 0,
-          sessionCount: entry._count,
-        };
-      })
-    );
+    // Batch fetch lick details (avoids N+1)
+    const lickIds = topLicksRaw.map((e) => e.lickId);
+    const licks = await prisma.lick.findMany({
+      where: { id: { in: lickIds } },
+      select: {
+        id: true,
+        name: true,
+        source: { select: { title: true, artist: true } },
+      },
+    });
+    const lickMap = new Map(licks.map((l) => [l.id, l]));
+
+    const topLicks = topLicksRaw.map((entry) => {
+      const lick = lickMap.get(entry.lickId);
+      return {
+        lickId: entry.lickId,
+        name: lick?.name ?? "Unknown",
+        sourceTitle: lick?.source?.title ?? "",
+        artist: lick?.source?.artist ?? "",
+        totalTimeSec: entry._sum.durationSec ?? 0,
+        sessionCount: entry._count,
+      };
+    });
 
     return NextResponse.json({
       today: {

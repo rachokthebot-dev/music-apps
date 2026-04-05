@@ -5,7 +5,6 @@ import { use } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Slider } from "@/components/ui/slider";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -21,24 +20,21 @@ import {
   Pause,
   SkipBack,
   Repeat,
-  Plus,
   X,
   Pencil,
-  Trash2,
   Check,
   Loader2,
-  StickyNote,
-  ChevronDown,
-  ChevronUp,
   Clock,
-  RotateCw,
-  Disc3,
-  Volume2,
   RefreshCw,
   Repeat2,
 } from "lucide-react";
 import { useMetronome } from "@/hooks/useMetronome";
 import { usePitchShifter } from "@/hooks/usePitchShifter";
+import { WaveformBar } from "@/components/WaveformBar";
+import { SectionStrip } from "@/components/SectionStrip";
+import { MetronomePanel } from "@/components/MetronomePanel";
+import { NotesPanel } from "@/components/NotesPanel";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 
 interface Section {
   id: string;
@@ -90,33 +86,6 @@ function transposeKey(key: string, semitones: number): string {
 
 const TEMPO_VALUES = [0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2];
 
-// Waveform bar is always dark, so use fixed colors (no dark: variant)
-const WAVEFORM_COLORS = [
-  "bg-violet-500/40", "bg-sky-500/40", "bg-emerald-500/40", "bg-amber-500/40", "bg-rose-500/40",
-  "bg-cyan-500/40", "bg-fuchsia-500/40", "bg-lime-500/40", "bg-orange-500/40", "bg-teal-500/40",
-];
-const WAVEFORM_COLORS_ACTIVE = [
-  "bg-violet-500/60", "bg-sky-500/60", "bg-emerald-500/60", "bg-amber-500/60", "bg-rose-500/60",
-  "bg-cyan-500/60", "bg-fuchsia-500/60", "bg-lime-500/60", "bg-orange-500/60", "bg-teal-500/60",
-];
-const SECTION_COLORS = [
-  "bg-violet-400/40 dark:bg-violet-600/30", "bg-sky-400/40 dark:bg-sky-600/30",
-  "bg-emerald-400/40 dark:bg-emerald-600/30", "bg-amber-400/40 dark:bg-amber-600/30",
-  "bg-rose-400/40 dark:bg-rose-600/30", "bg-cyan-400/40 dark:bg-cyan-600/30",
-  "bg-fuchsia-400/40 dark:bg-fuchsia-600/30", "bg-lime-400/40 dark:bg-lime-600/30",
-  "bg-orange-400/40 dark:bg-orange-600/30", "bg-teal-400/40 dark:bg-teal-600/30",
-];
-const LABEL_COLORS = [
-  "text-violet-800 dark:text-violet-200", "text-sky-800 dark:text-sky-200",
-  "text-emerald-800 dark:text-emerald-200", "text-amber-800 dark:text-amber-200",
-  "text-rose-800 dark:text-rose-200", "text-cyan-800 dark:text-cyan-200",
-  "text-fuchsia-800 dark:text-fuchsia-200", "text-lime-800 dark:text-lime-200",
-  "text-orange-800 dark:text-orange-200", "text-teal-800 dark:text-teal-200",
-];
-const SECTION_DOT_COLORS = [
-  "bg-violet-400", "bg-sky-400", "bg-emerald-400", "bg-amber-400", "bg-rose-400",
-  "bg-cyan-400", "bg-fuchsia-400", "bg-lime-400", "bg-orange-400", "bg-teal-400",
-];
 
 function PracticeSkeleton() {
   return (
@@ -165,7 +134,6 @@ export default function PracticePage({
   const [titleDraft, setTitleDraft] = useState("");
 
   // Notes
-  const [notesOpen, setNotesOpen] = useState(false);
   const [notesDraft, setNotesDraft] = useState("");
   const notesSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -960,84 +928,21 @@ export default function PracticePage({
 
         {/* === LARGE WAVEFORM BAR (Cinema Transport) === */}
         {duration > 0 && song.sections.length > 0 ? (
-          <div className="mb-3">
-            <div ref={waveformRef} className={`relative h-20 rounded-2xl overflow-hidden bg-gradient-to-b from-zinc-800 to-zinc-900 shadow-inner transition-all ${
-            editMode ? "ring-2 ring-yellow-500/50 ring-offset-1 ring-offset-background" : ""
-          }`}>
-              {displaySections.map((section, idx) => {
-                const leftPct = (section.startSec / duration) * 100;
-                const widthPct = ((section.endSec - section.startSec) / duration) * 100;
-                const isSelected = selectedSectionIds.includes(section.id);
-                const isPlaying = currentTime >= section.startSec && currentTime < section.endSec;
-                const abHighlight = abLoop && section.startSec < abLoop.b && section.endSec > abLoop.a;
-                return (
-                  <div
-                    key={section.id}
-                    className={`absolute inset-y-0 flex items-center transition-colors ${
-                      isSelected
-                        ? isPlaying ? "bg-blue-400/60" : "bg-blue-400/40"
-                        : abHighlight
-                        ? "bg-orange-400/40"
-                        : isPlaying
-                        ? WAVEFORM_COLORS_ACTIVE[idx % WAVEFORM_COLORS_ACTIVE.length]
-                        : WAVEFORM_COLORS[idx % WAVEFORM_COLORS.length]
-                    }`}
-                    style={{
-                      left: `${leftPct}%`,
-                      width: `${widthPct}%`,
-                      borderRight: idx < displaySections.length - 1 ? "1px solid rgba(255,255,255,0.08)" : "none",
-                    }}
-                  >
-                    {widthPct > 4 && (
-                      <span className="text-[10px] sm:text-[11px] leading-none px-1 sm:px-2 truncate w-full text-white/80 font-medium pointer-events-none">
-                        {section.name}
-                      </span>
-                    )}
-                  </div>
-                );
-              })}
-              {/* Drag handles for edit mode */}
-              {editMode && displaySections.map((section, idx) => {
-                if (idx >= displaySections.length - 1) return null;
-                const borderPct = (section.endSec / duration) * 100;
-                const isDragging = dragBorderIdx === idx;
-                return (
-                  <div
-                    key={`border-${idx}`}
-                    className={`absolute inset-y-0 z-30 flex items-center justify-center cursor-ew-resize touch-none ${
-                      isDragging ? "" : "group/handle"
-                    }`}
-                    style={{ left: `calc(${borderPct}% - 12px)`, width: "24px" }}
-                    onPointerDown={(e) => handleBorderPointerDown(idx, e)}
-                  >
-                    <div className={`w-1 h-12 rounded-full transition-all ${
-                      isDragging
-                        ? "bg-yellow-400 shadow-[0_0_8px_rgba(250,204,21,0.6)] w-1.5"
-                        : "bg-white/50 group-hover/handle:bg-yellow-400 group-hover/handle:shadow-[0_0_6px_rgba(250,204,21,0.4)]"
-                    }`} />
-                  </div>
-                );
-              })}
-              {/* Progress overlay */}
-              <div className="absolute inset-y-0 left-0 bg-white/5 pointer-events-none" style={{ width: `${(currentTime / duration) * 100}%` }} />
-              {/* Playhead */}
-              <div className="absolute inset-y-0 pointer-events-none z-10" style={{ left: `${(currentTime / duration) * 100}%` }}>
-                <div className="absolute inset-y-0 w-0.5 -translate-x-1/2 bg-white shadow-[0_0_6px_rgba(255,255,255,0.4)]" />
-                <div className="absolute -top-0.5 -translate-x-1/2 w-0 h-0 border-l-[5px] border-r-[5px] border-t-[7px] border-l-transparent border-r-transparent border-t-white" />
-              </div>
-              {/* Scrubber */}
-              <input
-                type="range" min={0} max={duration} step={0.1} value={currentTime}
-                onChange={(e) => seek(parseFloat(e.target.value))}
-                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-20"
-              />
-            </div>
-            <div className="flex justify-between items-center mt-1 px-1">
-              <span className="text-[11px] text-muted-foreground tabular-nums">{formatTime(currentTime)}</span>
-              {currentSection && <span className="text-xs text-foreground/70 font-medium">{currentSection.name}</span>}
-              <span className="text-[11px] text-muted-foreground tabular-nums">{formatTime(duration)}</span>
-            </div>
-          </div>
+          <ErrorBoundary>
+          <WaveformBar
+            sections={displaySections}
+            duration={duration}
+            currentTime={currentTime}
+            selectedSectionIds={selectedSectionIds}
+            abLoop={abLoop}
+            editMode={editMode}
+            dragBorderIdx={dragBorderIdx}
+            waveformRef={waveformRef}
+            currentSectionName={currentSection?.name}
+            onSeek={(v) => seek(v)}
+            onBorderPointerDown={handleBorderPointerDown}
+          />
+          </ErrorBoundary>
         ) : (
           <div className="mb-3">
             <div className="relative">
@@ -1207,184 +1112,50 @@ export default function PracticePage({
         ) : null}
       </div>
 
-      {/* === HORIZONTAL SECTIONS STRIP (Option C style) === */}
-      <div className="mb-3">
-        <div className="flex items-center gap-2 mb-2 px-1">
-          <h2 className="text-sm font-semibold text-foreground">Sections</h2>
-          <span className="text-[11px] text-muted-foreground">Tap to loop</span>
-          <div className="flex items-center gap-1.5 ml-auto">
-            {song.sections.length > 1 && (
-              <Button
-                variant={editMode ? "default" : "outline"}
-                size="sm"
-                onClick={() => setEditMode(!editMode)}
-                className="gap-1 h-7 text-xs"
-              >
-                <Pencil className="size-3" />
-                {editMode ? "Done" : "Edit"}
-              </Button>
-            )}
-            <Button variant="outline" size="sm" onClick={openNewSection} className="gap-1 h-7 text-xs">
-              <Plus className="size-3" /> Add
-            </Button>
-          </div>
-        </div>
-        {song.sections.length === 0 ? (
-          <div className="text-center py-6">
-            <p className="text-sm text-muted-foreground">No sections yet. Add one to start looping.</p>
-          </div>
-        ) : (
-          <div className="flex gap-2 overflow-x-auto pb-2 -mx-1 px-1 snap-x">
-            {song.sections.map((section, idx) => {
-              const isSelected = selectedSectionIds.includes(section.id);
-              const isPlaying = currentTime >= section.startSec && currentTime < section.endSec;
-              return (
-                <div
-                  key={section.id}
-                  className={`shrink-0 snap-start w-[120px] sm:w-[140px] p-2.5 sm:p-3 rounded-xl border transition-all cursor-pointer active:scale-[0.97] ${
-                    isSelected
-                      ? "bg-blue-50 dark:bg-blue-950 border-blue-300 dark:border-blue-700 shadow-sm"
-                      : isPlaying
-                      ? "bg-card border-primary/30 shadow-sm"
-                      : "bg-card border-border hover:border-ring/30"
-                  }`}
-                  onClick={() => selectSection(section, false)}
-                >
-                  <div className="flex items-center gap-1.5 mb-1">
-                    <div className={`size-2.5 rounded-full ${SECTION_DOT_COLORS[idx % SECTION_DOT_COLORS.length]} ${isPlaying ? "animate-pulse" : ""}`} />
-                    <span className="text-sm font-medium text-foreground truncate">{section.name}</span>
-                  </div>
-                  <span className="text-[11px] text-muted-foreground tabular-nums block mb-1">
-                    {formatTime(section.startSec)} – {formatTime(section.endSec)}
-                  </span>
-                  <div className="flex items-center justify-end">
-                    <div className="flex items-center gap-0">
-                      <button
-                        onClick={(e) => { e.stopPropagation(); openEditSection(section); }}
-                        className="p-1 rounded text-muted-foreground/30 hover:text-foreground"
-                      >
-                        <Pencil className="size-3" />
-                      </button>
-                      <button
-                        onClick={(e) => { e.stopPropagation(); deleteSection(section.id); }}
-                        className="p-1 rounded text-muted-foreground/30 hover:text-destructive"
-                      >
-                        <Trash2 className="size-3" />
-                      </button>
-                    </div>
-                  </div>
-                  {(loopCounts[section.id] ?? 0) > 0 && (
-                    <span className="text-[10px] text-muted-foreground flex items-center gap-0.5 mt-1">
-                      <RotateCw className="size-2.5" />
-                      {loopCounts[section.id]} loops
-                    </span>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
+      {/* === HORIZONTAL SECTIONS STRIP === */}
+      <ErrorBoundary>
+      <SectionStrip
+        sections={song.sections}
+        selectedSectionIds={selectedSectionIds}
+        currentTime={currentTime}
+        loopCounts={loopCounts}
+        editMode={editMode}
+        onEditModeToggle={() => setEditMode(!editMode)}
+        onSelectSection={(section) => selectSection(section, false)}
+        onEditSection={openEditSection}
+        onDeleteSection={deleteSection}
+        onAddSection={openNewSection}
+      />
+      </ErrorBoundary>
 
       {/* === COMPACT BOTTOM: Metronome + Notes === */}
+      <ErrorBoundary>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-        {/* Metronome */}
-        <div className="bg-card border border-border rounded-xl p-3">
-          <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center gap-2">
-              <Disc3 className={`size-4 ${metronomeActive ? "animate-spin text-primary" : "text-muted-foreground"}`} />
-              <Label className="text-sm font-semibold text-foreground">Metronome</Label>
-              {metronomeEnabled && baseBpm > 0 && (
-                <span className="text-xs text-muted-foreground">
-                  {Math.round(effectiveBpm)} BPM
-                  {manualBpm && <span className="text-[10px] ml-1">(tap)</span>}
-                </span>
-              )}
-            </div>
-            <button
-              onClick={() => setMetronomeEnabled(!metronomeEnabled)}
-              className={`relative w-10 h-5 rounded-full transition-colors ${metronomeEnabled ? "bg-primary" : "bg-muted"}`}
-            >
-              <div className={`absolute top-0.5 size-4 rounded-full bg-white shadow-sm transition-transform ${metronomeEnabled ? "translate-x-5" : "translate-x-0.5"}`} />
-            </button>
-          </div>
-          {metronomeEnabled && (
-            <div className="space-y-2">
-              <div className="flex items-center justify-center gap-2">
-                {[0, 1, 2, 3].map(i => (
-                  <div
-                    key={i}
-                    className={`size-3 rounded-full transition-all ${
-                      metronomeActive && currentBeat === i
-                        ? i === 0 ? "bg-primary scale-125" : "bg-primary/70 scale-110"
-                        : "bg-muted"
-                    }`}
-                  />
-                ))}
-              </div>
-              <div className="flex items-center gap-2">
-                <Volume2 className="size-3.5 text-muted-foreground shrink-0" />
-                <Slider min={0} max={1} step={0.05} value={[metronomeVolume]} onValueChange={(v) => setMetronomeVolume(Array.isArray(v) ? v[0] : v)} className="flex-1" />
-              </div>
-              <div className="flex items-center gap-1.5 flex-wrap">
-                <Button variant="outline" size="sm" className="text-xs h-7 gap-1" onClick={handleTapTempo}>Tap BPM</Button>
-                {parsedBeats.length === 0 && (
-                  <Button variant="outline" size="sm" className="text-xs h-7" onClick={tapSync}>Sync</Button>
-                )}
-                {!playing && baseBpm > 0 && (
-                  <Button variant="outline" size="sm" className="text-xs h-7 gap-1" onClick={handleCountInPlay}>
-                    <Play className="size-3" /> Count-in
-                  </Button>
-                )}
-                <Button variant={metronomeStandalone ? "secondary" : "outline"} size="sm" className="text-xs h-7" onClick={() => setMetronomeStandalone(!metronomeStandalone)}>Solo</Button>
-                {manualBpm && (
-                  <Button variant="outline" size="sm" className="text-xs h-7" onClick={resetManualBpm}>Reset BPM</Button>
-                )}
-              </div>
-              {parsedBeats.length > 0 && (
-                <p className="text-[10px] text-muted-foreground/50">Synced to {parsedBeats.length} detected beats</p>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* Notes */}
-        <div className="bg-card border border-border rounded-xl p-3">
-          <button
-            onClick={() => setNotesOpen(!notesOpen)}
-            className="flex items-center gap-2 text-sm font-semibold text-foreground w-full"
-          >
-            <StickyNote className="size-4 text-muted-foreground" />
-            Notes
-            {notesDraft && !notesOpen && (
-              <span className="text-xs text-muted-foreground font-normal truncate flex-1 text-left ml-1">
-                — {notesDraft.slice(0, 60)}
-              </span>
-            )}
-            {notesOpen ? (
-              <ChevronUp className="size-4 text-muted-foreground ml-auto" />
-            ) : (
-              <ChevronDown className="size-4 text-muted-foreground ml-auto" />
-            )}
-          </button>
-          {notesOpen && (
-            <div className="mt-3 flex border border-border rounded-lg bg-background overflow-hidden min-h-[200px]">
-              <div className="w-9 shrink-0 bg-muted/30 border-r border-border py-3 select-none">
-                {(notesDraft || "\n").split("\n").map((_, i) => (
-                  <div key={i} className="text-[11px] text-muted-foreground/50 text-right pr-2 font-mono leading-[1.5rem]">{i + 1}</div>
-                ))}
-              </div>
-              <textarea
-                value={notesDraft}
-                onChange={(e) => handleNotesChange(e.target.value)}
-                placeholder="Add practice notes..."
-                className="flex-1 p-3 text-sm leading-[1.5rem] bg-transparent resize-none min-h-[200px] focus:outline-none text-foreground placeholder:text-muted-foreground"
-                style={{ fontFamily: "'Courier New', Courier, monospace" }}
-              />
-            </div>
-          )}
-        </div>
+        <MetronomePanel
+          enabled={metronomeEnabled}
+          onToggle={() => setMetronomeEnabled(!metronomeEnabled)}
+          active={metronomeActive}
+          currentBeat={currentBeat}
+          volume={metronomeVolume}
+          onVolumeChange={setMetronomeVolume}
+          baseBpm={baseBpm}
+          effectiveBpm={effectiveBpm}
+          manualBpm={manualBpm}
+          parsedBeatsCount={parsedBeats.length}
+          playing={playing}
+          standalone={metronomeStandalone}
+          onStandaloneToggle={() => setMetronomeStandalone(!metronomeStandalone)}
+          onTapTempo={handleTapTempo}
+          onTapSync={tapSync}
+          onCountInPlay={handleCountInPlay}
+          onResetManualBpm={resetManualBpm}
+        />
+        <NotesPanel
+          notesDraft={notesDraft}
+          onNotesChange={handleNotesChange}
+        />
       </div>
+      </ErrorBoundary>
 
       {/* Section editor dialog */}
       <Dialog open={sectionDialogOpen} onOpenChange={setSectionDialogOpen}>

@@ -3,7 +3,18 @@ import { prisma } from "@/lib/prisma";
 import { CLIPS_DIR } from "@/lib/paths";
 import { unlink } from "fs/promises";
 import path from "path";
+import { z } from "zod";
 import { extractClip } from "@/lib/extract-clip";
+
+const lickPatchSchema = z.object({
+  name: z.string().min(1).optional(),
+  folderId: z.string().nullable().optional(),
+  lastPositionSec: z.number().min(0).optional(),
+  lastTempo: z.number().min(0.1).max(5).optional(),
+  notes: z.string().nullable().optional(),
+  startSec: z.number().min(0).optional(),
+  endSec: z.number().min(0).optional(),
+}).strict();
 
 export async function GET(
   _request: Request,
@@ -38,12 +49,17 @@ export async function PATCH(
 ) {
   try {
     const { id } = await params;
-    const body = await request.json();
+    const raw = await request.json();
+    const parsed = lickPatchSchema.safeParse(raw);
+    if (!parsed.success) {
+      return NextResponse.json({ error: parsed.error.flatten().fieldErrors }, { status: 400 });
+    }
+    const body = parsed.data;
 
-    const allowedFields = ["name", "folderId", "lastPositionSec", "lastTempo", "notes"];
+    const allowedFields = ["name", "folderId", "lastPositionSec", "lastTempo", "notes"] as const;
     const data: Record<string, unknown> = {};
     for (const field of allowedFields) {
-      if (field in body) {
+      if (body[field] !== undefined) {
         data[field] = body[field];
       }
     }

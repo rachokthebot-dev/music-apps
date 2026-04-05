@@ -2,7 +2,19 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { unlink } from "fs/promises";
 import path from "path";
+import { z } from "zod";
 import { UPLOADS_DIR, AUDIO_DIR } from "@/lib/paths";
+
+const songPatchSchema = z.object({
+  title: z.string().min(1).optional(),
+  pinned: z.boolean().optional(),
+  folderId: z.string().nullable().optional(),
+  notes: z.string().optional(),
+  lastPositionSec: z.number().min(0).optional(),
+  lastTempo: z.number().min(0.1).max(5).optional(),
+  lastPitch: z.number().int().min(-12).max(12).optional(),
+  lastSelectedSections: z.string().optional(),
+}).strict();
 
 export async function GET(
   _request: NextRequest,
@@ -24,7 +36,12 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  const body = await request.json();
+  const raw = await request.json();
+  const parsed = songPatchSchema.safeParse(raw);
+  if (!parsed.success) {
+    return NextResponse.json({ error: parsed.error.flatten().fieldErrors }, { status: 400 });
+  }
+  const body = parsed.data;
   const song = await prisma.song.update({
     where: { id },
     data: {

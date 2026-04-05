@@ -10,3 +10,5 @@ export { APP_REGISTRY, getAppUrl } from "./app-registry";
 export type { AppEntry } from "./app-registry";
 
 export { AppSwitcher } from "./app-switcher";
+
+export { corsHeaders } from "./cors";
