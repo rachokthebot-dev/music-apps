@@ -66,6 +66,7 @@ interface Song {
   album: string;
   genre: string;
   year: string;
+  timeSignature: number;
   sections: Section[];
 }
 
@@ -867,6 +868,21 @@ export default function PracticePage({
               {song.bpm && (
                 <span className="text-[11px] bg-muted text-muted-foreground px-2 py-0.5 rounded-full">{Math.round(song.bpm)} BPM</span>
               )}
+              <button
+                onClick={async () => {
+                  const next = song.timeSignature === 4 ? 3 : song.timeSignature === 3 ? 6 : 4;
+                  await fetch(`/api/songs/${song.id}`, {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ timeSignature: next }),
+                  });
+                  fetchSong();
+                }}
+                className="text-[11px] bg-muted text-muted-foreground px-2 py-0.5 rounded-full hover:bg-accent transition-colors"
+                title="Click to change time signature"
+              >
+                {song.timeSignature === 6 ? "6/8" : `${song.timeSignature}/4`}
+              </button>
               {song.durationSec && (
                 <span className="text-[11px] bg-muted text-muted-foreground px-2 py-0.5 rounded-full">{formatTime(song.durationSec)}</span>
               )}
@@ -1083,6 +1099,15 @@ export default function PracticePage({
         currentTime={currentTime}
         loopCounts={loopCounts}
         editMode={editMode}
+        beatTimestamps={parsedBeats}
+        timeSignature={song.timeSignature ?? 4}
+        songMeta={{
+          title: song.title,
+          artist: song.artist,
+          musicalKey: song.musicalKey,
+          bpm: song.bpm,
+          durationSec: song.durationSec,
+        }}
         onEditModeToggle={() => setEditMode(!editMode)}
         onSelectSection={(section) => selectSection(section, false)}
         onEditSection={openEditSection}

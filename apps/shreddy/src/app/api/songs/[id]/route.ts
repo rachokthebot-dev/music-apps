@@ -14,6 +14,7 @@ const songPatchSchema = z.object({
   lastTempo: z.number().min(0.1).max(5).optional(),
   lastPitch: z.number().int().min(-12).max(12).optional(),
   lastSelectedSections: z.string().optional(),
+  timeSignature: z.number().int().refine(v => [3, 4, 6].includes(v), { message: "Must be 3, 4, or 6" }).optional(),
 }).strict();
 
 export async function GET(
@@ -53,6 +54,7 @@ export async function PATCH(
       ...(body.lastTempo !== undefined && { lastTempo: body.lastTempo }),
       ...(body.lastPitch !== undefined && { lastPitch: body.lastPitch }),
       ...(body.lastSelectedSections !== undefined && { lastSelectedSections: body.lastSelectedSections }),
+      ...(body.timeSignature !== undefined && { timeSignature: body.timeSignature }),
     },
   });
   return NextResponse.json(song);

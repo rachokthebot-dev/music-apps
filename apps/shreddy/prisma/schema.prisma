@@ -31,6 +31,7 @@ model Song {
   album              String    @default("")
   genre              String    @default("")
   year               String    @default("")
+  timeSignature      Int       @default(4)  // beats per bar: 3, 4, or 6
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
 
