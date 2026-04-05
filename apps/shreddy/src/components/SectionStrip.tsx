@@ -1,7 +1,7 @@
 "use client";
 
 import { Pencil, Plus, Trash2, RotateCw } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Button } from "@music-apps/ui";
 
 interface Section {
   id: string;

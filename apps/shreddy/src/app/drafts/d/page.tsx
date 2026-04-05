@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Badge } from "@/components/ui/badge";
-import { Slider } from "@/components/ui/slider";
+import { Badge } from "@music-apps/ui";
+import { Slider } from "@music-apps/ui";
 import {
   ArrowLeft, Play, Pause, SkipBack, Repeat, Repeat2, Star, Disc3, Volume2, StickyNote, Clock,
 } from "lucide-react";

@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Button } from "@/components/ui/button";
+import { Button } from "@music-apps/ui";
+import useSWR from "swr";
 
 function formatDuration(sec: number): string {
   const h = Math.floor(sec / 3600);
@@ -32,32 +32,13 @@ interface Stats {
   topLicks: TopLick[];
 }
 
+const fetcher = (url: string) => fetch(url).then(res => res.json());
+
 const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 export default function StatsPage() {
   const router = useRouter();
-  const [stats, setStats] = useState<Stats | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    const fetchStats = async () => {
-      try {
-        const res = await fetch("/api/stats");
-        if (!res.ok) {
-          setError("Failed to load stats");
-          return;
-        }
-        const data: Stats = await res.json();
-        setStats(data);
-      } catch {
-        setError("Failed to load stats");
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchStats();
-  }, []);
+  const { data: stats, isLoading: loading, error } = useSWR<Stats>("/api/stats", fetcher);
 
   if (loading) {
     return (

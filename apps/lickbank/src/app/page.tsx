@@ -1,10 +1,11 @@
 "use client";
 
 import { Suspense, useState, useEffect, useCallback } from "react";
+import useSWR from "swr";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import {
+  Button,
+  Input,
   Dialog,
   DialogContent,
   DialogHeader,
@@ -12,7 +13,7 @@ import {
   DialogDescription,
   DialogFooter,
   DialogTrigger,
-} from "@/components/ui/dialog";
+} from "@music-apps/ui";
 import { AppSwitcher } from "@music-apps/shared/app-switcher";
 import { LickCard } from "@/components/LickCard";
 import { SourceCard } from "@/components/SourceCard";
@@ -84,13 +85,19 @@ export default function LibraryPageWrapper() {
   );
 }
 
+const fetcher = (url: string) => fetch(url).then(res => {
+  if (!res.ok) throw new Error("Failed to load");
+  return res.json();
+});
+
 function LibraryPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [activeTab, setActiveTab] = useState<Tab>(searchParams.get("tab") === "sources" ? "sources" : "licks");
-  const [licks, setLicks] = useState<Lick[]>([]);
-  const [folders, setFolders] = useState<Folder[]>([]);
-  const [sources, setSources] = useState<SourceItem[]>([]);
+  const { data: licks = [], mutate: mutateLicks, isLoading: licksLoading } = useSWR<Lick[]>("/api/licks", fetcher);
+  const { data: folders = [], mutate: mutateFolders } = useSWR<Folder[]>("/api/folders", fetcher);
+  const { data: sources = [], mutate: mutateSources } = useSWR<SourceItem[]>("/api/sources", fetcher);
+  const loading = licksLoading;
   const [selectedFolder, _setSelectedFolder] = useState<string | null>(searchParams.get("folder"));
 
   const setSelectedFolder = useCallback((folderId: string | null) => {
@@ -101,7 +108,6 @@ function LibraryPage() {
     const qs = params.toString();
     window.history.replaceState(null, "", qs ? `/?${qs}` : "/");
   }, [activeTab]);
-  const [loading, setLoading] = useState(true);
   const [darkMode, setDarkMode] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
 
@@ -158,26 +164,11 @@ function LibraryPage() {
     localStorage.setItem("theme", next ? "dark" : "light");
   }, [darkMode]);
 
-  const fetchData = useCallback(async () => {
-    try {
-      const [licksRes, foldersRes, sourcesRes] = await Promise.all([
-        fetch("/api/licks"),
-        fetch("/api/folders"),
-        fetch("/api/sources"),
-      ]);
-      if (licksRes.ok) setLicks(await licksRes.json());
-      if (foldersRes.ok) setFolders(await foldersRes.json());
-      if (sourcesRes.ok) setSources(await sourcesRes.json());
-    } catch {
-      // silently fail
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+  const fetchData = useCallback(() => {
+    mutateLicks();
+    mutateFolders();
+    mutateSources();
+  }, [mutateLicks, mutateFolders, mutateSources]);
 
   const handleImport = async () => {
     if (!youtubeUrl.trim()) return;

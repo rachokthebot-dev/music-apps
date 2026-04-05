@@ -4,16 +4,16 @@ import { useEffect, useState, useRef, useCallback, useMemo } from "react";
 import { use } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Button } from "@/components/ui/button";
-import { Slider } from "@/components/ui/slider";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
+  Button,
+  Slider,
+  Input,
+  Label,
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
+} from "@music-apps/ui";
 import {
   ArrowLeft,
   Play,
@@ -30,6 +30,8 @@ import {
 } from "lucide-react";
 import { useMetronome } from "@/hooks/useMetronome";
 import { usePitchShifter } from "@/hooks/usePitchShifter";
+import { useABLoop } from "@/hooks/useABLoop";
+import { useSectionEditor } from "@/hooks/useSectionEditor";
 import { WaveformBar } from "@/components/WaveformBar";
 import { SectionStrip } from "@/components/SectionStrip";
 import { MetronomePanel } from "@/components/MetronomePanel";
@@ -138,16 +140,17 @@ export default function PracticePage({
   const notesSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // A-B loop (custom range, not section-based)
-  const [abLoop, setAbLoop] = useState<{ a: number; b: number } | null>(null);
-  const [settingAB, setSettingAB] = useState<"idle" | "a_set">("idle");
-  const [abPointA, setAbPointA] = useState(0);
+  const { abLoop, settingAB, abPointA, handleABLoop: _handleABLoop, clearABLoop } = useABLoop();
 
   // Section editor
-  const [sectionDialogOpen, setSectionDialogOpen] = useState(false);
-  const [editingSection, setEditingSection] = useState<Section | null>(null);
-  const [sectionName, setSectionName] = useState("");
-  const [sectionStart, setSectionStart] = useState("");
-  const [sectionEnd, setSectionEnd] = useState("");
+  const {
+    sectionDialogOpen, setSectionDialogOpen,
+    editingSection, sectionName, setSectionName,
+    sectionStart, setSectionStart, sectionEnd, setSectionEnd,
+    openNewSection: _openNewSection, openEditSection,
+    setStartToCurrent: _setStartToCurrent, setEndToCurrent: _setEndToCurrent,
+    getParsedTimes, closeDialog: closeSectionDialog,
+  } = useSectionEditor();
 
   // Interactive section border editing
   const [editMode, setEditMode] = useState(false);
@@ -562,8 +565,7 @@ export default function PracticePage({
   function selectSection(section: Section, extend: boolean) {
     // Clear A-B loop when selecting sections
     if (abLoop) {
-      setAbLoop(null);
-      setSettingAB("idle");
+      clearLoop();
     }
 
     if (extend && selectedSectionIds.length > 0 && song) {
@@ -603,26 +605,8 @@ export default function PracticePage({
   }
 
   function handleABLoop() {
-    if (settingAB === "idle") {
-      // Set point A
-      setAbPointA(currentTime);
-      setSettingAB("a_set");
-      // Clear section loop
-      clearLoop();
-    } else if (settingAB === "a_set") {
-      // Set point B
-      const a = Math.min(abPointA, currentTime);
-      const b = Math.max(abPointA, currentTime);
-      if (b - a > 0.5) {
-        setAbLoop({ a, b });
-      }
-      setSettingAB("idle");
-    }
-  }
-
-  function clearABLoop() {
-    setAbLoop(null);
-    setSettingAB("idle");
+    if (settingAB === "idle") clearLoop();
+    _handleABLoop(currentTime);
   }
 
   // Title editing
@@ -654,32 +638,11 @@ export default function PracticePage({
   }
 
   function openNewSection() {
-    setEditingSection(null);
-    setSectionName("");
-    setSectionStart(formatTime(currentTime));
-    setSectionEnd(formatTime(Math.min(currentTime + 30, duration)));
-    setSectionDialogOpen(true);
-  }
-
-  function openEditSection(section: Section) {
-    setEditingSection(section);
-    setSectionName(section.name);
-    setSectionStart(formatTime(section.startSec));
-    setSectionEnd(formatTime(section.endSec));
-    setSectionDialogOpen(true);
-  }
-
-  function parseTime(str: string): number {
-    const parts = str.split(":").map(Number);
-    if (parts.length === 2) return parts[0] * 60 + parts[1];
-    if (parts.length === 1) return parts[0];
-    return 0;
+    _openNewSection(currentTime, duration);
   }
 
   async function saveSection() {
-    const startSec = parseTime(sectionStart);
-    const endSec = parseTime(sectionEnd);
-
+    const { startSec, endSec } = getParsedTimes();
     if (!sectionName.trim() || endSec <= startSec) return;
 
     if (editingSection) {
@@ -696,7 +659,7 @@ export default function PracticePage({
       });
     }
 
-    setSectionDialogOpen(false);
+    closeSectionDialog();
     await fetchSong();
   }
 
@@ -711,11 +674,11 @@ export default function PracticePage({
   }
 
   function setStartToCurrent() {
-    setSectionStart(formatTime(currentTime));
+    _setStartToCurrent(currentTime);
   }
 
   function setEndToCurrent() {
-    setSectionEnd(formatTime(currentTime));
+    _setEndToCurrent(currentTime);
   }
 
   // Interactive border dragging
@@ -1103,7 +1066,7 @@ export default function PracticePage({
                 <span className="text-xs text-orange-600 dark:text-orange-400">
                   Point A at {formatTime(abPointA)} — navigate to B and press A-B
                 </span>
-                <button onClick={() => setSettingAB("idle")} className="p-1.5 -mr-1 rounded-lg text-orange-400 hover:text-orange-600 active:scale-90 transition-all">
+                <button onClick={() => clearLoop()} className="p-1.5 -mr-1 rounded-lg text-orange-400 hover:text-orange-600 active:scale-90 transition-all">
                   <X className="size-4" />
                 </button>
               </div>

@@ -2,9 +2,9 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Slider } from "@/components/ui/slider";
+import { Button } from "@music-apps/ui";
+import { Badge } from "@music-apps/ui";
+import { Slider } from "@music-apps/ui";
 import {
   ArrowLeft, Play, Pause, SkipBack, Repeat, Repeat2, Star, Pencil, Trash2,
   Plus, StickyNote, ChevronDown, Disc3, Volume2, Clock,

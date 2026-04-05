@@ -2,8 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
+import { Button, Label } from "@music-apps/ui";
 import { ArrowLeft, RotateCcw, Save, Loader2, Moon, Sun, Key, Activity, CheckCircle2, XCircle, AlertTriangle } from "lucide-react";
 
 interface DepStatus {

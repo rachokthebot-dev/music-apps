@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, Clock, Flame, Music, TrendingUp, Loader2 } from "lucide-react";
+import useSWR from "swr";
 
 interface DailyBreakdown {
   date: string;
@@ -26,6 +26,8 @@ interface Stats {
   topSongs: TopSong[];
 }
 
+const fetcher = (url: string) => fetch(url).then(res => res.json());
+
 function formatDuration(sec: number): string {
   if (sec < 60) return `${Math.round(sec)}s`;
   const h = Math.floor(sec / 3600);
@@ -45,15 +47,7 @@ function getDayLabel(dateStr: string): string {
 }
 
 export default function StatsPage() {
-  const [stats, setStats] = useState<Stats | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    fetch("/api/stats")
-      .then(res => res.json())
-      .then(data => { setStats(data); setLoading(false); })
-      .catch(() => setLoading(false));
-  }, []);
+  const { data: stats, isLoading: loading } = useSWR<Stats>("/api/stats", fetcher);
 
   if (loading) {
     return (

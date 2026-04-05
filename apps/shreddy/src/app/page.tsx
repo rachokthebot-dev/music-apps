@@ -1,17 +1,18 @@
 "use client";
 
-import { Suspense, useEffect, useState, useCallback } from "react";
+import { Suspense, useState, useCallback } from "react";
+import useSWR from "swr";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
 import {
+  Button,
+  Badge,
+  Input,
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
+} from "@music-apps/ui";
 import {
   Star,
   FolderOpen,
@@ -118,11 +119,17 @@ export default function LibraryPageWrapper() {
   );
 }
 
+const fetcher = (url: string) => fetch(url).then(res => {
+  if (!res.ok) throw new Error("Failed to load");
+  return res.json();
+});
+
 function LibraryPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [songs, setSongs] = useState<Song[]>([]);
-  const [folders, setFolders] = useState<Folder[]>([]);
+  const { data: songs = [], error: songsError, mutate: mutateSongs, isLoading: loading } = useSWR<Song[]>("/api/songs", fetcher, { refreshInterval: 3000 });
+  const { data: folders = [], mutate: mutateFolders } = useSWR<Folder[]>("/api/folders", fetcher);
+  const error = songsError?.message ?? null;
   const [activeFolder, _setActiveFolder] = useState<string | null>(searchParams.get("folder"));
 
   const setActiveFolder = useCallback((folderId: string | null) => {
@@ -133,8 +140,6 @@ function LibraryPage() {
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [searchQuery, setSearchQuery] = useState("");
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [sortMode, setSortMode] = useState<SortMode>("added");
   const [sortMenuOpen, setSortMenuOpen] = useState(false);
 
@@ -155,45 +160,6 @@ function LibraryPage() {
 
   // Section analysis toggle (default off to save API usage)
   const [analyzeSections, setAnalyzeSections] = useState(false);
-
-  const fetchSongs = useCallback(async () => {
-    try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 10000);
-      const res = await fetch("/api/songs", { signal: controller.signal });
-      clearTimeout(timeout);
-      if (!res.ok) throw new Error("Failed to load songs");
-      const data = await res.json();
-      setSongs(data);
-      setError(null);
-    } catch (err) {
-      if (err instanceof DOMException && err.name === "AbortError") {
-        setError("Request timed out. Check your connection and try again.");
-      } else {
-        setError(err instanceof Error ? err.message : "Failed to load songs");
-      }
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  const fetchFolders = useCallback(async () => {
-    try {
-      const res = await fetch("/api/folders");
-      if (!res.ok) throw new Error("Failed to load folders");
-      const data = await res.json();
-      setFolders(data);
-    } catch {
-      // non-critical
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchSongs();
-    fetchFolders();
-    const interval = setInterval(fetchSongs, 3000);
-    return () => clearInterval(interval);
-  }, [fetchSongs, fetchFolders]);
 
   async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -232,7 +198,7 @@ function LibraryPage() {
         xhr.send(formData);
       });
 
-      await fetchSongs();
+      await mutateSongs();
     } catch (err) {
       alert(err instanceof Error ? err.message : "Upload failed");
     } finally {
@@ -259,7 +225,7 @@ function LibraryPage() {
       }
       setYoutubeDialogOpen(false);
       setYoutubeUrl("");
-      await fetchSongs();
+      await mutateSongs();
     } catch {
       setYoutubeError("Import failed. Check the URL and try again.");
     } finally {
@@ -269,13 +235,13 @@ function LibraryPage() {
 
   async function handleDuplicate(id: string) {
     await fetch(`/api/songs/${id}/duplicate`, { method: "POST" });
-    await fetchSongs();
+    await mutateSongs();
   }
 
   async function handleDelete(id: string, title: string) {
     if (!confirm(`Delete "${title}"?`)) return;
     await fetch(`/api/songs/${id}`, { method: "DELETE" });
-    await fetchSongs();
+    await mutateSongs();
   }
 
   async function handleTogglePin(id: string, currentPinned: boolean) {
@@ -284,7 +250,7 @@ function LibraryPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ pinned: !currentPinned }),
     });
-    await fetchSongs();
+    await mutateSongs();
   }
 
   async function handleMoveSong(songId: string, folderId: string | null) {
@@ -295,8 +261,8 @@ function LibraryPage() {
     });
     setMoveDialogOpen(false);
     setMovingSongId(null);
-    await fetchSongs();
-    await fetchFolders();
+    await mutateSongs();
+    await mutateFolders();
   }
 
   function openNewFolder() {
@@ -327,15 +293,15 @@ function LibraryPage() {
       });
     }
     setFolderDialogOpen(false);
-    await fetchFolders();
+    await mutateFolders();
   }
 
   async function deleteFolder(id: string, name: string) {
     if (!confirm(`Delete folder "${name}"? Songs will be moved to unfiled.`)) return;
     await fetch(`/api/folders/${id}`, { method: "DELETE" });
     if (activeFolder === id) setActiveFolder(null);
-    await fetchFolders();
-    await fetchSongs();
+    await mutateFolders();
+    await mutateSongs();
   }
 
   // Filter songs by folder and search
@@ -660,7 +626,7 @@ function LibraryPage() {
           </div>
           <p className="text-base font-medium text-foreground mb-1">Something went wrong</p>
           <p className="text-sm text-muted-foreground mb-4">{error}</p>
-          <Button variant="outline" onClick={() => { setError(null); setLoading(true); fetchSongs(); }}>
+          <Button variant="outline" onClick={() => mutateSongs()}>
             Try again
           </Button>
         </div>
