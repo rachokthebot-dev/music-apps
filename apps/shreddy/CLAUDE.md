@@ -25,7 +25,10 @@ npm run build && npm start
 Builds optimized bundle and serves on all network interfaces. Most reliable for iPad access.
 
 ### Access from iPad
-Open `http://<mac-ip>:3000` in Safari (e.g. `http://192.168.1.41:3000`).
+Open `http://<mac-ip>:3000/shreddy` in Safari (e.g. `http://192.168.1.41:3000/shreddy`).
+The `/shreddy` prefix is required because `next.config.ts` now sets
+`basePath: "/shreddy"` so the app composes cleanly behind the music-apps
+proxy at `http://<mac-ip>:8080/shreddy`. See `../../proxy/README.md`.
 
 ## Tech stack
 - Next.js 16.2.1 (async params, async cookies/headers, route.ts handlers)

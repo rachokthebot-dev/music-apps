@@ -1,7 +1,6 @@
 "use client";
 
-import { Suspense, useState, useCallback } from "react";
-import useSWR from "swr";
+import { Suspense, useState, useCallback, useEffect } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
@@ -33,13 +32,20 @@ import {
   ArrowDownUp,
   Clock,
   CalendarPlus,
+  MoreHorizontal,
+  Check,
 } from "lucide-react";
 import { AppSwitcher } from "@music-apps/shared/app-switcher";
 
 interface Folder {
   id: string;
   name: string;
-  _count: { songs: number };
+  _count: { songFolders: number };
+}
+
+interface SongFolderRef {
+  folderId: string;
+  folder: { id: string; name: string };
 }
 
 interface Song {
@@ -49,8 +55,7 @@ interface Song {
   durationSec: number | null;
   processingStatus: string;
   pinned: boolean;
-  folderId: string | null;
-  folder: { id: string; name: string } | null;
+  folders: SongFolderRef[];
   artist: string;
   album: string;
   genre: string;
@@ -119,18 +124,44 @@ export default function LibraryPageWrapper() {
   );
 }
 
-const fetcher = (url: string) => fetch(url).then(res => {
-  if (!res.ok) throw new Error("Failed to load");
-  return res.json();
-});
-
 function LibraryPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { data: songs = [], error: songsError, mutate: mutateSongs, isLoading: loading } = useSWR<Song[]>("/api/songs", fetcher, { refreshInterval: 3000 });
-  const { data: folders = [], mutate: mutateFolders } = useSWR<Folder[]>("/api/folders", fetcher);
-  const error = songsError?.message ?? null;
+  const [songs, setSongs] = useState<Song[]>([]);
+  const [folders, setFolders] = useState<Folder[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [activeFolder, _setActiveFolder] = useState<string | null>(searchParams.get("folder"));
+
+  const fetchSongs = useCallback(async () => {
+    try {
+      const res = await fetch("/api/songs");
+      if (!res.ok) throw new Error("Failed to load");
+      const data = await res.json();
+      setSongs(data);
+      setError(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to load");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const fetchFolders = useCallback(async () => {
+    try {
+      const res = await fetch("/api/folders");
+      if (!res.ok) throw new Error("Failed to load");
+      const data = await res.json();
+      setFolders(data);
+    } catch { /* ignore */ }
+  }, []);
+
+  useEffect(() => {
+    fetchSongs();
+    fetchFolders();
+    const interval = setInterval(fetchSongs, 3000);
+    return () => clearInterval(interval);
+  }, [fetchSongs, fetchFolders]);
 
   const setActiveFolder = useCallback((folderId: string | null) => {
     _setActiveFolder(folderId);
@@ -142,6 +173,8 @@ function LibraryPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [sortMode, setSortMode] = useState<SortMode>("added");
   const [sortMenuOpen, setSortMenuOpen] = useState(false);
+  const [folderPickerOpen, setFolderPickerOpen] = useState(false);
+  const [folderPickerQuery, setFolderPickerQuery] = useState("");
 
   // Folder dialog
   const [folderDialogOpen, setFolderDialogOpen] = useState(false);
@@ -151,6 +184,7 @@ function LibraryPage() {
   // Move-to-folder dialog
   const [moveDialogOpen, setMoveDialogOpen] = useState(false);
   const [movingSongId, setMovingSongId] = useState<string | null>(null);
+  const [selectedFolderIds, setSelectedFolderIds] = useState<Set<string>>(new Set());
 
   // YouTube import
   const [youtubeDialogOpen, setYoutubeDialogOpen] = useState(false);
@@ -158,8 +192,22 @@ function LibraryPage() {
   const [youtubeImporting, setYoutubeImporting] = useState(false);
   const [youtubeError, setYoutubeError] = useState<string | null>(null);
 
-  // Section analysis toggle (default off to save API usage)
+  // Per-import "Analyze structure" toggle (shown in the URL modal).
+  // Initialized from /api/settings.analyzeOnImport so the user's default is honored.
+  // Uploads (which have no per-import modal) read the same default directly.
   const [analyzeSections, setAnalyzeSections] = useState(false);
+  const [analyzeDefault, setAnalyzeDefault] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/settings")
+      .then((r) => r.json())
+      .then((data) => {
+        const def = !!data.analyzeOnImport;
+        setAnalyzeDefault(def);
+        setAnalyzeSections(def);
+      })
+      .catch(() => {});
+  }, []);
 
   async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -170,7 +218,8 @@ function LibraryPage() {
 
     const formData = new FormData();
     formData.append("file", file);
-    formData.append("analyzeSections", String(analyzeSections));
+    // Uploads have no per-import dialog — use the saved default from Settings.
+    formData.append("analyzeSections", String(analyzeDefault));
 
     try {
       const xhr = new XMLHttpRequest();
@@ -198,7 +247,7 @@ function LibraryPage() {
         xhr.send(formData);
       });
 
-      await mutateSongs();
+      await fetchSongs();
     } catch (err) {
       alert(err instanceof Error ? err.message : "Upload failed");
     } finally {
@@ -225,7 +274,7 @@ function LibraryPage() {
       }
       setYoutubeDialogOpen(false);
       setYoutubeUrl("");
-      await mutateSongs();
+      await fetchSongs();
     } catch {
       setYoutubeError("Import failed. Check the URL and try again.");
     } finally {
@@ -235,13 +284,13 @@ function LibraryPage() {
 
   async function handleDuplicate(id: string) {
     await fetch(`/api/songs/${id}/duplicate`, { method: "POST" });
-    await mutateSongs();
+    await fetchSongs();
   }
 
   async function handleDelete(id: string, title: string) {
     if (!confirm(`Delete "${title}"?`)) return;
     await fetch(`/api/songs/${id}`, { method: "DELETE" });
-    await mutateSongs();
+    await fetchSongs();
   }
 
   async function handleTogglePin(id: string, currentPinned: boolean) {
@@ -250,19 +299,37 @@ function LibraryPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ pinned: !currentPinned }),
     });
-    await mutateSongs();
+    await fetchSongs();
   }
 
-  async function handleMoveSong(songId: string, folderId: string | null) {
-    await fetch(`/api/songs/${songId}`, {
+  function openMoveDialog(songId: string) {
+    const song = songs.find((s) => s.id === songId);
+    setMovingSongId(songId);
+    setSelectedFolderIds(new Set(song?.folders.map((f) => f.folderId) ?? []));
+    setMoveDialogOpen(true);
+  }
+
+  function toggleSelectedFolder(folderId: string) {
+    setSelectedFolderIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(folderId)) next.delete(folderId);
+      else next.add(folderId);
+      return next;
+    });
+  }
+
+  async function saveSongFolders() {
+    if (!movingSongId) return;
+    await fetch(`/api/songs/${movingSongId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ folderId: folderId }),
+      body: JSON.stringify({ folderIds: Array.from(selectedFolderIds) }),
     });
     setMoveDialogOpen(false);
     setMovingSongId(null);
-    await mutateSongs();
-    await mutateFolders();
+    setSelectedFolderIds(new Set());
+    await fetchSongs();
+    await fetchFolders();
   }
 
   function openNewFolder() {
@@ -293,20 +360,20 @@ function LibraryPage() {
       });
     }
     setFolderDialogOpen(false);
-    await mutateFolders();
+    await fetchFolders();
   }
 
   async function deleteFolder(id: string, name: string) {
     if (!confirm(`Delete folder "${name}"? Songs will be moved to unfiled.`)) return;
     await fetch(`/api/folders/${id}`, { method: "DELETE" });
     if (activeFolder === id) setActiveFolder(null);
-    await mutateFolders();
-    await mutateSongs();
+    await fetchFolders();
+    await fetchSongs();
   }
 
   // Filter songs by folder and search
   const filteredSongs = songs.filter((s) => {
-    if (activeFolder && s.folderId !== activeFolder) return false;
+    if (activeFolder && !s.folders.some((f) => f.folderId === activeFolder)) return false;
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
       return s.title.toLowerCase().includes(q) || s.artist.toLowerCase().includes(q) || s.originalFilename.toLowerCase().includes(q);
@@ -382,10 +449,16 @@ function LibraryPage() {
                 <span className="tabular-nums">{formatDuration(song.durationSec)}</span>
               </>
             ) : null}
-            {song.folder && !activeFolder && (
+            {song.folders.length > 0 && !activeFolder && (
               <>
                 <span className="text-muted-foreground/30">·</span>
-                <span className="bg-muted px-1.5 py-0.5 rounded text-[11px]">{song.folder.name}</span>
+                <span className="flex items-center gap-1 flex-wrap">
+                  {song.folders.map((f) => (
+                    <span key={f.folderId} className="bg-muted px-1.5 py-0.5 rounded text-[11px]">
+                      {f.folder.name}
+                    </span>
+                  ))}
+                </span>
               </>
             )}
             {song.genre && (
@@ -409,9 +482,9 @@ function LibraryPage() {
             </button>
           )}
           <button
-            onClick={(e) => { e.stopPropagation(); setMovingSongId(song.id); setMoveDialogOpen(true); }}
+            onClick={(e) => { e.stopPropagation(); openMoveDialog(song.id); }}
             className="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted active:scale-90 transition-all"
-            title="Move to folder"
+            title="Folders"
           >
             <FolderInput className="size-3.5" />
           </button>
@@ -428,7 +501,7 @@ function LibraryPage() {
   }
 
   return (
-    <main className="flex-1 max-w-2xl mx-auto w-full px-4 py-6">
+    <main className="flex-1 max-w-4xl mx-auto w-full px-4 py-6">
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <h1 className="text-xl font-semibold tracking-tight text-foreground">Shreddy</h1>
@@ -450,7 +523,7 @@ function LibraryPage() {
           <Button
             variant="outline"
             size="sm"
-            onClick={() => { setYoutubeDialogOpen(true); setYoutubeError(null); setYoutubeUrl(""); }}
+            onClick={() => { setYoutubeDialogOpen(true); setYoutubeError(null); setYoutubeUrl(""); setAnalyzeSections(analyzeDefault); }}
             className="gap-1 h-8 px-2.5 text-xs"
           >
             <Link2 className="size-3.5" />
@@ -475,18 +548,7 @@ function LibraryPage() {
             )}
           </Button>
         </div>
-        <div className="flex items-center gap-2">
-          <label className="flex items-center gap-1.5 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={analyzeSections}
-              onChange={(e) => setAnalyzeSections(e.target.checked)}
-              className="size-3.5 rounded"
-            />
-            <span className="text-[11px] text-muted-foreground">Analyze structure (AI)</span>
-          </label>
-          <AppSwitcher currentAppId="shreddy" />
-        </div>
+        <AppSwitcher currentAppId="shreddy" />
         <input
           id="file-upload"
           type="file"
@@ -548,7 +610,7 @@ function LibraryPage() {
                   : "bg-muted text-muted-foreground hover:bg-accent"
               }`}
             >
-              {folder.name} ({folder._count.songs})
+              {folder.name} ({folder._count.songFolders})
             </button>
           ))}
           <button
@@ -559,6 +621,65 @@ function LibraryPage() {
             <Plus className="size-3.5" />
           </button>
         </div>
+
+        {/* Folder picker — popover with searchable list of all folders.
+            Hidden when there are few folders (≤ 3) since they fit inline. */}
+        {folders.length > 3 && (
+          <div className="relative shrink-0">
+            <button
+              onClick={() => { setFolderPickerOpen(!folderPickerOpen); setFolderPickerQuery(""); }}
+              className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs text-muted-foreground hover:text-foreground hover:bg-muted active:scale-95 transition-all"
+              title="All folders"
+            >
+              <MoreHorizontal className="size-3.5" />
+            </button>
+            {folderPickerOpen && (
+              <>
+                <div className="fixed inset-0 z-30" onClick={() => setFolderPickerOpen(false)} />
+                <div className="absolute right-0 top-full mt-1 z-40 bg-card border border-border rounded-lg shadow-lg w-64 max-h-[60vh] overflow-hidden flex flex-col">
+                  <div className="p-2 border-b border-border">
+                    <div className="relative">
+                      <Search className="absolute left-2 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
+                      <Input
+                        autoFocus
+                        value={folderPickerQuery}
+                        onChange={(e) => setFolderPickerQuery(e.target.value)}
+                        placeholder="Search folders…"
+                        className="pl-7 h-8 text-xs"
+                      />
+                    </div>
+                  </div>
+                  <div className="overflow-y-auto py-1">
+                    <button
+                      onClick={() => { setActiveFolder(null); setFolderPickerOpen(false); }}
+                      className={`w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-muted transition-colors ${activeFolder === null ? "text-primary font-medium" : "text-foreground"}`}
+                    >
+                      {activeFolder === null ? <Check className="size-3.5" /> : <span className="size-3.5" />}
+                      <span className="flex-1 text-left">All</span>
+                      <span className="text-muted-foreground tabular-nums">{songs.length}</span>
+                    </button>
+                    {folders
+                      .filter((f) => !folderPickerQuery || f.name.toLowerCase().includes(folderPickerQuery.toLowerCase()))
+                      .map((folder) => {
+                        const isActive = activeFolder === folder.id;
+                        return (
+                          <button
+                            key={folder.id}
+                            onClick={() => { setActiveFolder(folder.id); setFolderPickerOpen(false); }}
+                            className={`w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-muted transition-colors ${isActive ? "text-primary font-medium" : "text-foreground"}`}
+                          >
+                            {isActive ? <Check className="size-3.5" /> : <span className="size-3.5" />}
+                            <span className="flex-1 text-left truncate">{folder.name}</span>
+                            <span className="text-muted-foreground tabular-nums">{folder._count.songFolders}</span>
+                          </button>
+                        );
+                      })}
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        )}
 
         {/* Folder actions (rename/delete) when a folder is active */}
         {activeFolder && (
@@ -626,7 +747,7 @@ function LibraryPage() {
           </div>
           <p className="text-base font-medium text-foreground mb-1">Something went wrong</p>
           <p className="text-sm text-muted-foreground mb-4">{error}</p>
-          <Button variant="outline" onClick={() => mutateSongs()}>
+          <Button variant="outline" onClick={() => fetchSongs()}>
             Try again
           </Button>
         </div>
@@ -735,29 +856,46 @@ function LibraryPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Move to folder dialog */}
+      {/* Move to folder dialog (multi-select) */}
       <Dialog open={moveDialogOpen} onOpenChange={setMoveDialogOpen}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle>Move to Folder</DialogTitle>
+            <DialogTitle>Folders</DialogTitle>
           </DialogHeader>
           <div className="space-y-1 pt-2">
-            <button
-              onClick={() => movingSongId && handleMoveSong(movingSongId, null)}
-              className="w-full text-left px-3 py-3 rounded-lg hover:bg-muted active:bg-accent text-sm transition-colors"
-            >
-              No folder (unfiled)
-            </button>
-            {folders.map((folder) => (
-              <button
-                key={folder.id}
-                onClick={() => movingSongId && handleMoveSong(movingSongId, folder.id)}
-                className="w-full text-left px-3 py-3 rounded-lg hover:bg-muted active:bg-accent text-sm flex items-center gap-2 transition-colors"
-              >
-                <FolderOpen className="size-4 text-muted-foreground" />
-                {folder.name}
-              </button>
-            ))}
+            {folders.length === 0 ? (
+              <p className="px-3 py-3 text-sm text-muted-foreground">
+                No folders yet. Create one from the library.
+              </p>
+            ) : (
+              folders.map((folder) => {
+                const checked = selectedFolderIds.has(folder.id);
+                return (
+                  <label
+                    key={folder.id}
+                    className="flex items-center gap-3 px-3 py-3 rounded-lg hover:bg-muted active:bg-accent text-sm cursor-pointer transition-colors"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => toggleSelectedFolder(folder.id)}
+                      className="size-4 rounded"
+                    />
+                    <FolderOpen className="size-4 text-muted-foreground" />
+                    <span className="flex-1">{folder.name}</span>
+                  </label>
+                );
+              })
+            )}
+            <p className="px-3 pt-2 text-[11px] text-muted-foreground">
+              Leave all unchecked to keep this song unfiled.
+            </p>
+            <div className="flex gap-2 justify-end pt-2">
+              <Button variant="outline" onClick={() => setMoveDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button onClick={saveSongFolders}>Save</Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>

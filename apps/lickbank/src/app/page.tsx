@@ -59,7 +59,7 @@ function buildColorMaps(licks: Lick[], folders: Folder[]) {
 
   const folderColorMap = new Map<string, string>();
   for (const folder of folders) {
-    const folderLicks = licks.filter((l) => l.folderId === folder.id);
+    const folderLicks = licks.filter((l) => l.folders.some((f) => f.folderId === folder.id));
     const srcCounts = new Map<string, number>();
     for (const l of folderLicks) {
       srcCounts.set(l.sourceId, (srcCounts.get(l.sourceId) ?? 0) + 1);
@@ -129,8 +129,12 @@ function LibraryPage() {
   // Delete confirm dialog
   const [deleteTarget, setDeleteTarget] = useState<Lick | null>(null);
 
-  // Move to folder dialog
-  const [moveTarget, setMoveTarget] = useState<Lick | null>(null);
+  // Folders dialog (multi-select) — works for both Lick and Source
+  type MoveTarget =
+    | { kind: "lick"; lick: Lick }
+    | { kind: "source"; source: SourceItem };
+  const [moveTarget, setMoveTarget] = useState<MoveTarget | null>(null);
+  const [selectedFolderIds, setSelectedFolderIds] = useState<Set<string>>(new Set());
 
   // Mobile sidebar
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -261,15 +265,40 @@ function LibraryPage() {
     }
   };
 
-  const handleMoveLick = async (lick: Lick, folderId: string | null) => {
+  const openFoldersForLick = (lick: Lick) => {
+    setMoveTarget({ kind: "lick", lick });
+    setSelectedFolderIds(new Set(lick.folders.map((f) => f.folderId)));
+  };
+
+  const openFoldersForSource = (source: SourceItem) => {
+    setMoveTarget({ kind: "source", source });
+    setSelectedFolderIds(new Set(source.folders.map((f) => f.folderId)));
+  };
+
+  const toggleSelectedFolder = (folderId: string) => {
+    setSelectedFolderIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(folderId)) next.delete(folderId);
+      else next.add(folderId);
+      return next;
+    });
+  };
+
+  const saveMoveTarget = async () => {
+    if (!moveTarget) return;
+    const folderIds = Array.from(selectedFolderIds);
+    const url = moveTarget.kind === "lick"
+      ? `/api/licks/${moveTarget.lick.id}`
+      : `/api/sources/${moveTarget.source.id}`;
     try {
-      const res = await fetch(`/api/licks/${lick.id}`, {
+      const res = await fetch(url, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ folderId }),
+        body: JSON.stringify({ folderIds }),
       });
       if (res.ok) {
         setMoveTarget(null);
+        setSelectedFolderIds(new Set());
         fetchData();
       }
     } catch {
@@ -340,12 +369,13 @@ function LibraryPage() {
 
   const searchLower = searchQuery.toLowerCase();
   const filteredLicks = licks.filter((l) => {
-    if (selectedFolder && l.folderId !== selectedFolder) return false;
+    if (selectedFolder && !l.folders.some((f) => f.folderId === selectedFolder)) return false;
     if (searchQuery && !l.name.toLowerCase().includes(searchLower) && !l.source.title.toLowerCase().includes(searchLower)) return false;
     return true;
   });
 
   const filteredSources = sources.filter((s) => {
+    if (selectedFolder && !s.folders.some((f) => f.folderId === selectedFolder)) return false;
     if (searchQuery && !s.title.toLowerCase().includes(searchLower) && !(s.artist ?? "").toLowerCase().includes(searchLower)) return false;
     return true;
   });
@@ -369,7 +399,7 @@ function LibraryPage() {
               <path d="M3 5h14M3 10h14M3 15h14" />
             </svg>
           </button>
-          <h1 className="text-xl font-bold tracking-tight">LickBank</h1>
+          <h1 className="hidden sm:block text-xl font-bold tracking-tight">LickBank</h1>
           <div className="flex items-center gap-1 ml-2">
             <button
               className={`px-3 py-1 rounded-full text-sm font-medium transition-colors ${
@@ -409,7 +439,8 @@ function LibraryPage() {
 
           <Dialog open={importOpen} onOpenChange={setImportOpen}>
             <DialogTrigger render={<Button variant="default" />}>
-              Import from YouTube
+              <span className="sm:hidden">Import</span>
+              <span className="hidden sm:inline">Import from YouTube</span>
             </DialogTrigger>
             <DialogContent>
               <DialogHeader>
@@ -477,7 +508,6 @@ function LibraryPage() {
               />
             </div>
           </div>
-          {activeTab === "licks" && (
           <div className="p-3 border-b border-border">
             <Dialog open={folderDialogOpen} onOpenChange={setFolderDialogOpen}>
               <DialogTrigger render={<Button variant="outline" className="w-full" size="sm" />}>
@@ -503,51 +533,53 @@ function LibraryPage() {
               </DialogContent>
             </Dialog>
           </div>
-          )}
           <nav className="flex-1 overflow-y-auto p-2">
-            {activeTab === "licks" ? (
-              <>
+            <button
+              onClick={() => {
+                setSelectedFolder(null);
+                setSidebarOpen(false);
+              }}
+              className={`w-full text-left px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                selectedFolder === null
+                  ? "bg-primary text-primary-foreground"
+                  : "hover:bg-muted text-foreground"
+              }`}
+            >
+              {activeTab === "licks" ? "All Licks" : "All Songs"}
+              <span className="ml-auto float-right text-xs opacity-60">
+                {activeTab === "licks" ? licks.length : sources.length}
+              </span>
+            </button>
+            {folders.map((folder) => {
+              const fColor = folderColorMap.get(folder.id);
+              const count = activeTab === "licks"
+                ? folder._count.lickFolders
+                : folder._count.sourceFolders;
+              return (
                 <button
+                  key={folder.id}
                   onClick={() => {
-                    setSelectedFolder(null);
+                    setSelectedFolder(folder.id);
                     setSidebarOpen(false);
                   }}
                   className={`w-full text-left px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                    selectedFolder === null
+                    selectedFolder === folder.id
                       ? "bg-primary text-primary-foreground"
                       : "hover:bg-muted text-foreground"
-                  }`}
+                  } ${fColor && selectedFolder !== folder.id ? `border-l-2 ${fColor}` : ""}`}
                 >
-                  All Licks
+                  {folder.name}
                   <span className="ml-auto float-right text-xs opacity-60">
-                    {licks.length}
+                    {count}
                   </span>
                 </button>
-                {folders.map((folder) => {
-                  const fColor = folderColorMap.get(folder.id);
-                  return (
-                    <button
-                      key={folder.id}
-                      onClick={() => {
-                        setSelectedFolder(folder.id);
-                        setSidebarOpen(false);
-                      }}
-                      className={`w-full text-left px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                        selectedFolder === folder.id
-                          ? "bg-primary text-primary-foreground"
-                          : "hover:bg-muted text-foreground"
-                      } ${fColor && selectedFolder !== folder.id ? `border-l-2 ${fColor}` : ""}`}
-                    >
-                      {folder.name}
-                      <span className="ml-auto float-right text-xs opacity-60">
-                        {folder._count.licks}
-                      </span>
-                    </button>
-                  );
-                })}
-              </>
-            ) : (
+              );
+            })}
+            {activeTab === "sources" && sources.length > 0 && (
               <>
+                <div className="px-3 pt-4 pb-1 text-[11px] font-semibold text-muted-foreground uppercase tracking-widest">
+                  Songs
+                </div>
                 {sources.map((source) => {
                   const color = sourceColorMap.get(source.id);
                   return (
@@ -605,7 +637,7 @@ function LibraryPage() {
                         setOpenMenuId(null);
                       }}
                       onMove={() => {
-                        setMoveTarget(lick);
+                        openFoldersForLick(lick);
                         setOpenMenuId(null);
                       }}
                       onDelete={() => {
@@ -644,6 +676,10 @@ function LibraryPage() {
                       onRename={() => {
                         setRenamingSource(source);
                         setRenameValue(source.title);
+                        setOpenSourceMenuId(null);
+                      }}
+                      onMoveFolders={() => {
+                        openFoldersForSource(source);
                         setOpenSourceMenuId(null);
                       }}
                       onImportToShreddy={() => {
@@ -736,36 +772,53 @@ function LibraryPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Move to folder dialog */}
-      <Dialog open={moveTarget !== null} onOpenChange={(open) => !open && setMoveTarget(null)}>
+      {/* Folders dialog (multi-select) */}
+      <Dialog open={moveTarget !== null} onOpenChange={(open) => { if (!open) { setMoveTarget(null); setSelectedFolderIds(new Set()); } }}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Move to Folder</DialogTitle>
+            <DialogTitle>Folders</DialogTitle>
             <DialogDescription>
-              Select a folder for &ldquo;{moveTarget?.name}&rdquo;.
+              {moveTarget?.kind === "lick"
+                ? `Choose folders for "${moveTarget.lick.name}"`
+                : moveTarget?.kind === "source"
+                ? `Choose folders for "${moveTarget.source.title}"`
+                : ""}
             </DialogDescription>
           </DialogHeader>
           <div className="flex flex-col gap-1 max-h-60 overflow-y-auto">
-            <button
-              className={`text-left px-3 py-2 rounded-lg text-sm hover:bg-muted transition-colors ${
-                moveTarget?.folderId === null ? "bg-muted font-medium" : ""
-              }`}
-              onClick={() => moveTarget && handleMoveLick(moveTarget, null)}
-            >
-              No Folder
-            </button>
-            {folders.map((folder) => (
-              <button
-                key={folder.id}
-                className={`text-left px-3 py-2 rounded-lg text-sm hover:bg-muted transition-colors ${
-                  moveTarget?.folderId === folder.id ? "bg-muted font-medium" : ""
-                }`}
-                onClick={() => moveTarget && handleMoveLick(moveTarget, folder.id)}
-              >
-                {folder.name}
-              </button>
-            ))}
+            {folders.length === 0 ? (
+              <p className="px-3 py-2 text-sm text-muted-foreground">
+                No folders yet. Create one from the sidebar.
+              </p>
+            ) : (
+              folders.map((folder) => {
+                const checked = selectedFolderIds.has(folder.id);
+                return (
+                  <label
+                    key={folder.id}
+                    className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-muted text-sm cursor-pointer transition-colors"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => toggleSelectedFolder(folder.id)}
+                      className="size-4 rounded"
+                    />
+                    <span className="flex-1">{folder.name}</span>
+                  </label>
+                );
+              })
+            )}
+            <p className="px-3 pt-2 text-[11px] text-muted-foreground">
+              Leave all unchecked to keep this {moveTarget?.kind === "lick" ? "lick" : "song"} unfiled.
+            </p>
           </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => { setMoveTarget(null); setSelectedFolderIds(new Set()); }}>
+              Cancel
+            </Button>
+            <Button onClick={saveMoveTarget}>Save</Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

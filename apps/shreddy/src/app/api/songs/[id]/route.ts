@@ -7,13 +7,17 @@ import { UPLOADS_DIR, AUDIO_DIR } from "@/lib/paths";
 
 const songPatchSchema = z.object({
   title: z.string().min(1).optional(),
+  artist: z.string().optional(),
+  album: z.string().optional(),
+  year: z.string().optional(),
   pinned: z.boolean().optional(),
-  folderId: z.string().nullable().optional(),
+  folderIds: z.array(z.string()).optional(),
   notes: z.string().optional(),
   lastPositionSec: z.number().min(0).optional(),
   lastTempo: z.number().min(0.1).max(5).optional(),
   lastPitch: z.number().int().min(-12).max(12).optional(),
   lastSelectedSections: z.string().optional(),
+  timeSignature: z.number().int().refine(v => [3, 4, 6].includes(v), { message: "Must be 3, 4, or 6" }).optional(),
 }).strict();
 
 export async function GET(
@@ -23,7 +27,7 @@ export async function GET(
   const { id } = await params;
   const song = await prisma.song.findUnique({
     where: { id },
-    include: { sections: { orderBy: { orderIndex: "asc" } }, importJob: true },
+    include: { sections: { orderBy: { startSec: "asc" } }, importJob: true },
   });
   if (!song) {
     return NextResponse.json({ error: "Song not found" }, { status: 404 });
@@ -42,18 +46,35 @@ export async function PATCH(
     return NextResponse.json({ error: parsed.error.flatten().fieldErrors }, { status: 400 });
   }
   const body = parsed.data;
-  const song = await prisma.song.update({
-    where: { id },
-    data: {
-      ...(body.title !== undefined && { title: body.title }),
-      ...(body.pinned !== undefined && { pinned: body.pinned }),
-      ...(body.folderId !== undefined && { folderId: body.folderId || null }),
-      ...(body.notes !== undefined && { notes: body.notes }),
-      ...(body.lastPositionSec !== undefined && { lastPositionSec: body.lastPositionSec }),
-      ...(body.lastTempo !== undefined && { lastTempo: body.lastTempo }),
-      ...(body.lastPitch !== undefined && { lastPitch: body.lastPitch }),
-      ...(body.lastSelectedSections !== undefined && { lastSelectedSections: body.lastSelectedSections }),
-    },
+  const song = await prisma.$transaction(async (tx) => {
+    if (body.folderIds !== undefined) {
+      await tx.songFolder.deleteMany({ where: { songId: id } });
+      if (body.folderIds.length > 0) {
+        await tx.songFolder.createMany({
+          data: body.folderIds.map((folderId, i) => ({
+            songId: id,
+            folderId,
+            orderIndex: i,
+          })),
+        });
+      }
+    }
+    return tx.song.update({
+      where: { id },
+      data: {
+        ...(body.title !== undefined && { title: body.title }),
+        ...(body.artist !== undefined && { artist: body.artist }),
+        ...(body.album !== undefined && { album: body.album }),
+        ...(body.year !== undefined && { year: body.year }),
+        ...(body.pinned !== undefined && { pinned: body.pinned }),
+        ...(body.notes !== undefined && { notes: body.notes }),
+        ...(body.lastPositionSec !== undefined && { lastPositionSec: body.lastPositionSec }),
+        ...(body.lastTempo !== undefined && { lastTempo: body.lastTempo }),
+        ...(body.lastPitch !== undefined && { lastPitch: body.lastPitch }),
+        ...(body.lastSelectedSections !== undefined && { lastSelectedSections: body.lastSelectedSections }),
+        ...(body.timeSignature !== undefined && { timeSignature: body.timeSignature }),
+      },
+    });
   });
   return NextResponse.json(song);
 }

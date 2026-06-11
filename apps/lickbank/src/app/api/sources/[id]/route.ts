@@ -43,13 +43,29 @@ export async function PATCH(
       updateData.artist = body.artist.trim();
     }
 
-    if (Object.keys(updateData).length === 0) {
+    const folderIds: string[] | undefined = Array.isArray(body.folderIds) ? body.folderIds : undefined;
+
+    if (Object.keys(updateData).length === 0 && folderIds === undefined) {
       return NextResponse.json({ error: "No valid fields to update" }, { status: 400 });
     }
 
-    const source = await prisma.source.update({
-      where: { id },
-      data: updateData,
+    const source = await prisma.$transaction(async (tx) => {
+      if (folderIds !== undefined) {
+        await tx.sourceFolder.deleteMany({ where: { sourceId: id } });
+        if (folderIds.length > 0) {
+          await tx.sourceFolder.createMany({
+            data: folderIds.map((folderId, i) => ({
+              sourceId: id,
+              folderId,
+              orderIndex: i,
+            })),
+          });
+        }
+      }
+      if (Object.keys(updateData).length > 0) {
+        return tx.source.update({ where: { id }, data: updateData });
+      }
+      return tx.source.findUniqueOrThrow({ where: { id } });
     });
 
     return NextResponse.json(source);

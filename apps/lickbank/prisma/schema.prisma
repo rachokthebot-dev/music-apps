@@ -23,6 +23,7 @@ model Source {
 
   licks     Lick[]
   importJob ImportJob?
+  folders   SourceFolder[]
 }
 
 model Lick {
@@ -34,8 +35,6 @@ model Lick {
   durationSec     Float
   videoClipPath   String?
   audioClipPath   String?
-  folderId        String?
-  orderIndex      Int      @default(0)
   lastPositionSec Float    @default(0)
   lastTempo       Float    @default(1.0)
   lastPitch       Int      @default(0)
@@ -44,7 +43,7 @@ model Lick {
   updatedAt       DateTime @updatedAt
 
   source           Source             @relation(fields: [sourceId], references: [id], onDelete: Cascade)
-  folder           Folder?            @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  folders          LickFolder[]
   sections         Section[]
   practiceSessions PracticeSession[]
 }
@@ -56,7 +55,34 @@ model Folder {
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
-  licks Lick[]
+  lickFolders   LickFolder[]
+  sourceFolders SourceFolder[]
+}
+
+model LickFolder {
+  lickId     String
+  folderId   String
+  orderIndex Int      @default(0)
+  addedAt    DateTime @default(now())
+
+  lick   Lick   @relation(fields: [lickId], references: [id], onDelete: Cascade)
+  folder Folder @relation(fields: [folderId], references: [id], onDelete: Cascade)
+
+  @@id([lickId, folderId])
+  @@index([folderId, orderIndex])
+}
+
+model SourceFolder {
+  sourceId   String
+  folderId   String
+  orderIndex Int      @default(0)
+  addedAt    DateTime @default(now())
+
+  source Source @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  folder Folder @relation(fields: [folderId], references: [id], onDelete: Cascade)
+
+  @@id([sourceId, folderId])
+  @@index([folderId, orderIndex])
 }
 
 model Section {

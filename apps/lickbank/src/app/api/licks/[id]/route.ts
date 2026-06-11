@@ -8,7 +8,7 @@ import { extractClip } from "@/lib/extract-clip";
 
 const lickPatchSchema = z.object({
   name: z.string().min(1).optional(),
-  folderId: z.string().nullable().optional(),
+  folderIds: z.array(z.string()).optional(),
   lastPositionSec: z.number().min(0).optional(),
   lastTempo: z.number().min(0.1).max(5).optional(),
   notes: z.string().nullable().optional(),
@@ -27,7 +27,10 @@ export async function GET(
       where: { id },
       include: {
         source: { select: { id: true, title: true, artist: true, thumbnailUrl: true } },
-        folder: true,
+        folders: {
+          orderBy: { orderIndex: "asc" },
+          include: { folder: { select: { id: true, name: true } } },
+        },
         sections: { orderBy: { orderIndex: "asc" } },
       },
     });
@@ -56,7 +59,7 @@ export async function PATCH(
     }
     const body = parsed.data;
 
-    const allowedFields = ["name", "folderId", "lastPositionSec", "lastTempo", "notes"] as const;
+    const allowedFields = ["name", "lastPositionSec", "lastTempo", "notes"] as const;
     const data: Record<string, unknown> = {};
     for (const field of allowedFields) {
       if (body[field] !== undefined) {
@@ -102,21 +105,38 @@ export async function PATCH(
       data.audioClipPath = audioClipPath;
     }
 
-    if (Object.keys(data).length === 0) {
+    if (Object.keys(data).length === 0 && body.folderIds === undefined) {
       return NextResponse.json(
         { error: "No valid fields to update" },
         { status: 400 }
       );
     }
 
-    const lick = await prisma.lick.update({
-      where: { id },
-      data,
-      include: {
-        source: { select: { id: true, title: true, artist: true, thumbnailUrl: true } },
-        folder: true,
-        sections: { orderBy: { orderIndex: "asc" } },
-      },
+    const lick = await prisma.$transaction(async (tx) => {
+      if (body.folderIds !== undefined) {
+        await tx.lickFolder.deleteMany({ where: { lickId: id } });
+        if (body.folderIds.length > 0) {
+          await tx.lickFolder.createMany({
+            data: body.folderIds.map((folderId, i) => ({
+              lickId: id,
+              folderId,
+              orderIndex: i,
+            })),
+          });
+        }
+      }
+      return tx.lick.update({
+        where: { id },
+        data,
+        include: {
+          source: { select: { id: true, title: true, artist: true, thumbnailUrl: true } },
+          folders: {
+            orderBy: { orderIndex: "asc" },
+            include: { folder: { select: { id: true, name: true } } },
+          },
+          sections: { orderBy: { orderIndex: "asc" } },
+        },
+      });
     });
 
     return NextResponse.json(lick);

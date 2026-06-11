@@ -1,0 +1,12 @@
+{
+  "name": "Rock Crunch",
+  "chain": [
+    {"category": "Dynamics", "model": "NoiseGate"},
+    {"category": "Distort",  "model": "Scream808"},
+    {"category": "Amp",      "model": "BritPlexiNrm"},
+    {"category": "Cab",      "model": "auto"},
+    {"category": "EQ",       "model": "Parametric"},
+    {"category": "Delay",    "model": "TransistorTape"},
+    {"category": "Reverb",   "model": "Hall"}
+  ]
+}

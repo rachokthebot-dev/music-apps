@@ -7,6 +7,10 @@ export async function GET() {
       orderBy: { createdAt: "desc" },
       include: {
         _count: { select: { licks: true } },
+        folders: {
+          orderBy: { orderIndex: "asc" },
+          include: { folder: { select: { id: true, name: true } } },
+        },
       },
     });
 

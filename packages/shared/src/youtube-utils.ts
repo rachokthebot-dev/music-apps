@@ -23,7 +23,14 @@ export async function fetchVideoMeta(url: string): Promise<VideoMeta> {
   return new Promise((resolve, reject) => {
     execFile(
       "yt-dlp",
-      ["--dump-json", "--no-playlist", url],
+      [
+        "--no-playlist",
+        "--print", "%(title)s",
+        "--print", "%(uploader)s",
+        "--print", "%(duration)s",
+        "--print", "%(thumbnail)s",
+        url,
+      ],
       { timeout: 30000 },
       (error, stdout, stderr) => {
         if (error) {
@@ -40,12 +47,12 @@ export async function fetchVideoMeta(url: string): Promise<VideoMeta> {
           return;
         }
         try {
-          const data = JSON.parse(stdout);
+          const lines = stdout.trim().split("\n");
           resolve({
-            title: data.title || "Unknown",
-            artist: data.uploader || data.artist || data.creator || "",
-            duration: data.duration || 0,
-            thumbnail: data.thumbnail || "",
+            title: lines[0] || "Unknown",
+            artist: lines[1] || "",
+            duration: parseFloat(lines[2]) || 0,
+            thumbnail: lines[3] || "",
           });
         } catch {
           reject(new Error("Failed to parse video metadata"));

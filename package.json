@@ -11,6 +11,10 @@
     "build:shreddy": "npm run build --workspace=apps/shreddy",
     "build:lickbank": "npm run build --workspace=apps/lickbank",
     "dev:chordcraft": "npm run dev --workspace=apps/chordcraft",
-    "build:chordcraft": "npm run build --workspace=apps/chordcraft"
+    "build:chordcraft": "npm run build --workspace=apps/chordcraft",
+    "dev:metronome": "npm run dev --workspace=apps/metronome",
+    "build:metronome": "npm run build --workspace=apps/metronome",
+    "dev:soundpath": "npm run dev --workspace=apps/soundpath",
+    "build:soundpath": "npm run build --workspace=apps/soundpath"
   }
 }

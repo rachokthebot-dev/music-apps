@@ -7,33 +7,31 @@ interface ABLoop {
 
 export function useABLoop() {
   const [abLoop, setAbLoop] = useState<ABLoop | null>(null);
-  const [settingAB, setSettingAB] = useState<"idle" | "a_set">("idle");
-  const [abPointA, setAbPointA] = useState(0);
+  const [pendingA, setPendingA] = useState<number | null>(null);
 
-  const handleABLoop = useCallback((currentTime: number) => {
-    if (settingAB === "idle") {
-      setAbPointA(currentTime);
-      setSettingAB("a_set");
-    } else if (settingAB === "a_set") {
-      const a = Math.min(abPointA, currentTime);
-      const b = Math.max(abPointA, currentTime);
-      if (b - a > 0.5) {
-        setAbLoop({ a, b });
-      }
-      setSettingAB("idle");
-    }
-  }, [settingAB, abPointA]);
+  const setA = useCallback((currentTime: number) => {
+    setPendingA(currentTime);
+    setAbLoop(null);
+  }, []);
+
+  const setB = useCallback((currentTime: number) => {
+    setPendingA((a) => {
+      if (a === null || currentTime - a <= 0.5) return a;
+      setAbLoop({ a, b: currentTime });
+      return null;
+    });
+  }, []);
 
   const clearABLoop = useCallback(() => {
     setAbLoop(null);
-    setSettingAB("idle");
+    setPendingA(null);
   }, []);
 
   return {
     abLoop,
-    settingAB,
-    abPointA,
-    handleABLoop,
+    pendingA,
+    setA,
+    setB,
     clearABLoop,
   };
 }

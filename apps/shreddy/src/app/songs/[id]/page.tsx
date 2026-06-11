@@ -22,11 +22,10 @@ import {
   Repeat,
   X,
   Pencil,
-  Check,
   Loader2,
   Clock,
   RefreshCw,
-  Repeat2,
+  Share2,
 } from "lucide-react";
 import { useMetronome } from "@/hooks/useMetronome";
 import { usePitchShifter } from "@/hooks/usePitchShifter";
@@ -66,6 +65,7 @@ interface Song {
   album: string;
   genre: string;
   year: string;
+  timeSignature: number;
   sections: Section[];
 }
 
@@ -131,16 +131,16 @@ export default function PracticePage({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [settingsRestored, setSettingsRestored] = useState(false);
 
-  // Title editing
-  const [editingTitle, setEditingTitle] = useState(false);
-  const [titleDraft, setTitleDraft] = useState("");
+  // Metadata editing (title / artist / album / year)
+  const [metadataDialogOpen, setMetadataDialogOpen] = useState(false);
+  const [metadataDraft, setMetadataDraft] = useState({ title: "", artist: "", album: "", year: "" });
 
   // Notes
   const [notesDraft, setNotesDraft] = useState("");
   const notesSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // A-B loop (custom range, not section-based)
-  const { abLoop, settingAB, abPointA, handleABLoop: _handleABLoop, clearABLoop } = useABLoop();
+  const { abLoop, pendingA, setA: _setA, setB, clearABLoop } = useABLoop();
 
   // Section editor
   const {
@@ -175,6 +175,12 @@ export default function PracticePage({
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
+  // Captured once from the first song fetch — used to seek to the user's last position
+  // on initial load. We deliberately don't follow `song.lastPositionSec` afterwards,
+  // because every PATCH that saves the bookmark would otherwise tear down the audio
+  // element (and silently drop any pitched-audio source already loaded).
+  const initialPositionRef = useRef<number | null>(null);
+
   const lastSaveRef = useRef(0);
   const settingsSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -183,6 +189,11 @@ export default function PracticePage({
       const res = await fetch(`/api/songs/${id}`);
       if (!res.ok) throw new Error("Song not found");
       const data = await res.json();
+      // Capture the bookmark from the first fetch only; subsequent refetches
+      // (rename/delete/add section, periodic bookmark saves) must not move the play head.
+      if (initialPositionRef.current === null) {
+        initialPositionRef.current = data.lastPositionSec ?? 0;
+      }
       setSong(data);
       setNotesDraft(data.notes || "");
       setLoadError(null);
@@ -200,18 +211,6 @@ export default function PracticePage({
     if (!song || settingsRestored) return;
     if (song.lastTempo !== null) setTempo(song.lastTempo);
     if (song.lastPitch !== null) setPitch(song.lastPitch);
-    if (song.lastSelectedSections) {
-      try {
-        const ids = JSON.parse(song.lastSelectedSections) as string[];
-        if (ids.length > 0) {
-          const validIds = ids.filter(sid => song.sections.some(s => s.id === sid));
-          if (validIds.length > 0) {
-            setSelectedSectionIds(validIds);
-            setLoopEnabled(true);
-          }
-        }
-      } catch { /* ignore invalid JSON */ }
-    }
     setSettingsRestored(true);
   }, [song, settingsRestored]);
 
@@ -397,6 +396,41 @@ export default function PracticePage({
     }
   }
 
+  const [sharing, setSharing] = useState(false);
+  async function handleShare() {
+    if (!song?.normalizedAudioPath || sharing) return;
+    setSharing(true);
+    try {
+      const useClip = selectedSectionIds.length > 0 && loopRange;
+      const res = useClip
+        ? await fetch(`/api/songs/${song.id}/clip?start=${loopRange.startSec}&end=${loopRange.endSec}`)
+        : await fetch(`/api/media/${song.normalizedAudioPath}`);
+      if (!res.ok) throw new Error("fetch failed");
+      const blob = await res.blob();
+      const suffix = useClip
+        ? loopRange.names.length === 1 ? loopRange.names[0] : "Loop"
+        : "";
+      const baseName = [song.artist, song.title, suffix].filter(Boolean).join(" - ");
+      const safeName = baseName.replace(/[^a-zA-Z0-9\-_ ]/g, "").trim() + ".mp3";
+      const file = new File([blob], safeName, { type: "audio/mpeg" });
+
+      if (navigator.canShare?.({ files: [file] })) {
+        await navigator.share({ files: [file] });
+      } else {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = safeName;
+        a.click();
+        URL.revokeObjectURL(url);
+      }
+    } catch {
+      /* user cancelled share sheet */
+    } finally {
+      setSharing(false);
+    }
+  }
+
   // Set up audio element
   useEffect(() => {
     if (!song?.normalizedAudioPath) return;
@@ -407,10 +441,12 @@ export default function PracticePage({
 
     audio.addEventListener("loadedmetadata", () => {
       setDuration(audio.duration);
-      // Restore last position
-      if (song.lastPositionSec > 0 && song.lastPositionSec < audio.duration) {
-        audio.currentTime = song.lastPositionSec;
-        setCurrentTime(song.lastPositionSec);
+      // Restore last position — read from the ref so we use the value from the
+      // first fetch, not whatever the current `song` happens to hold.
+      const initial = initialPositionRef.current ?? 0;
+      if (initial > 0 && initial < audio.duration) {
+        audio.currentTime = initial;
+        setCurrentTime(initial);
       }
     });
 
@@ -419,8 +455,13 @@ export default function PracticePage({
     });
 
     audio.addEventListener("ended", () => {
-      if (loopSongRef.current || (loopEnabledRef.current && loopRangeRef.current) || abLoopRef.current) {
-        // Loop enforcement in rAF will handle restart
+      if (abLoopRef.current) {
+        audio.currentTime = abLoopRef.current.a;
+        audio.play();
+      } else if (loopEnabledRef.current && loopRangeRef.current) {
+        audio.currentTime = loopRangeRef.current.startSec;
+        audio.play();
+      } else if (loopSongRef.current) {
         audio.currentTime = 0;
         audio.play();
       } else {
@@ -441,7 +482,8 @@ export default function PracticePage({
       audio.src = "";
       audioRef.current = null;
     };
-  }, [song?.normalizedAudioPath, song?.lastPositionSec, id]);
+    // Intentionally NOT depending on song.lastPositionSec — see initialPositionRef.
+  }, [song?.normalizedAudioPath, id]);
 
   // Save bookmark every 10 seconds while playing
   useEffect(() => {
@@ -499,7 +541,7 @@ export default function PracticePage({
       }
       // Section loop
       else if (loopEnabledRef.current && loopRangeRef.current) {
-        if (t >= loopRangeRef.current.endSec) {
+        if (t >= loopRangeRef.current.endSec || t < loopRangeRef.current.startSec) {
           audio.currentTime = loopRangeRef.current.startSec;
         }
       }
@@ -536,6 +578,13 @@ export default function PracticePage({
     if (playing) {
       audio.pause();
     } else {
+      if (abLoop && (audio.currentTime < abLoop.a || audio.currentTime >= abLoop.b)) {
+        audio.currentTime = abLoop.a;
+        setCurrentTime(abLoop.a);
+      } else if (loopEnabled && loopRange && (audio.currentTime < loopRange.startSec || audio.currentTime >= loopRange.endSec)) {
+        audio.currentTime = loopRange.startSec;
+        setCurrentTime(loopRange.startSec);
+      }
       audio.play();
     }
     setPlaying(!playing);
@@ -604,23 +653,40 @@ export default function PracticePage({
     setLoopEnabled(false);
   }
 
-  function handleABLoop() {
-    if (settingAB === "idle") clearLoop();
-    _handleABLoop(currentTime);
+  function setA() {
+    clearLoop();
+    _setA(currentTime);
   }
 
-  // Title editing
-  async function saveTitle() {
-    if (!titleDraft.trim() || titleDraft === song?.title) {
-      setEditingTitle(false);
+  function openMetadataDialog() {
+    if (!song) return;
+    setMetadataDraft({
+      title: song.title,
+      artist: song.artist,
+      album: song.album,
+      year: song.year,
+    });
+    setMetadataDialogOpen(true);
+  }
+
+  async function saveMetadata() {
+    if (!song || !metadataDraft.title.trim()) return;
+    // Only send fields that actually changed.
+    const patch: Record<string, string> = {};
+    if (metadataDraft.title !== song.title) patch.title = metadataDraft.title;
+    if (metadataDraft.artist !== song.artist) patch.artist = metadataDraft.artist;
+    if (metadataDraft.album !== song.album) patch.album = metadataDraft.album;
+    if (metadataDraft.year !== song.year) patch.year = metadataDraft.year;
+    if (Object.keys(patch).length === 0) {
+      setMetadataDialogOpen(false);
       return;
     }
     await fetch(`/api/songs/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title: titleDraft }),
+      body: JSON.stringify(patch),
     });
-    setEditingTitle(false);
+    setMetadataDialogOpen(false);
     await fetchSong();
   }
 
@@ -646,6 +712,10 @@ export default function PracticePage({
     if (!sectionName.trim() || endSec <= startSec) return;
 
     if (editingSection) {
+      // Pause on rename (name changed) so the user can re-orient. Time-only edits
+      // via this dialog are treated like border adjustments and keep playing.
+      // Adding a new section (the else branch) also keeps playing.
+      if (sectionName !== editingSection.name) pausePlayback();
       await fetch(`/api/sections/${editingSection.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -664,6 +734,7 @@ export default function PracticePage({
   }
 
   async function deleteSection(sectionId: string) {
+    pausePlayback();
     await fetch(`/api/sections/${sectionId}`, { method: "DELETE" });
     if (selectedSectionIds.includes(sectionId)) {
       const remaining = selectedSectionIds.filter((id) => id !== sectionId);
@@ -821,40 +892,32 @@ export default function PracticePage({
             <ArrowLeft className="size-5" />
           </button>
           <div className="flex-1 min-w-0">
-            {editingTitle ? (
-              <div className="flex items-center gap-2">
-                <Input
-                  value={titleDraft}
-                  onChange={(e) => setTitleDraft(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") saveTitle();
-                    if (e.key === "Escape") setEditingTitle(false);
-                  }}
-                  className="text-lg font-semibold h-9"
-                  autoFocus
-                />
-                <Button size="icon-sm" onClick={saveTitle}>
-                  <Check className="size-4" />
-                </Button>
-                <Button size="icon-sm" variant="outline" onClick={() => setEditingTitle(false)}>
-                  <X className="size-4" />
-                </Button>
-              </div>
-            ) : (
-              <h1
-                className="text-xl font-semibold truncate text-foreground cursor-pointer hover:text-foreground/80 transition-colors group"
-                onClick={() => { setTitleDraft(song.title); setEditingTitle(true); }}
-              >
-                {song.title}
-                <Pencil className="inline-block size-3.5 ml-2 opacity-0 group-hover:opacity-40 transition-opacity" />
-              </h1>
-            )}
+            <h1
+              className="text-xl font-semibold truncate text-foreground cursor-pointer hover:text-foreground/80 transition-colors group inline-flex items-center"
+              onClick={openMetadataDialog}
+              title="Edit title / artist / album / year"
+            >
+              <span className="truncate">{song.title}</span>
+              <Pencil className="size-3.5 ml-2 opacity-0 group-hover:opacity-40 transition-opacity shrink-0" />
+            </h1>
             {/* Metadata pills row */}
             <div className="flex items-center gap-2 mt-1 flex-wrap">
-              {metaParts.length > 0 && (
-                <span className="text-[13px] text-muted-foreground">
+              {metaParts.length > 0 ? (
+                <button
+                  onClick={openMetadataDialog}
+                  className="text-[13px] text-muted-foreground hover:text-foreground transition-colors text-left"
+                  title="Edit title / artist / album / year"
+                >
                   {metaParts.join(" · ")}
-                </span>
+                </button>
+              ) : (
+                <button
+                  onClick={openMetadataDialog}
+                  className="text-[13px] text-muted-foreground/60 hover:text-foreground transition-colors italic"
+                  title="Add artist, album, year"
+                >
+                  Add artist…
+                </button>
               )}
               {song.genre && (
                 <span className="text-[11px] bg-muted text-muted-foreground px-2 py-0.5 rounded-full">{song.genre}</span>
@@ -867,6 +930,21 @@ export default function PracticePage({
               {song.bpm && (
                 <span className="text-[11px] bg-muted text-muted-foreground px-2 py-0.5 rounded-full">{Math.round(song.bpm)} BPM</span>
               )}
+              <button
+                onClick={async () => {
+                  const next = song.timeSignature === 4 ? 3 : song.timeSignature === 3 ? 6 : 4;
+                  await fetch(`/api/songs/${song.id}`, {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ timeSignature: next }),
+                  });
+                  fetchSong();
+                }}
+                className="text-[11px] bg-muted text-muted-foreground px-2 py-0.5 rounded-full hover:bg-accent transition-colors"
+                title="Click to change time signature"
+              >
+                {song.timeSignature === 6 ? "6/8" : `${song.timeSignature}/4`}
+              </button>
               {song.durationSec && (
                 <span className="text-[11px] bg-muted text-muted-foreground px-2 py-0.5 rounded-full">{formatTime(song.durationSec)}</span>
               )}
@@ -879,6 +957,17 @@ export default function PracticePage({
                 <RefreshCw className={`size-3 ${reanalyzing ? "animate-spin" : ""}`} />
                 {reanalyzing ? "Analyzing..." : "Re-analyze"}
               </button>
+              {song.normalizedAudioPath && (
+                <button
+                  onClick={handleShare}
+                  disabled={sharing}
+                  className="text-[11px] bg-muted text-muted-foreground px-2 py-0.5 rounded-full hover:bg-accent transition-colors flex items-center gap-1"
+                  title="Share audio file"
+                >
+                  {sharing ? <Loader2 className="size-3 animate-spin" /> : <Share2 className="size-3" />}
+                  {sharing ? "Sharing..." : "Share"}
+                </button>
+              )}
               {activePlayTime > 0 && (
                 <span className="text-[11px] text-muted-foreground/60 flex items-center gap-1 ml-auto">
                   <Clock className="size-3" />
@@ -930,16 +1019,17 @@ export default function PracticePage({
         )}
 
         {/* === UNIFIED TRANSPORT BAR === */}
-        <div className="bg-card border border-border rounded-2xl p-3 mb-3">
-          {/* Top row on phone: tempo + pitch. On md+: single row with all controls */}
-          <div className="flex items-center justify-between gap-2 mb-2 md:mb-0">
-            {/* Tempo pills */}
-            <div className="flex items-center gap-0.5 shrink-0">
+        <div className="sticky bottom-2 z-30 bg-card/95 backdrop-blur border border-border rounded-2xl p-3 mb-3 shadow-lg shadow-black/5">
+          {/* Top row: tempo + (desktop-only transport) + pitch.
+              On phone the row wraps — tempo can scroll horizontally; pitch sits on its own line. */}
+          <div className="flex md:items-center md:justify-between gap-2 mb-2 md:mb-0 flex-wrap md:flex-nowrap">
+            {/* Tempo pills — horizontal scroll on phone, free-width on desktop */}
+            <div className="flex items-center gap-1 md:shrink-0 overflow-x-auto -mx-1 px-1 w-full md:w-auto snap-x">
               {TEMPO_VALUES.map((t) => (
                 <button
                   key={t}
                   onClick={() => setTempo(t)}
-                  className={`px-1.5 sm:px-2 py-1.5 rounded-lg text-[11px] font-medium transition-colors active:scale-95 ${
+                  className={`min-w-10 sm:min-w-11 h-10 sm:h-11 px-2 sm:px-3 rounded-lg text-xs sm:text-sm font-semibold transition-colors active:scale-95 snap-start ${
                     tempo === t
                       ? "bg-primary text-primary-foreground"
                       : "text-muted-foreground hover:bg-muted"
@@ -954,41 +1044,67 @@ export default function PracticePage({
             <div className="hidden md:flex items-center gap-2">
               <button
                 onClick={() => setLoopSong(!loopSong)}
-                className={`size-9 rounded-full flex items-center justify-center active:scale-90 transition-all ${
+                className={`size-11 rounded-full flex items-center justify-center active:scale-90 transition-all ${
                   loopSong ? "text-primary" : "text-muted-foreground/30"
                 }`}
                 title={loopSong ? "Song will loop" : "Song will stop at end"}
               >
-                <Repeat className="size-4" />
+                <Repeat className="size-5" />
               </button>
-              <Button variant="outline" size="icon" onClick={jumpToStart} className="size-9 active:scale-90">
-                <SkipBack className="size-4" />
+              <Button variant="outline" size="icon" onClick={jumpToStart} className="size-11 active:scale-90">
+                <SkipBack className="size-5" />
               </Button>
               <button
-                className="size-14 rounded-full bg-primary text-primary-foreground flex items-center justify-center active:scale-95 transition-transform shadow-sm disabled:opacity-50"
+                className="size-16 rounded-full bg-primary text-primary-foreground flex items-center justify-center active:scale-95 transition-transform shadow-sm disabled:opacity-50"
                 onClick={togglePlay}
                 disabled={pitchProcessing}
               >
-                {pitchProcessing ? <Loader2 className="size-6 animate-spin" /> : playing ? <Pause className="size-6" /> : <Play className="size-6 ml-0.5" />}
+                {pitchProcessing ? <Loader2 className="size-7 animate-spin" /> : playing ? <Pause className="size-7" /> : <Play className="size-7 ml-0.5" />}
               </button>
               <Button
-                variant={settingAB === "a_set" ? "default" : abLoop ? "secondary" : "outline"}
+                variant="outline"
                 size="icon"
-                onClick={abLoop ? clearABLoop : handleABLoop}
-                className="size-9 active:scale-90"
-                title={settingAB === "a_set" ? "Set point B" : abLoop ? "Clear A-B loop" : "Set A-B loop"}
+                onClick={setA}
+                className={`size-11 text-sm font-bold active:scale-90 ${
+                  pendingA !== null || abLoop ? "bg-orange-500 text-white border-orange-500 hover:bg-orange-600 hover:text-white" : ""
+                }`}
+                title={abLoop ? `A: ${formatTime(abLoop.a)}` : pendingA !== null ? `A: ${formatTime(pendingA)}` : "Set A point"}
               >
-                {settingAB === "a_set" ? <span className="text-[10px] font-bold">B?</span> : <Repeat2 className="size-4" />}
+                A
               </Button>
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={() => setB(currentTime)}
+                disabled={pendingA === null}
+                className={`size-11 text-sm font-bold active:scale-90 ${
+                  abLoop ? "bg-orange-500 text-white border-orange-500 hover:bg-orange-600 hover:text-white" : ""
+                }`}
+                title={abLoop ? `B: ${formatTime(abLoop.b)}` : "Set B point"}
+              >
+                B
+              </Button>
+              {(pendingA !== null || abLoop) && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={clearABLoop}
+                  className="size-11 text-muted-foreground hover:text-destructive active:scale-90"
+                  title="Clear A-B loop"
+                >
+                  <X className="size-5" />
+                </Button>
+              )}
             </div>
 
-            {/* Pitch */}
-            <div className="flex items-center gap-1 shrink-0">
-              <span className="text-[11px] text-muted-foreground whitespace-nowrap mr-1">Pitch</span>
+            {/* Pitch — compact on phone (no label, smaller buttons), full on desktop */}
+            <div className="flex items-center gap-1 shrink-0 ml-auto md:ml-0">
+              <span className="hidden md:inline text-xs text-muted-foreground whitespace-nowrap mr-1">Pitch</span>
               <button
                 onClick={() => setPitch(Math.max(-6, pitch - 1))}
                 disabled={pitch <= -6}
-                className="size-8 sm:size-9 rounded-lg border border-border flex items-center justify-center text-sm font-medium active:scale-90 transition-transform disabled:opacity-30"
+                className="size-9 md:size-11 rounded-lg border border-border flex items-center justify-center text-base font-medium active:scale-90 transition-transform disabled:opacity-30"
+                title="Pitch down"
               >
                 −
               </button>
@@ -996,7 +1112,8 @@ export default function PracticePage({
               <button
                 onClick={() => setPitch(Math.min(6, pitch + 1))}
                 disabled={pitch >= 6}
-                className="size-8 sm:size-9 rounded-lg border border-border flex items-center justify-center text-sm font-medium active:scale-90 transition-transform disabled:opacity-30"
+                className="size-9 md:size-11 rounded-lg border border-border flex items-center justify-center text-base font-medium active:scale-90 transition-transform disabled:opacity-30"
+                title="Pitch up"
               >
                 +
               </button>
@@ -1007,37 +1124,62 @@ export default function PracticePage({
           <div className="flex md:hidden items-center justify-center gap-3">
             <button
               onClick={() => setLoopSong(!loopSong)}
-              className={`size-9 rounded-full flex items-center justify-center active:scale-90 transition-all ${
+              className={`size-11 rounded-full flex items-center justify-center active:scale-90 transition-all ${
                 loopSong ? "text-primary" : "text-muted-foreground/30"
               }`}
               title={loopSong ? "Song will loop" : "Song will stop at end"}
             >
-              <Repeat className="size-4" />
+              <Repeat className="size-5" />
             </button>
-            <Button variant="outline" size="icon" onClick={jumpToStart} className="size-9 active:scale-90">
-              <SkipBack className="size-4" />
+            <Button variant="outline" size="icon" onClick={jumpToStart} className="size-11 active:scale-90">
+              <SkipBack className="size-5" />
             </Button>
             <button
-              className="size-14 rounded-full bg-primary text-primary-foreground flex items-center justify-center active:scale-95 transition-transform shadow-sm disabled:opacity-50"
+              className="size-16 rounded-full bg-primary text-primary-foreground flex items-center justify-center active:scale-95 transition-transform shadow-sm disabled:opacity-50"
               onClick={togglePlay}
               disabled={pitchProcessing}
             >
-              {pitchProcessing ? <Loader2 className="size-6 animate-spin" /> : playing ? <Pause className="size-6" /> : <Play className="size-6 ml-0.5" />}
+              {pitchProcessing ? <Loader2 className="size-7 animate-spin" /> : playing ? <Pause className="size-7" /> : <Play className="size-7 ml-0.5" />}
             </button>
             <Button
-              variant={settingAB === "a_set" ? "default" : abLoop ? "secondary" : "outline"}
+              variant="outline"
               size="icon"
-              onClick={abLoop ? clearABLoop : handleABLoop}
-              className="size-9 active:scale-90"
-              title={settingAB === "a_set" ? "Set point B" : abLoop ? "Clear A-B loop" : "Set A-B loop"}
+              onClick={setA}
+              className={`size-11 text-sm font-bold active:scale-90 ${
+                pendingA !== null || abLoop ? "bg-orange-500 text-white border-orange-500 hover:bg-orange-600 hover:text-white" : ""
+              }`}
+              title={abLoop ? `A: ${formatTime(abLoop.a)}` : pendingA !== null ? `A: ${formatTime(pendingA)}` : "Set A point"}
             >
-              {settingAB === "a_set" ? <span className="text-[10px] font-bold">B?</span> : <Repeat2 className="size-4" />}
+              A
             </Button>
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => setB(currentTime)}
+              disabled={pendingA === null}
+              className={`size-11 text-sm font-bold active:scale-90 ${
+                abLoop ? "bg-orange-500 text-white border-orange-500 hover:bg-orange-600 hover:text-white" : ""
+              }`}
+              title={abLoop ? `B: ${formatTime(abLoop.b)}` : "Set B point"}
+            >
+              B
+            </Button>
+            {(pendingA !== null || abLoop) && (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={clearABLoop}
+                className="size-11 text-muted-foreground hover:text-destructive active:scale-90"
+                title="Clear A-B loop"
+              >
+                <X className="size-5" />
+              </Button>
+            )}
           </div>
         </div>
 
         {/* Loop / A-B indicators */}
-        {(loopEnabled && loopRange) || abLoop || (settingAB === "a_set" && !abLoop) ? (
+        {(loopEnabled && loopRange) || abLoop || (pendingA !== null && !abLoop) ? (
           <div className="space-y-1.5 mb-3">
             {loopEnabled && loopRange && (
               <div className="flex items-center justify-center gap-2 px-3 py-1.5 bg-blue-50 dark:bg-blue-950 rounded-lg">
@@ -1061,12 +1203,12 @@ export default function PracticePage({
                 </button>
               </div>
             )}
-            {settingAB === "a_set" && !abLoop && (
+            {pendingA !== null && !abLoop && (
               <div className="flex items-center justify-center gap-2 px-3 py-1.5 bg-orange-50 dark:bg-orange-950 rounded-lg">
                 <span className="text-xs text-orange-600 dark:text-orange-400">
-                  Point A at {formatTime(abPointA)} — navigate to B and press A-B
+                  Point A at {formatTime(pendingA)} — navigate to B and press B
                 </span>
-                <button onClick={() => clearLoop()} className="p-1.5 -mr-1 rounded-lg text-orange-400 hover:text-orange-600 active:scale-90 transition-all">
+                <button onClick={clearABLoop} className="p-1.5 -mr-1 rounded-lg text-orange-400 hover:text-orange-600 active:scale-90 transition-all">
                   <X className="size-4" />
                 </button>
               </div>
@@ -1083,6 +1225,15 @@ export default function PracticePage({
         currentTime={currentTime}
         loopCounts={loopCounts}
         editMode={editMode}
+        beatTimestamps={parsedBeats}
+        timeSignature={song.timeSignature ?? 4}
+        songMeta={{
+          title: song.title,
+          artist: song.artist,
+          musicalKey: song.musicalKey,
+          bpm: song.bpm,
+          durationSec: song.durationSec,
+        }}
         onEditModeToggle={() => setEditMode(!editMode)}
         onSelectSection={(section) => selectSection(section, false)}
         onEditSection={openEditSection}
@@ -1119,6 +1270,67 @@ export default function PracticePage({
         />
       </div>
       </ErrorBoundary>
+
+      {/* Metadata editor dialog */}
+      <Dialog open={metadataDialogOpen} onOpenChange={setMetadataDialogOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Edit metadata</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 pt-2">
+            <div>
+              <Label htmlFor="meta-title">Title</Label>
+              <Input
+                id="meta-title"
+                value={metadataDraft.title}
+                onChange={(e) => setMetadataDraft({ ...metadataDraft, title: e.target.value })}
+                onKeyDown={(e) => { if (e.key === "Enter") saveMetadata(); }}
+                autoFocus
+                className="h-10"
+              />
+            </div>
+            <div>
+              <Label htmlFor="meta-artist">Artist</Label>
+              <Input
+                id="meta-artist"
+                value={metadataDraft.artist}
+                onChange={(e) => setMetadataDraft({ ...metadataDraft, artist: e.target.value })}
+                onKeyDown={(e) => { if (e.key === "Enter") saveMetadata(); }}
+                className="h-10"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label htmlFor="meta-album">Album</Label>
+                <Input
+                  id="meta-album"
+                  value={metadataDraft.album}
+                  onChange={(e) => setMetadataDraft({ ...metadataDraft, album: e.target.value })}
+                  onKeyDown={(e) => { if (e.key === "Enter") saveMetadata(); }}
+                  className="h-10"
+                />
+              </div>
+              <div>
+                <Label htmlFor="meta-year">Year</Label>
+                <Input
+                  id="meta-year"
+                  value={metadataDraft.year}
+                  onChange={(e) => setMetadataDraft({ ...metadataDraft, year: e.target.value })}
+                  onKeyDown={(e) => { if (e.key === "Enter") saveMetadata(); }}
+                  placeholder="2024"
+                  className="h-10"
+                />
+              </div>
+            </div>
+            <div className="flex gap-2 justify-end pt-1">
+              <Button variant="outline" onClick={() => setMetadataDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button onClick={saveMetadata} disabled={!metadataDraft.title.trim()}>Save</Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Section editor dialog */}
       <Dialog open={sectionDialogOpen} onOpenChange={setSectionDialogOpen}>

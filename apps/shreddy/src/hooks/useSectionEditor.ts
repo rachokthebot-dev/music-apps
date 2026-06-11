@@ -55,11 +55,20 @@ export function useSectionEditor() {
   }
 
   const getParsedTimes = useCallback(() => {
-    return {
-      startSec: parseTime(sectionStart),
-      endSec: parseTime(sectionEnd),
-    };
-  }, [sectionStart, sectionEnd]);
+    // If the displayed string still matches the original (floored) format, the
+    // user didn't touch that field — preserve the original sub-second precision
+    // so editing the name doesn't silently round boundaries down and create
+    // gaps next to neighbors that were dragged with sub-second precision.
+    const startSec =
+      editingSection && sectionStart === formatTime(editingSection.startSec)
+        ? editingSection.startSec
+        : parseTime(sectionStart);
+    const endSec =
+      editingSection && sectionEnd === formatTime(editingSection.endSec)
+        ? editingSection.endSec
+        : parseTime(sectionEnd);
+    return { startSec, endSec };
+  }, [sectionStart, sectionEnd, editingSection]);
 
   const closeDialog = useCallback(() => {
     setSectionDialogOpen(false);

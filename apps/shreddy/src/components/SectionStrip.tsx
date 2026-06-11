@@ -1,6 +1,7 @@
 "use client";
 
-import { Pencil, Plus, Trash2, RotateCw } from "lucide-react";
+import { useState, useRef, useEffect } from "react";
+import { Pencil, Plus, Trash2, RotateCw, Share2, Copy, Download, Check } from "lucide-react";
 import { Button } from "@music-apps/ui";
 
 interface Section {
@@ -24,12 +25,36 @@ function formatTime(sec: number): string {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
+function getBarCount(
+  section: { startSec: number; endSec: number },
+  beatTimestamps: number[],
+  timeSignature: number
+): number | null {
+  if (!beatTimestamps.length) return null;
+  const beats = beatTimestamps.filter(
+    t => t >= section.startSec && t < section.endSec
+  );
+  if (beats.length === 0) return null;
+  return Math.round(beats.length / timeSignature);
+}
+
+interface SongMeta {
+  title: string;
+  artist: string;
+  musicalKey: string;
+  bpm: number | null;
+  durationSec: number | null;
+}
+
 interface SectionStripProps {
   sections: Section[];
   selectedSectionIds: string[];
   currentTime: number;
   loopCounts: Record<string, number>;
   editMode: boolean;
+  beatTimestamps: number[];
+  timeSignature: number;
+  songMeta: SongMeta;
   onEditModeToggle: () => void;
   onSelectSection: (section: Section) => void;
   onEditSection: (section: Section) => void;
@@ -43,12 +68,54 @@ export function SectionStrip({
   currentTime,
   loopCounts,
   editMode,
+  beatTimestamps,
+  timeSignature,
+  songMeta,
   onEditModeToggle,
   onSelectSection,
   onEditSection,
   onDeleteSection,
   onAddSection,
 }: SectionStripProps) {
+  const [exportOpen, setExportOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const exportRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!exportOpen) return;
+    function handleClick(e: MouseEvent) {
+      if (exportRef.current && !exportRef.current.contains(e.target as Node)) {
+        setExportOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [exportOpen]);
+
+  const handleCopyText = async () => {
+    const { copyStructureText } = await import("@/lib/export-structure");
+    const text = copyStructureText({
+      ...songMeta,
+      timeSignature,
+      sections,
+      beatTimestamps,
+    });
+    await navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => { setCopied(false); setExportOpen(false); }, 1200);
+  };
+
+  const handleSaveImage = async () => {
+    const { generateStructureImage } = await import("@/lib/export-structure");
+    generateStructureImage({
+      ...songMeta,
+      timeSignature,
+      sections,
+      beatTimestamps,
+    });
+    setExportOpen(false);
+  };
+
   return (
     <div className="mb-3">
       <div className="flex items-center gap-2 mb-2 px-1">
@@ -69,6 +136,37 @@ export function SectionStrip({
           <Button variant="outline" size="sm" onClick={onAddSection} className="gap-1 h-7 text-xs">
             <Plus className="size-3" /> Add
           </Button>
+          {sections.length > 0 && (
+            <div className="relative" ref={exportRef}>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setExportOpen(!exportOpen)}
+                className="gap-1 h-7 text-xs"
+                title="Export structure"
+              >
+                <Share2 className="size-3" />
+              </Button>
+              {exportOpen && (
+                <div className="absolute right-0 top-full mt-1 z-40 bg-card border border-border rounded-lg shadow-lg py-1 min-w-[160px]">
+                  <button
+                    onClick={handleCopyText}
+                    className="flex items-center gap-2 w-full px-3 py-2 text-xs text-foreground hover:bg-muted transition-colors"
+                  >
+                    {copied ? <Check className="size-3.5 text-emerald-500" /> : <Copy className="size-3.5" />}
+                    {copied ? "Copied!" : "Copy as text"}
+                  </button>
+                  <button
+                    onClick={handleSaveImage}
+                    className="flex items-center gap-2 w-full px-3 py-2 text-xs text-foreground hover:bg-muted transition-colors"
+                  >
+                    <Download className="size-3.5" />
+                    Save as image
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
       {sections.length === 0 ? (
@@ -96,25 +194,33 @@ export function SectionStrip({
                   <div className={`size-2.5 rounded-full ${SECTION_DOT_COLORS[idx % SECTION_DOT_COLORS.length]} ${isPlaying ? "animate-pulse" : ""}`} />
                   <span className="text-sm font-medium text-foreground truncate">{section.name}</span>
                 </div>
-                <span className="text-[11px] text-muted-foreground tabular-nums block mb-1">
+                <span className="text-[11px] text-muted-foreground tabular-nums block">
                   {formatTime(section.startSec)} – {formatTime(section.endSec)}
                 </span>
-                <div className="flex items-center justify-end">
-                  <div className="flex items-center gap-0">
-                    <button
-                      onClick={(e) => { e.stopPropagation(); onEditSection(section); }}
-                      className="p-1 rounded text-muted-foreground/30 hover:text-foreground"
-                    >
-                      <Pencil className="size-3" />
-                    </button>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); onDeleteSection(section.id); }}
-                      className="p-1 rounded text-muted-foreground/30 hover:text-destructive"
-                    >
-                      <Trash2 className="size-3" />
-                    </button>
+                {(() => {
+                  const bars = getBarCount(section, beatTimestamps, timeSignature);
+                  return bars !== null ? (
+                    <span className="text-[10px] text-muted-foreground/70 block mb-1">~{bars} {bars === 1 ? "bar" : "bars"}</span>
+                  ) : <span className="mb-1 block" />;
+                })()}
+                {editMode && (
+                  <div className="flex items-center justify-end">
+                    <div className="flex items-center gap-0">
+                      <button
+                        onClick={(e) => { e.stopPropagation(); onEditSection(section); }}
+                        className="p-1 rounded text-muted-foreground/60 hover:text-foreground"
+                      >
+                        <Pencil className="size-3" />
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); onDeleteSection(section.id); }}
+                        className="p-1 rounded text-muted-foreground/60 hover:text-destructive"
+                      >
+                        <Trash2 className="size-3" />
+                      </button>
+                    </div>
                   </div>
-                </div>
+                )}
                 {(loopCounts[section.id] ?? 0) > 0 && (
                   <span className="text-[10px] text-muted-foreground flex items-center gap-0.5 mt-1">
                     <RotateCw className="size-2.5" />

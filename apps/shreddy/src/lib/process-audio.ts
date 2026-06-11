@@ -5,7 +5,9 @@ import { AUDIO_DIR, SETTINGS_FILE } from "./paths";
 import { prisma } from "./prisma";
 
 const PROJECT_ROOT = path.resolve(process.cwd(), "..");
-const PYTHON_BIN = path.join(PROJECT_ROOT, ".venv", "bin", "python3");
+// SongFormer-based analyzer runs in its own Python 3.11 venv (.venv-sf).
+// The older .venv (Python 3.14) is kept around for tools that don't share deps.
+const PYTHON_BIN = path.join(PROJECT_ROOT, ".venv-sf", "bin", "python3");
 const ANALYZE_SCRIPT = path.join(PROJECT_ROOT, "scripts", "analyze.py");
 
 function checkCommandExists(cmd: string): Promise<boolean> {
@@ -28,21 +30,21 @@ async function ensurePython(): Promise<void> {
     await access(PYTHON_BIN);
   } catch {
     throw new Error(
-      "Python virtual environment not found. Run: python3 -m venv .venv && source .venv/bin/activate && pip install librosa matplotlib scipy numpy anthropic"
+      "SongFormer Python venv not found at apps/.venv-sf. Run: python3.11 -m venv apps/.venv-sf && apps/.venv-sf/bin/pip install torch torchaudio safetensors librosa numpy scipy ema_pytorch loguru muq x_transformers msaf omegaconf einops transformers"
     );
   }
 }
 
-async function getApiKey(): Promise<string> {
-  // Prefer env var, fall back to settings file
-  if (process.env.ANTHROPIC_API_KEY) return process.env.ANTHROPIC_API_KEY;
+async function getCombineSubsections(): Promise<boolean> {
+  // Default true; user can opt out in Settings.
   try {
     const data = await readFile(SETTINGS_FILE, "utf-8");
     const settings = JSON.parse(data);
-    return settings.anthropicApiKey || "";
+    if (settings.combineSubsections === false) return false;
   } catch {
-    return "";
+    // settings file missing — keep default
   }
+  return true;
 }
 
 interface AnalyzedSection {
@@ -114,8 +116,13 @@ async function analyzeAudio(audioPath: string, songTitle: string, originalFilena
       PYTHON_BIN,
       args,
       {
-        timeout: 120000, // 2 min timeout for analysis
-        env: { ...process.env, ANTHROPIC_API_KEY: await getApiKey() },
+        // SongFormer CPU inference on a 4-min song = ~30–80 s; cap at 5 min
+        // for outliers (long songs, transient slow loads).
+        timeout: 300000,
+        env: {
+          ...process.env,
+          COMBINE_SUBSECTIONS: (await getCombineSubsections()) ? "1" : "0",
+        },
       },
       (error, stdout, stderr) => {
         if (error) {
@@ -319,13 +326,16 @@ export async function reanalyzeAudio(songId: string, audioPath: string) {
       },
     });
 
-    // Delete old auto-detected sections (keep manually created ones)
-    await prisma.section.deleteMany({
-      where: { songId, autoDetected: true },
-    });
-
-    // Save new auto-detected sections
+    // Save new auto-detected sections.
+    // GUARD: if the new analysis returned no sections (timeout, Gemini error,
+    // librosa crash, …) we MUST NOT delete the existing ones — that would
+    // leave the song with zero sections (worse than before). Only swap when
+    // we have a non-empty result to replace them with.
     if (analysis.sections.length > 0) {
+      await prisma.section.deleteMany({
+        where: { songId, autoDetected: true },
+      });
+
       // Get max orderIndex of remaining manual sections
       const maxOrder = await prisma.section.aggregate({
         where: { songId },

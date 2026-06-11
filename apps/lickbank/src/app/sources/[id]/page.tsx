@@ -38,13 +38,12 @@ interface SourceLick {
   startSec: number;
   endSec: number;
   durationSec: number;
-  folderId: string | null;
 }
 
 interface Folder {
   id: string;
   name: string;
-  _count: { licks: number };
+  _count: { lickFolders: number; sourceFolders: number };
 }
 
 export default function ClipperPage({
@@ -87,6 +86,13 @@ export default function ClipperPage({
   // Lick boundary adjustment
   const [adjustingLick, setAdjustingLick] = useState<{ id: string; edge: "start" | "end" } | null>(null);
   const [adjustingBoundary, setAdjustingBoundary] = useState(false);
+
+  // Lick selection / inline edit
+  const [selectedLickId, setSelectedLickId] = useState<string | null>(null);
+  const [editingName, setEditingName] = useState("");
+  const [savingName, setSavingName] = useState(false);
+  const lickSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingLickRef = useRef<{ id: string; startSec: number; endSec: number } | null>(null);
 
   // Resolve params
   useEffect(() => {
@@ -340,6 +346,148 @@ export default function ClipperPage({
     setClipEnd(Math.max(currentTime, clipStart + 0.5));
   };
 
+  const seekTo = (time: number) => {
+    const video = videoRef.current;
+    if (!video || !duration) return;
+    video.currentTime = Math.max(0, Math.min(duration, time));
+    previewingRef.current = false;
+  };
+
+  const seekBy = (delta: number) => {
+    const video = videoRef.current;
+    if (!video) return;
+    seekTo(video.currentTime + delta);
+  };
+
+  const handlePlayheadPointerDown = (e: React.PointerEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    const video = videoRef.current;
+    if (!video) return;
+    const wasPlaying = !video.paused;
+    if (wasPlaying) video.pause();
+    previewingRef.current = false;
+
+    const handleMove = (moveEvent: PointerEvent) => {
+      const time = getTimeFromPosition(moveEvent.clientX);
+      video.currentTime = time;
+    };
+
+    const handleUp = () => {
+      window.removeEventListener("pointermove", handleMove);
+      window.removeEventListener("pointerup", handleUp);
+      if (wasPlaying) video.play().catch(() => {});
+    };
+
+    window.addEventListener("pointermove", handleMove);
+    window.addEventListener("pointerup", handleUp);
+  };
+
+  const handleSelectLick = (lick: SourceLick) => {
+    setSelectedLickId(lick.id);
+    setEditingName(lick.name);
+    seekTo(lick.startSec);
+  };
+
+  const handleDeselectLick = () => {
+    setSelectedLickId(null);
+    setEditingName("");
+  };
+
+  const handleSaveLickName = async () => {
+    const id = selectedLickId;
+    const trimmed = editingName.trim();
+    if (!id || !trimmed) return;
+    setSavingName(true);
+    try {
+      const res = await fetch(`/api/licks/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: trimmed }),
+      });
+      if (res.ok) {
+        await fetchSource();
+        setSaveMessage({ type: "success", text: "Name updated" });
+        setTimeout(() => setSaveMessage(null), 2000);
+      } else {
+        setSaveMessage({ type: "error", text: "Failed to rename lick" });
+        setTimeout(() => setSaveMessage(null), 3000);
+      }
+    } catch {
+      setSaveMessage({ type: "error", text: "Network error — name not saved" });
+      setTimeout(() => setSaveMessage(null), 3000);
+    } finally {
+      setSavingName(false);
+    }
+  };
+
+  const commitLickBoundaries = (startSec: number, endSec: number) => {
+    if (!selectedLickId) return;
+    pendingLickRef.current = { id: selectedLickId, startSec, endSec };
+    if (lickSaveTimerRef.current) clearTimeout(lickSaveTimerRef.current);
+    lickSaveTimerRef.current = setTimeout(async () => {
+      const pending = pendingLickRef.current;
+      if (!pending) return;
+      pendingLickRef.current = null;
+      setAdjustingBoundary(true);
+      try {
+        await fetch(`/api/licks/${pending.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ startSec: pending.startSec, endSec: pending.endSec }),
+        });
+        await fetchSource();
+      } finally {
+        setAdjustingBoundary(false);
+      }
+    }, 600);
+  };
+
+  const adjustSelectedLick = (edge: "start" | "end", value: number) => {
+    if (!selectedLickId) return;
+    const lick = (pendingLickRef.current?.id === selectedLickId
+      ? pendingLickRef.current
+      : source?.licks.find((l) => l.id === selectedLickId)) as
+      | { startSec: number; endSec: number }
+      | undefined;
+    if (!lick) return;
+
+    let newStart = lick.startSec;
+    let newEnd = lick.endSec;
+    if (edge === "start") {
+      newStart = Math.max(0, Math.min(value, lick.endSec - 0.5));
+    } else {
+      newEnd = Math.min(duration, Math.max(value, lick.startSec + 0.5));
+    }
+
+    setSource((prev) =>
+      prev
+        ? {
+            ...prev,
+            licks: prev.licks.map((l) =>
+              l.id === selectedLickId
+                ? { ...l, startSec: newStart, endSec: newEnd, durationSec: newEnd - newStart }
+                : l
+            ),
+          }
+        : prev
+    );
+    commitLickBoundaries(newStart, newEnd);
+  };
+
+  const nudgeSelectedLick = (edge: "start" | "end", delta: number) => {
+    if (!selectedLickId) return;
+    const lick = pendingLickRef.current?.id === selectedLickId
+      ? pendingLickRef.current
+      : source?.licks.find((l) => l.id === selectedLickId);
+    if (!lick) return;
+    adjustSelectedLick(edge, edge === "start" ? lick.startSec + delta : lick.endSec + delta);
+  };
+
+  const setSelectedLickEdgeToPlayhead = (edge: "start" | "end") => {
+    adjustSelectedLick(edge, currentTime);
+  };
+
   const nudge = (which: "start" | "end", delta: number) => {
     if (which === "start") {
       setClipStart((prev) => Math.max(0, Math.min(prev + delta, clipEnd - 0.5)));
@@ -360,7 +508,7 @@ export default function ClipperPage({
           name: lickName.trim(),
           startSec: clipStart,
           endSec: clipEnd,
-          folderId: selectedFolderId,
+          folderIds: selectedFolderId ? [selectedFolderId] : [],
         }),
       });
       if (res.ok) {
@@ -470,7 +618,7 @@ export default function ClipperPage({
           {/* Timeline */}
           <div
             ref={timelineRef}
-            className="relative w-full h-14 md:h-16 bg-muted rounded-xl cursor-pointer select-none touch-none overflow-hidden"
+            className="relative w-full h-32 md:h-40 bg-muted rounded-xl cursor-pointer select-none touch-none overflow-hidden"
             onClick={handleTimelineClick}
           >
             {/* Waveform canvas */}
@@ -486,31 +634,41 @@ export default function ClipperPage({
               const lickStartPct = duration > 0 ? (lick.startSec / duration) * 100 : 0;
               const lickEndPct = duration > 0 ? (lick.endSec / duration) * 100 : 0;
               const lickWidthPct = lickEndPct - lickStartPct;
+              const isSelected = selectedLickId === lick.id;
+              const regionBg = isSelected ? "bg-emerald-500/40" : "bg-emerald-500/20";
+              const handleColor = isSelected
+                ? "bg-emerald-300 group-hover:bg-emerald-200 group-active:bg-emerald-100"
+                : "bg-emerald-500 group-hover:bg-emerald-400 group-active:bg-emerald-300";
+              const handleWidth = isSelected ? "w-2 h-24 md:h-28" : "w-1.5 h-20 md:h-24";
+              const handleHitbox = isSelected ? "w-10" : "w-8";
+              const handleHitboxOffset = isSelected ? -20 : -16;
               return (
                 <div key={lick.id}>
                   <div
-                    className="absolute top-0 bottom-0 bg-emerald-500/20 pointer-events-none"
+                    className={`absolute top-0 bottom-0 ${regionBg} pointer-events-none`}
                     style={{ left: `${lickStartPct}%`, width: `${lickWidthPct}%` }}
                   />
                   <div
-                    className="absolute top-0.5 text-[9px] font-medium text-emerald-400 pointer-events-none truncate px-1"
+                    className={`absolute top-0.5 text-[9px] font-medium pointer-events-none truncate px-1 ${
+                      isSelected ? "text-emerald-200" : "text-emerald-400"
+                    }`}
                     style={{ left: `${lickStartPct}%`, maxWidth: `${lickWidthPct}%` }}
                   >
                     {lick.name}
                   </div>
                   <div
-                    className="absolute top-0 bottom-0 w-5 cursor-ew-resize z-30 flex items-center justify-center group"
-                    style={{ left: `calc(${lickStartPct}% - 10px)` }}
+                    className={`absolute top-0 bottom-0 ${handleHitbox} cursor-ew-resize z-30 flex items-center justify-center group touch-none`}
+                    style={{ left: `calc(${lickStartPct}% + ${handleHitboxOffset}px)` }}
                     onPointerDown={(e) => handleLickBoundaryPointerDown(lick.id, "start", e)}
                   >
-                    <div className="w-1 h-8 bg-emerald-500 rounded-full group-hover:bg-emerald-400 group-active:bg-emerald-300 shadow" />
+                    <div className={`${handleWidth} rounded-full shadow ${handleColor}`} />
                   </div>
                   <div
-                    className="absolute top-0 bottom-0 w-5 cursor-ew-resize z-30 flex items-center justify-center group"
-                    style={{ left: `calc(${lickEndPct}% - 10px)` }}
+                    className={`absolute top-0 bottom-0 ${handleHitbox} cursor-ew-resize z-30 flex items-center justify-center group touch-none`}
+                    style={{ left: `calc(${lickEndPct}% + ${handleHitboxOffset}px)` }}
                     onPointerDown={(e) => handleLickBoundaryPointerDown(lick.id, "end", e)}
                   >
-                    <div className="w-1 h-8 bg-emerald-500 rounded-full group-hover:bg-emerald-400 group-active:bg-emerald-300 shadow" />
+                    <div className={`${handleWidth} rounded-full shadow ${handleColor}`} />
                   </div>
                 </div>
               );
@@ -524,26 +682,31 @@ export default function ClipperPage({
               />
             )}
 
-            {/* Playhead */}
+            {/* Playhead — draggable scrubber with wide touch hitbox */}
             <div
-              className="absolute top-0 bottom-0 w-0.5 bg-white shadow-lg pointer-events-none z-20"
-              style={{ left: `${playheadPct}%` }}
-            />
+              className="absolute top-0 bottom-0 w-10 z-40 flex items-center justify-center cursor-ew-resize touch-none"
+              style={{ left: `calc(${playheadPct}% - 20px)` }}
+              onPointerDown={handlePlayheadPointerDown}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="absolute -top-3 left-1/2 -translate-x-1/2 w-8 h-8 rounded-full bg-white border-2 border-sky-500 shadow-lg" />
+              <div className="w-1.5 h-full bg-white shadow-[0_0_0_1px_rgba(0,0,0,0.45)]" />
+            </div>
 
             {/* Clip start handle */}
             <div
-              className="absolute top-0 bottom-0 w-6 cursor-ew-resize z-30 flex items-center justify-center group"
-              style={{ left: `calc(${startPct}% - 12px)` }}
+              className="absolute top-0 bottom-0 w-10 cursor-ew-resize z-30 flex items-center justify-center group touch-none"
+              style={{ left: `calc(${startPct}% - 20px)` }}
               onPointerDown={(e) => handleHandlePointerDown("start", e)}
             >
-              <div className="w-1.5 h-10 bg-amber-500 rounded-full group-hover:bg-amber-400 group-active:bg-amber-300 shadow" />
+              <div className="w-2 h-24 md:h-28 bg-amber-500 rounded-full group-hover:bg-amber-400 group-active:bg-amber-300 shadow" />
             </div>
             <div
-              className="absolute top-0 bottom-0 w-6 cursor-ew-resize z-30 flex items-center justify-center group"
-              style={{ left: `calc(${endPct}% - 12px)` }}
+              className="absolute top-0 bottom-0 w-10 cursor-ew-resize z-30 flex items-center justify-center group touch-none"
+              style={{ left: `calc(${endPct}% - 20px)` }}
               onPointerDown={(e) => handleHandlePointerDown("end", e)}
             >
-              <div className="w-1.5 h-10 bg-amber-500 rounded-full group-hover:bg-amber-400 group-active:bg-amber-300 shadow" />
+              <div className="w-2 h-24 md:h-28 bg-amber-500 rounded-full group-hover:bg-amber-400 group-active:bg-amber-300 shadow" />
             </div>
 
             {/* Time display */}
@@ -555,6 +718,65 @@ export default function ClipperPage({
             </div>
           </div>
 
+          {/* Transport controls */}
+          <div className="flex items-center justify-center gap-3">
+            <button
+              type="button"
+              onClick={() => seekTo(0)}
+              className="h-14 w-14 rounded-2xl bg-muted hover:bg-accent active:scale-95 transition-all flex items-center justify-center"
+              title="Jump to start"
+              aria-label="Jump to start"
+            >
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                <polygon points="6,4 6,20 8,20 8,4" />
+                <polygon points="20,4 8,12 20,20" />
+              </svg>
+            </button>
+            <button
+              type="button"
+              onClick={() => seekBy(-5)}
+              className="h-14 px-5 rounded-2xl bg-muted hover:bg-accent active:scale-95 transition-all flex items-center gap-1.5 text-base font-semibold"
+              title="Back 5 seconds"
+              aria-label="Back 5 seconds"
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="11 17 6 12 11 7" />
+                <polyline points="18 17 13 12 18 7" />
+              </svg>
+              5s
+            </button>
+            <button
+              type="button"
+              onClick={handlePlayPause}
+              className="h-16 w-16 rounded-full bg-foreground text-background hover:bg-foreground/90 active:scale-95 transition-all flex items-center justify-center shadow-lg"
+              title={isPlaying ? "Pause" : "Play"}
+              aria-label={isPlaying ? "Pause" : "Play"}
+            >
+              {isPlaying ? (
+                <svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor">
+                  <rect x="6" y="4" width="4" height="16" />
+                  <rect x="14" y="4" width="4" height="16" />
+                </svg>
+              ) : (
+                <svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor">
+                  <polygon points="6,4 20,12 6,20" />
+                </svg>
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={() => seekBy(5)}
+              className="h-14 px-5 rounded-2xl bg-muted hover:bg-accent active:scale-95 transition-all flex items-center gap-1.5 text-base font-semibold"
+              title="Forward 5 seconds"
+              aria-label="Forward 5 seconds"
+            >
+              5s
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="13 17 18 12 13 7" />
+                <polyline points="6 17 11 12 6 7" />
+              </svg>
+            </button>
+          </div>
 
           {/* Save feedback */}
           {saveMessage && (
@@ -592,29 +814,30 @@ export default function ClipperPage({
               </span>
             </div>
 
-            {/* Start row */}
-            <div className="flex items-center gap-1.5">
-              <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide w-10">Start</span>
-              <div className="flex items-center gap-0.5 bg-muted rounded-lg px-1 py-0.5">
+            {/* Start row — single line: label, nudges, set-to-playhead */}
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Start</span>
+              <div className="flex items-center gap-1 bg-muted rounded-lg px-1 py-0.5">
                 <button
-                  className="px-1.5 py-1 text-xs rounded-md hover:bg-background active:scale-95 transition-all text-muted-foreground"
-                  onClick={() => nudge("start", -0.1)}
+                  className="h-8 px-2 text-xs font-semibold rounded-md hover:bg-background active:scale-95 transition-all text-muted-foreground"
+                  onClick={() => nudge("start", -1)}
+                  aria-label="Start back 1 second"
                 >
-                  -
+                  −1s
                 </button>
-                <span className="text-sm font-mono min-w-[3rem] text-center font-medium">
+                <span className="text-sm font-mono min-w-[2.75rem] text-center font-semibold">
                   {formatTime(clipStart)}
                 </span>
                 <button
-                  className="px-1.5 py-1 text-xs rounded-md hover:bg-background active:scale-95 transition-all text-muted-foreground"
-                  onClick={() => nudge("start", 0.1)}
+                  className="h-8 px-2 text-xs font-semibold rounded-md hover:bg-background active:scale-95 transition-all text-muted-foreground"
+                  onClick={() => nudge("start", 1)}
+                  aria-label="Start forward 1 second"
                 >
-                  +
+                  +1s
                 </button>
               </div>
-              <div className="flex-1" />
               <button
-                className="text-xs font-medium text-amber-500 hover:text-amber-400 px-2 py-1 rounded-md hover:bg-amber-500/10 transition-colors"
+                className="ml-auto text-xs font-medium text-amber-500 hover:text-amber-400 px-2 py-1.5 rounded-md hover:bg-amber-500/10 transition-colors whitespace-nowrap"
                 onClick={handleSetStart}
               >
                 Set to playhead
@@ -622,36 +845,37 @@ export default function ClipperPage({
             </div>
 
             {/* End row */}
-            <div className="flex items-center gap-1.5">
-              <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide w-10">End</span>
-              <div className="flex items-center gap-0.5 bg-muted rounded-lg px-1 py-0.5">
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">End</span>
+              <div className="flex items-center gap-1 bg-muted rounded-lg px-1 py-0.5">
                 <button
-                  className="px-1.5 py-1 text-xs rounded-md hover:bg-background active:scale-95 transition-all text-muted-foreground"
-                  onClick={() => nudge("end", -0.1)}
+                  className="h-8 px-2 text-xs font-semibold rounded-md hover:bg-background active:scale-95 transition-all text-muted-foreground"
+                  onClick={() => nudge("end", -1)}
+                  aria-label="End back 1 second"
                 >
-                  -
+                  −1s
                 </button>
-                <span className="text-sm font-mono min-w-[3rem] text-center font-medium">
+                <span className="text-sm font-mono min-w-[2.75rem] text-center font-semibold">
                   {formatTime(clipEnd)}
                 </span>
                 <button
-                  className="px-1.5 py-1 text-xs rounded-md hover:bg-background active:scale-95 transition-all text-muted-foreground"
-                  onClick={() => nudge("end", 0.1)}
+                  className="h-8 px-2 text-xs font-semibold rounded-md hover:bg-background active:scale-95 transition-all text-muted-foreground"
+                  onClick={() => nudge("end", 1)}
+                  aria-label="End forward 1 second"
                 >
-                  +
+                  +1s
                 </button>
               </div>
-              <div className="flex-1" />
               <button
-                className="text-xs font-medium text-amber-500 hover:text-amber-400 px-2 py-1 rounded-md hover:bg-amber-500/10 transition-colors"
+                className="ml-auto text-xs font-medium text-amber-500 hover:text-amber-400 px-2 py-1.5 rounded-md hover:bg-amber-500/10 transition-colors whitespace-nowrap"
                 onClick={handleSetEnd}
               >
                 Set to playhead
               </button>
             </div>
 
-            <Button className="w-full bg-amber-500 hover:bg-amber-600 text-white" onClick={() => setSaveOpen(true)}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-1.5">
+            <Button className="w-full h-12 text-base bg-amber-500 hover:bg-amber-600 text-white" onClick={() => setSaveOpen(true)}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-2">
                 <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
                 <polyline points="17 21 17 13 7 13 7 21" />
                 <polyline points="7 3 7 8 15 8" />
@@ -678,29 +902,161 @@ export default function ClipperPage({
 
             {source.licks.length > 0 ? (
               <div className="space-y-1.5">
-                {source.licks.map((lick) => (
-                  <button
-                    key={lick.id}
-                    className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl bg-card border border-border hover:border-emerald-500/40 hover:bg-emerald-500/5 transition-all text-left group"
-                    onClick={() => router.push(`/licks/${lick.id}`)}
-                  >
-                    <div className="w-8 h-8 rounded-lg bg-emerald-500/15 flex items-center justify-center shrink-0">
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-emerald-500">
-                        <polygon points="5 3 19 12 5 21 5 3" />
-                      </svg>
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">{lick.name}</p>
-                      <p className="text-[11px] text-muted-foreground font-mono">
-                        {formatTime(lick.startSec)} - {formatTime(lick.endSec)}
-                        <span className="ml-1 text-muted-foreground/60">({formatTime(lick.durationSec)})</span>
-                      </p>
-                    </div>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground/40 group-hover:text-emerald-500 transition-colors shrink-0">
-                      <path d="M9 18l6-6-6-6" />
-                    </svg>
-                  </button>
-                ))}
+                {source.licks.map((lick) => {
+                  const isSelected = selectedLickId === lick.id;
+                  if (isSelected) {
+                    return (
+                      <div
+                        key={lick.id}
+                        className="rounded-xl bg-emerald-500/10 border border-emerald-500/50 p-4 space-y-4"
+                      >
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => seekTo(lick.startSec)}
+                            className="w-12 h-12 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 active:scale-95 transition-all flex items-center justify-center shrink-0"
+                            title="Seek to lick start"
+                            aria-label="Seek to lick start"
+                          >
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-emerald-500">
+                              <polygon points="5 3 19 12 5 21 5 3" />
+                            </svg>
+                          </button>
+                          <span className="text-xs font-mono text-emerald-500 bg-emerald-500/10 px-2.5 py-1 rounded-full font-semibold flex-1 text-center">
+                            {formatTime(lick.durationSec)}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={handleDeselectLick}
+                            className="text-sm font-medium text-muted-foreground hover:text-foreground px-3 py-2 rounded-lg hover:bg-muted transition-colors"
+                          >
+                            Done
+                          </button>
+                        </div>
+
+                        {/* Name input */}
+                        <div className="flex items-center gap-2">
+                          <Input
+                            value={editingName}
+                            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditingName(e.target.value)}
+                            onKeyDown={(e: React.KeyboardEvent) => {
+                              if (e.key === "Enter") handleSaveLickName();
+                              if (e.key === "Escape") handleDeselectLick();
+                            }}
+                            placeholder="Lick name"
+                            className="flex-1 h-11 text-base"
+                          />
+                          <Button
+                            className="h-11 px-4 text-base"
+                            onClick={handleSaveLickName}
+                            disabled={savingName || !editingName.trim() || editingName.trim() === lick.name}
+                          >
+                            {savingName ? "Saving..." : "Save"}
+                          </Button>
+                        </div>
+
+                        {/* Lick start row */}
+                        <div className="flex items-center gap-2">
+                          <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Start</span>
+                          <div className="flex items-center gap-1 bg-muted rounded-lg px-1 py-0.5">
+                            <button
+                              type="button"
+                              className="h-8 px-2 text-xs font-semibold rounded-md hover:bg-background active:scale-95 transition-all text-muted-foreground"
+                              onClick={() => nudgeSelectedLick("start", -1)}
+                              aria-label="Lick start back 1 second"
+                            >
+                              −1s
+                            </button>
+                            <span className="text-sm font-mono min-w-[2.75rem] text-center font-semibold">
+                              {formatTime(lick.startSec)}
+                            </span>
+                            <button
+                              type="button"
+                              className="h-8 px-2 text-xs font-semibold rounded-md hover:bg-background active:scale-95 transition-all text-muted-foreground"
+                              onClick={() => nudgeSelectedLick("start", 1)}
+                              aria-label="Lick start forward 1 second"
+                            >
+                              +1s
+                            </button>
+                          </div>
+                          <button
+                            type="button"
+                            className="ml-auto text-xs font-medium text-emerald-500 hover:text-emerald-400 px-2 py-1.5 rounded-md hover:bg-emerald-500/10 transition-colors whitespace-nowrap"
+                            onClick={() => setSelectedLickEdgeToPlayhead("start")}
+                          >
+                            Set to playhead
+                          </button>
+                        </div>
+
+                        {/* Lick end row */}
+                        <div className="flex items-center gap-2">
+                          <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">End</span>
+                          <div className="flex items-center gap-1 bg-muted rounded-lg px-1 py-0.5">
+                            <button
+                              type="button"
+                              className="h-8 px-2 text-xs font-semibold rounded-md hover:bg-background active:scale-95 transition-all text-muted-foreground"
+                              onClick={() => nudgeSelectedLick("end", -1)}
+                              aria-label="Lick end back 1 second"
+                            >
+                              −1s
+                            </button>
+                            <span className="text-sm font-mono min-w-[2.75rem] text-center font-semibold">
+                              {formatTime(lick.endSec)}
+                            </span>
+                            <button
+                              type="button"
+                              className="h-8 px-2 text-xs font-semibold rounded-md hover:bg-background active:scale-95 transition-all text-muted-foreground"
+                              onClick={() => nudgeSelectedLick("end", 1)}
+                              aria-label="Lick end forward 1 second"
+                            >
+                              +1s
+                            </button>
+                          </div>
+                          <button
+                            type="button"
+                            className="ml-auto text-xs font-medium text-emerald-500 hover:text-emerald-400 px-2 py-1.5 rounded-md hover:bg-emerald-500/10 transition-colors whitespace-nowrap"
+                            onClick={() => setSelectedLickEdgeToPlayhead("end")}
+                          >
+                            Set to playhead
+                          </button>
+                        </div>
+
+                        <div className="flex items-center justify-between">
+                          <p className="text-xs text-muted-foreground">
+                            Drag the green handles on the waveform too.
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => router.push(`/licks/${lick.id}`)}
+                            className="text-sm font-medium text-emerald-500 hover:text-emerald-400 px-3 py-2 rounded-lg hover:bg-emerald-500/10 transition-colors"
+                          >
+                            Open practice →
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  }
+                  return (
+                    <button
+                      key={lick.id}
+                      className="w-full flex items-center gap-3 px-4 py-3.5 rounded-xl bg-card border border-border hover:border-emerald-500/40 hover:bg-emerald-500/5 transition-all text-left group"
+                      onClick={() => handleSelectLick(lick)}
+                    >
+                      <div className="w-11 h-11 rounded-xl bg-emerald-500/15 flex items-center justify-center shrink-0">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-emerald-500">
+                          <polygon points="5 3 19 12 5 21 5 3" />
+                        </svg>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-base font-semibold truncate">{lick.name}</p>
+                        <p className="text-xs text-muted-foreground font-mono mt-0.5">
+                          {formatTime(lick.startSec)} - {formatTime(lick.endSec)}
+                          <span className="ml-1.5 text-muted-foreground/60">({formatTime(lick.durationSec)})</span>
+                        </p>
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
             ) : (
               <div className="flex flex-col items-center justify-center py-8 text-center">
