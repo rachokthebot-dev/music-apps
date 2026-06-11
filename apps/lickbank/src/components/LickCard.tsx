@@ -19,7 +19,12 @@ interface Folder {
   id: string;
   name: string;
   orderIndex: number;
-  _count: { licks: number };
+  _count: { lickFolders: number; sourceFolders: number };
+}
+
+interface LickFolderRef {
+  folderId: string;
+  folder: { id: string; name: string };
 }
 
 interface Lick {
@@ -30,10 +35,9 @@ interface Lick {
   endSec: number;
   durationSec: number;
   videoClipPath: string | null;
-  folderId: string | null;
+  folders: LickFolderRef[];
   createdAt: string;
   source: Source;
-  folder: Folder | null;
 }
 
 interface LickCardProps {
@@ -91,9 +95,13 @@ export function LickCard({
           <p className="text-xs text-muted-foreground truncate mt-0.5">
             {lick.source.title}
           </p>
-          {lick.folder && (
-            <span className="inline-block mt-1 text-[11px] bg-muted px-1.5 py-0.5 rounded">
-              {lick.folder.name}
+          {lick.folders.length > 0 && (
+            <span className="inline-flex flex-wrap gap-1 mt-1">
+              {lick.folders.map((f) => (
+                <span key={f.folderId} className="text-[11px] bg-muted px-1.5 py-0.5 rounded">
+                  {f.folder.name}
+                </span>
+              ))}
             </span>
           )}
         </div>

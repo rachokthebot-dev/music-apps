@@ -11,7 +11,33 @@ npm-debug.log*
 # Data & runtime
 apps/data/
 apps/.venv/
+apps/.venv-*/
+.venv/
+.venv-*/
+data/
 *.db
+
+# Logs
+.logs/
+*.log
 
 # Generated
 apps/*/src/generated/
+
+# Python
+__pycache__/
+*.pyc
+
+# Third-party vendored sources excluded for licensing reasons.
+# phelix is GPL v3 — see packages/helix-builder/README.md for setup if needed.
+packages/helix-builder/phelix/
+# Build artifacts from helix-builder (generated .hlx files)
+packages/helix-builder/out/
+
+# Editor
+.vscode/
+.idea/
+
+# Playwright artifacts (screenshots from agent-run browser sessions)
+.playwright-mcp/
+soundpath-*.png

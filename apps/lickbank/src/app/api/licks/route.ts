@@ -8,7 +8,10 @@ export async function GET() {
       orderBy: { createdAt: "desc" },
       include: {
         source: { select: { id: true, title: true, artist: true, thumbnailUrl: true } },
-        folder: true,
+        folders: {
+          orderBy: { orderIndex: "asc" },
+          include: { folder: { select: { id: true, name: true } } },
+        },
       },
     });
 
@@ -21,7 +24,9 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const { sourceId, name, startSec, endSec, folderId } = await request.json();
+    const body = await request.json();
+    const { sourceId, name, startSec, endSec } = body;
+    const folderIds: string[] = Array.isArray(body.folderIds) ? body.folderIds : [];
 
     if (!sourceId || !name || startSec == null || endSec == null) {
       return NextResponse.json(
@@ -59,7 +64,12 @@ export async function POST(request: Request) {
         startSec,
         endSec,
         durationSec,
-        folderId: folderId || null,
+        folders: {
+          create: folderIds.map((folderId, i) => ({
+            folderId,
+            orderIndex: i,
+          })),
+        },
       },
     });
 
@@ -77,7 +87,10 @@ export async function POST(request: Request) {
       data: { videoClipPath, audioClipPath },
       include: {
         source: { select: { id: true, title: true, artist: true, thumbnailUrl: true } },
-        folder: true,
+        folders: {
+          orderBy: { orderIndex: "asc" },
+          include: { folder: { select: { id: true, name: true } } },
+        },
       },
     });
 

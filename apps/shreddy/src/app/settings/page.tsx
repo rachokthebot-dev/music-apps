@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Button, Label } from "@music-apps/ui";
-import { ArrowLeft, RotateCcw, Save, Loader2, Moon, Sun, Key, Activity, CheckCircle2, XCircle, AlertTriangle } from "lucide-react";
+import { Button } from "@music-apps/ui";
+import { ArrowLeft, Save, Loader2, Moon, Sun, Activity, CheckCircle2, XCircle, AlertTriangle } from "lucide-react";
 
 interface DepStatus {
   name: string;
@@ -13,45 +13,10 @@ interface DepStatus {
   installHint: string;
 }
 
-const DEFAULT_PROMPT = `You are an expert music analyst. I've extracted audio features from a song and generated these visualizations:
-
-1. **Chromagram**: Shows pitch content over time. Similar color patterns = similar harmonic content (likely same section). Look for repeating blocks of color.
-2. **Energy (RMS)**: Shows loudness. Drops often indicate transitions (e.g., verse→bridge). Peaks often indicate choruses.
-3. **Spectral Contrast**: Shows timbral changes. Shifts indicate different instrumentation or arrangement.
-4. **Novelty Curve**: Computed structural novelty. Peaks = likely section boundaries. Green dashed lines are algorithmically detected candidates.
-
-Song metadata:
-- Duration: {duration_sec} seconds
-- Estimated BPM: {estimated_bpm}
-- Total beats: {beat_count}
-- Algorithm-detected candidate boundaries: {candidates}
-
-Please analyze the image carefully:
-
-**Step 1**: Describe what you observe in each panel. Where do you see repeating patterns in the chromagram? Where are the energy changes? What do the spectral contrast shifts tell you?
-
-**Step 2**: Based on your observations, identify the musical sections. Use the candidate boundaries as hints but trust your visual analysis — you may merge, split, or ignore candidates.
-
-**Step 3**: Output your final answer as ONLY a JSON array (no other text after it). Each section must have:
-- "name": a musically meaningful label (Intro, Verse 1, Pre-Chorus, Chorus 1, Post-Chorus, Bridge, Solo, Verse 2, Chorus 2, Outro, etc.)
-- "startSec": start time in seconds (number)
-- "endSec": end time in seconds (number)
-
-Rules:
-- Sections must cover the entire song from 0 to {duration_sec}
-- No gaps or overlaps
-- Minimum section length is 5 seconds
-- If you see repeating patterns, number them (Verse 1, Verse 2, Chorus 1, Chorus 2)
-- Align boundaries to musically sensible points (beat boundaries, energy transitions)
-
-Begin your analysis:`;
-
 export default function SettingsPage() {
-  const [prompt, setPrompt] = useState("");
   const [youtubeMaxDuration, setYoutubeMaxDuration] = useState(10); // minutes
-  const [apiKey, setApiKey] = useState("");
-  const [apiKeyDisplay, setApiKeyDisplay] = useState("");
-  const [hasEnvApiKey, setHasEnvApiKey] = useState(false);
+  const [analyzeOnImport, setAnalyzeOnImport] = useState(false);
+  const [combineSubsections, setCombineSubsections] = useState(true);
   const [saved, setSaved] = useState(false);
   const [loading, setLoading] = useState(true);
   const [darkMode, setDarkMode] = useState(false);
@@ -59,16 +24,14 @@ export default function SettingsPage() {
   const [depsLoading, setDepsLoading] = useState(true);
 
   useEffect(() => {
-    // Check current dark mode state
     setDarkMode(document.documentElement.classList.contains("dark"));
 
     fetch("/api/settings")
       .then((res) => res.json())
       .then((data) => {
-        setPrompt(data.analysisPrompt || "");
         setYoutubeMaxDuration(Math.floor((data.youtubeMaxDuration || 600) / 60));
-        setApiKeyDisplay(data.anthropicApiKey || "");
-        setHasEnvApiKey(data.hasEnvApiKey || false);
+        setAnalyzeOnImport(!!data.analyzeOnImport);
+        setCombineSubsections(data.combineSubsections ?? true);
         setLoading(false);
       });
 
@@ -90,28 +53,17 @@ export default function SettingsPage() {
 
   async function handleSave() {
     const body: Record<string, unknown> = {
-      analysisPrompt: prompt,
       youtubeMaxDuration: youtubeMaxDuration * 60,
+      analyzeOnImport,
+      combineSubsections,
     };
-    // Only send API key if user typed a new one (not the masked display)
-    if (apiKey) {
-      body.anthropicApiKey = apiKey;
-    }
-    const res = await fetch("/api/settings", {
+    await fetch("/api/settings", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
-    const data = await res.json();
-    setApiKeyDisplay(data.anthropicApiKey || "");
-    setHasEnvApiKey(data.hasEnvApiKey || false);
-    setApiKey("");
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
-  }
-
-  function handleReset() {
-    setPrompt("");
   }
 
   if (loading) {
@@ -191,42 +143,14 @@ export default function SettingsPage() {
           )}
         </div>
 
-        {/* API Key */}
-        <div className="p-4 bg-card rounded-xl border border-border">
-          <div className="flex items-center gap-2 mb-2">
-            <Key className="size-4 text-muted-foreground" />
-            <p className="text-sm font-medium text-foreground">Anthropic API Key</p>
-          </div>
-          <p className="text-xs text-muted-foreground mb-3">
-            Required for AI section detection. Get one at{" "}
-            <a href="https://console.anthropic.com" target="_blank" rel="noopener" className="underline">console.anthropic.com</a>.
-            {hasEnvApiKey && " (Environment variable is set.)"}
-          </p>
-          {apiKeyDisplay && !apiKey && (
-            <p className="text-xs text-green-600 dark:text-green-400 mb-2">
-              Saved: {apiKeyDisplay}
-            </p>
-          )}
-          <input
-            type="password"
-            value={apiKey}
-            onChange={(e) => setApiKey(e.target.value)}
-            placeholder={apiKeyDisplay ? "Enter new key to replace" : "sk-ant-..."}
-            className="w-full h-9 px-3 text-sm border border-border rounded-lg bg-background text-foreground placeholder:text-muted-foreground"
-          />
-          <p className="text-xs text-muted-foreground mt-1">
-            Stored locally in settings. You can also set ANTHROPIC_API_KEY in .env.
-          </p>
-        </div>
-
-        {/* YouTube import settings */}
-        <div className="p-4 bg-card rounded-xl border border-border">
-          <div className="flex items-center justify-between">
+        {/* Import + analysis settings */}
+        <div className="p-4 bg-card rounded-xl border border-border space-y-4">
+          <div className="flex items-center justify-between gap-4">
             <div>
               <p className="text-sm font-medium text-foreground">YouTube Max Duration</p>
               <p className="text-xs text-muted-foreground">Maximum video length for YouTube imports</p>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 shrink-0">
               <input
                 type="number"
                 min={1}
@@ -238,29 +162,44 @@ export default function SettingsPage() {
               <span className="text-sm text-muted-foreground">min</span>
             </div>
           </div>
-        </div>
 
-        {/* Analysis prompt */}
-        <div>
-          <Label className="text-sm font-medium mb-2 block text-foreground">
-            Analysis Prompt
-          </Label>
-          <p className="text-xs text-muted-foreground mb-3">
-            Customize the prompt sent to Claude when analyzing song sections.
-            Use these placeholders: <code className="bg-muted px-1 rounded text-foreground">{"{duration_sec}"}</code>,{" "}
-            <code className="bg-muted px-1 rounded text-foreground">{"{estimated_bpm}"}</code>,{" "}
-            <code className="bg-muted px-1 rounded text-foreground">{"{beat_count}"}</code>,{" "}
-            <code className="bg-muted px-1 rounded text-foreground">{"{candidates}"}</code>.
-          </p>
-          <textarea
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            placeholder={DEFAULT_PROMPT}
-            className="w-full h-96 p-3 text-sm font-mono border border-border rounded-lg bg-card resize-y focus:outline-none focus:ring-2 focus:ring-ring/30 text-foreground placeholder:text-muted-foreground"
-          />
-          <p className="text-xs text-muted-foreground mt-1">
-            Leave empty to use the default prompt.
-          </p>
+          <div className="flex items-center justify-between gap-4 pt-3 border-t border-border">
+            <div>
+              <p className="text-sm font-medium text-foreground">Analyze structure on import</p>
+              <p className="text-xs text-muted-foreground">
+                Run AI section detection automatically when a song is uploaded.
+              </p>
+            </div>
+            <button
+              onClick={() => setAnalyzeOnImport(!analyzeOnImport)}
+              className={`relative w-11 h-6 rounded-full transition-colors shrink-0 ${analyzeOnImport ? "bg-primary" : "bg-muted"}`}
+              aria-label="Toggle analyze on import"
+            >
+              <div
+                className={`absolute top-0.5 size-5 rounded-full bg-white shadow-sm transition-transform ${analyzeOnImport ? "translate-x-5.5" : "translate-x-0.5"}`}
+              />
+            </button>
+          </div>
+
+          <div className="flex items-center justify-between gap-4 pt-3 border-t border-border">
+            <div>
+              <p className="text-sm font-medium text-foreground">Combine sub-sections</p>
+              <p className="text-xs text-muted-foreground">
+                Merge adjacent same-label segments (e.g. two consecutive choruses → one Chorus) and
+                absorb leading/trailing silence into Intro/Outro. Turn off to see the raw analyzer
+                output unchanged.
+              </p>
+            </div>
+            <button
+              onClick={() => setCombineSubsections(!combineSubsections)}
+              className={`relative w-11 h-6 rounded-full transition-colors shrink-0 ${combineSubsections ? "bg-primary" : "bg-muted"}`}
+              aria-label="Toggle combine sub-sections"
+            >
+              <div
+                className={`absolute top-0.5 size-5 rounded-full bg-white shadow-sm transition-transform ${combineSubsections ? "translate-x-5.5" : "translate-x-0.5"}`}
+              />
+            </button>
+          </div>
         </div>
 
         <div className="flex items-center gap-3">
@@ -273,10 +212,6 @@ export default function SettingsPage() {
                 Save
               </>
             )}
-          </Button>
-          <Button variant="outline" onClick={handleReset} className="gap-1.5">
-            <RotateCcw className="size-4" />
-            Reset to Default
           </Button>
         </div>
       </div>

@@ -4,9 +4,9 @@ import path from "path";
 import { SETTINGS_FILE } from "@/lib/paths";
 
 interface Settings {
-  analysisPrompt?: string;
-  youtubeMaxDuration?: number; // seconds, default 600 (10 min)
-  anthropicApiKey?: string;
+  youtubeMaxDuration?: number;  // seconds, default 600 (10 min)
+  analyzeOnImport?: boolean;    // default for the "Analyze structure" toggle on import
+  combineSubsections?: boolean; // default true — merge adjacent same-label SongFormer segments
 }
 
 async function readSettings(): Promise<Settings> {
@@ -25,34 +25,21 @@ async function writeSettings(settings: Settings): Promise<void> {
 
 export async function GET() {
   const settings = await readSettings();
-  // Mask API key for frontend display — only show last 4 chars
-  const masked = { ...settings };
-  if (masked.anthropicApiKey) {
-    masked.anthropicApiKey = "sk-......" + masked.anthropicApiKey.slice(-4);
-  }
-  // Also indicate if env var is set
   return NextResponse.json({
-    ...masked,
-    hasEnvApiKey: !!process.env.ANTHROPIC_API_KEY,
+    youtubeMaxDuration: settings.youtubeMaxDuration ?? 600,
+    analyzeOnImport: settings.analyzeOnImport ?? false,
+    combineSubsections: settings.combineSubsections ?? true,
   });
 }
 
 export async function PATCH(request: NextRequest) {
   const body = await request.json();
   const current = await readSettings();
-
-  // If anthropicApiKey is being set, update the env var for the running process
-  if (body.anthropicApiKey) {
-    process.env.ANTHROPIC_API_KEY = body.anthropicApiKey;
-  }
-
   const updated = { ...current, ...body };
   await writeSettings(updated);
-
-  // Return masked version
-  const masked = { ...updated };
-  if (masked.anthropicApiKey) {
-    masked.anthropicApiKey = "sk-......" + masked.anthropicApiKey.slice(-4);
-  }
-  return NextResponse.json({ ...masked, hasEnvApiKey: !!process.env.ANTHROPIC_API_KEY });
+  return NextResponse.json({
+    youtubeMaxDuration: updated.youtubeMaxDuration ?? 600,
+    analyzeOnImport: updated.analyzeOnImport ?? false,
+    combineSubsections: updated.combineSubsections ?? true,
+  });
 }

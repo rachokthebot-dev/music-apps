@@ -19,6 +19,13 @@ services:
     volumes:
       - lickbank-data:/app/data
 
+  metronome:
+    build:
+      context: .
+      dockerfile: apps/metronome/Dockerfile
+    ports:
+      - "3003:3003"
+
 volumes:
   shreddy-data:
   lickbank-data:

@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 export async function GET() {
   const folders = await prisma.folder.findMany({
     orderBy: { orderIndex: "asc" },
-    include: { _count: { select: { songs: true } } },
+    include: { _count: { select: { songFolders: true } } },
   });
   return NextResponse.json(folders);
 }

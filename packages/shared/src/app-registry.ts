@@ -33,6 +33,13 @@ export const APP_REGISTRY: AppEntry[] = [
     path: "/",
   },
   {
+    id: "metronome",
+    name: "Metronome",
+    description: "Tempo & timer",
+    port: 3003,
+    path: "/",
+  },
+  {
     id: "dashboard",
     name: "Dashboard",
     description: "Practice overview",

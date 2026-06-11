@@ -1,0 +1,13 @@
+{
+  "name": "Clean Jazz",
+  "chain": [
+    {"category": "Dynamics", "model": "NoiseGate"},
+    {"category": "Distort",  "model": "Minotaur"},
+    {"category": "Amp",      "model": "USDeluxeVib"},
+    {"category": "Cab",      "model": "1x12USDeluxe"},
+    {"category": "EQ",       "model": "Parametric"},
+    {"category": "Mod",      "model": "Chorus"},
+    {"category": "Delay",    "model": "SimpleDelay"},
+    {"category": "Reverb",   "model": "Hall"}
+  ]
+}

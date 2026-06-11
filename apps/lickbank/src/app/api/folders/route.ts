@@ -6,7 +6,7 @@ export async function GET() {
     const folders = await prisma.folder.findMany({
       orderBy: { orderIndex: "asc" },
       include: {
-        _count: { select: { licks: true } },
+        _count: { select: { lickFolders: true, sourceFolders: true } },
       },
     });
 
@@ -38,7 +38,7 @@ export async function POST(request: Request) {
         orderIndex: (maxOrder._max.orderIndex ?? -1) + 1,
       },
       include: {
-        _count: { select: { licks: true } },
+        _count: { select: { lickFolders: true, sourceFolders: true } },
       },
     });
 

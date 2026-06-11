@@ -128,3 +128,40 @@
     @apply font-sans;
   }
 }
+
+/* Touch-friendly slider — taller track + larger thumb for iPad */
+.cc-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 28px;
+  background: transparent;
+  cursor: pointer;
+}
+.cc-slider::-webkit-slider-runnable-track {
+  height: 6px;
+  background: var(--muted);
+  border-radius: 9999px;
+}
+.cc-slider::-moz-range-track {
+  height: 6px;
+  background: var(--muted);
+  border-radius: 9999px;
+}
+.cc-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 9999px;
+  background: currentColor;
+  margin-top: -8px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+.cc-slider::-moz-range-thumb {
+  width: 22px;
+  height: 22px;
+  border-radius: 9999px;
+  background: currentColor;
+  border: none;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}

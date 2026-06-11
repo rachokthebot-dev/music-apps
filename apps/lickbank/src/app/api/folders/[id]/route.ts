@@ -20,7 +20,7 @@ export async function PATCH(
       where: { id },
       data: { name: name.trim() },
       include: {
-        _count: { select: { licks: true } },
+        _count: { select: { lickFolders: true, sourceFolders: true } },
       },
     });
 
@@ -37,15 +37,7 @@ export async function DELETE(
 ) {
   try {
     const { id } = await params;
-
-    // Set licks' folderId to null before deleting
-    await prisma.lick.updateMany({
-      where: { folderId: id },
-      data: { folderId: null },
-    });
-
     await prisma.folder.delete({ where: { id } });
-
     return NextResponse.json({ success: true });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to delete folder";

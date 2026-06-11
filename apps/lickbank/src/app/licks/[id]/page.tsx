@@ -58,11 +58,6 @@ interface Section {
   orderIndex: number;
 }
 
-interface Folder {
-  id: string;
-  name: string;
-}
-
 interface Lick {
   id: string;
   name: string;
@@ -72,13 +67,11 @@ interface Lick {
   durationSec: number;
   videoClipPath: string | null;
   audioClipPath: string | null;
-  folderId: string | null;
   lastPositionSec: number;
   lastTempo: number;
   lastPitch: number;
   notes: string | null;
   source: Source;
-  folder: Folder | null;
   sections: Section[];
 }
 
@@ -127,6 +120,15 @@ export default function PracticePage({
   // A-B loop
   const [abA, setAbA] = useState<number | null>(null);
   const [abB, setAbB] = useState<number | null>(null);
+
+  // Countdown timer
+  const [countdown, setCountdown] = useState<number | null>(null);
+  const [countdownDuration, setCountdownDuration] = useState(4);
+  const [countdownOnLoop, setCountdownOnLoop] = useState(false);
+  const countdownOnLoopRef = useRef(false);
+  const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const isCountingDownRef = useRef(false);
+  const wasMutedBeforeCountdown = useRef(false);
 
   // Add section dialog
   const [addSectionOpen, setAddSectionOpen] = useState(false);
@@ -353,6 +355,53 @@ export default function PracticePage({
     };
   }, []);
 
+  // Freeze position during countdown — avoids Safari play() gesture restrictions
+  const countdownSeekTarget = useRef<number | null>(null);
+
+  const startCountdownAt = useCallback((seekTo?: number) => {
+    const video = videoRef.current;
+    if (!video) return;
+    const target = seekTo ?? video.currentTime;
+    video.currentTime = target;
+
+    // Mute during countdown
+    wasMutedBeforeCountdown.current = video.muted;
+    video.muted = true;
+    if (pitchAudioRef.current) {
+      pitchAudioRef.current.muted = true;
+    }
+
+    // Ensure video is playing (needed if video ended or was paused)
+    if (video.paused) {
+      video.play().catch(() => {});
+    }
+
+    // Don't pause — keep video "playing" but freeze via RAF seeking
+    countdownSeekTarget.current = target;
+    isCountingDownRef.current = true;
+    setCountdown(countdownDuration);
+
+    if (countdownRef.current) clearInterval(countdownRef.current);
+    countdownRef.current = setInterval(() => {
+      setCountdown((prev) => {
+        if (prev === null || prev <= 1) {
+          if (countdownRef.current) clearInterval(countdownRef.current);
+          countdownRef.current = null;
+          isCountingDownRef.current = false;
+          countdownSeekTarget.current = null;
+          // Unmute
+          const v = videoRef.current;
+          if (v) v.muted = wasMutedBeforeCountdown.current;
+          if (pitchAudioRef.current) {
+            pitchAudioRef.current.muted = false;
+          }
+          return null;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+  }, [countdownDuration]);
+
   // Sync playhead + section looping
   useEffect(() => {
     const video = videoRef.current;
@@ -363,10 +412,23 @@ export default function PracticePage({
       setCurrentTime(ct);
       setIsPlaying(!video.paused);
 
+      // During countdown, freeze video at the seek target
+      if (isCountingDownRef.current) {
+        if (countdownSeekTarget.current !== null) {
+          video.currentTime = countdownSeekTarget.current;
+        }
+        rafRef.current = requestAnimationFrame(update);
+        return;
+      }
+
       // A-B loop takes priority
       if (abA !== null && abB !== null) {
         if (ct >= abB - 0.05 || ct < abA - 0.1) {
-          video.currentTime = abA;
+          if (countdownOnLoopRef.current) {
+            startCountdownAt(abA);
+          } else {
+            video.currentTime = abA;
+          }
           loopStartTimeRef.current = Date.now();
         }
       } else if (loopEnabled && lick) {
@@ -384,7 +446,11 @@ export default function PracticePage({
         }
 
         if (loopEnd > 0 && (ct >= loopEnd - 0.05 || (selectedSections.size > 0 && ct < loopStart - 0.1))) {
-          video.currentTime = loopStart;
+          if (countdownOnLoopRef.current) {
+            startCountdownAt(loopStart);
+          } else {
+            video.currentTime = loopStart;
+          }
           loopStartTimeRef.current = Date.now();
         }
       }
@@ -394,7 +460,7 @@ export default function PracticePage({
     rafRef.current = requestAnimationFrame(update);
 
     return () => cancelAnimationFrame(rafRef.current);
-  }, [loopEnabled, selectedSections, lick, duration, abA, abB]);
+  }, [loopEnabled, selectedSections, lick, duration, abA, abB, startCountdownAt]);
 
   // Track active play time (only when video is playing)
   useEffect(() => {
@@ -418,6 +484,46 @@ export default function PracticePage({
       video.pause();
     }
   };
+
+  const handleRewind = () => {
+    const video = videoRef.current;
+    if (!video) return;
+    if (abA !== null) {
+      video.currentTime = abA;
+    } else if (loopEnabled && lick && selectedSections.size > 0) {
+      const activeSections = lick.sections.filter((s) => selectedSections.has(s.id));
+      if (activeSections.length > 0) {
+        video.currentTime = Math.min(...activeSections.map((s) => s.startSec));
+      } else {
+        video.currentTime = 0;
+      }
+    } else {
+      video.currentTime = 0;
+    }
+  };
+
+  const startCountdown = () => {
+    const video = videoRef.current;
+    if (!video) return;
+    // Ensure video is playing (for Safari gesture chain)
+    if (video.paused) {
+      video.play().catch(() => {});
+    }
+    handleRewind();
+    setTimeout(() => startCountdownAt(), 0);
+  };
+
+  const clearABLoop = () => {
+    setAbA(null);
+    setAbB(null);
+  };
+
+  // Cleanup countdown on unmount
+  useEffect(() => {
+    return () => {
+      if (countdownRef.current) clearInterval(countdownRef.current);
+    };
+  }, []);
 
   const handleTimelineClick = (e: React.MouseEvent) => {
     const timeline = timelineRef.current;
@@ -544,11 +650,11 @@ export default function PracticePage({
         </div>
       </header>
 
-      <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
-        <div className="max-w-4xl mx-auto w-full flex flex-col flex-1 min-h-0 px-4 lg:px-6 pt-2 gap-2">
+      <div className="flex-1 min-h-0 flex flex-col overflow-y-auto">
+        <div className="max-w-5xl mx-auto w-full flex flex-col flex-1 min-h-0 px-4 lg:px-6 pt-2 gap-2 relative">
           {/* Video Player */}
           {lick.videoClipPath && (
-            <div className="flex-1 min-h-0 max-h-[55vh] rounded-xl overflow-hidden bg-black">
+            <div className="flex-1 min-h-0 max-h-[40vh] md:max-h-[55vh] rounded-xl overflow-hidden bg-black">
               <video
                 ref={videoRef}
                 src={`/api/media/${lick.videoClipPath}`}
@@ -575,8 +681,17 @@ export default function PracticePage({
           {/* Timeline */}
           <div
             ref={timelineRef}
-            className="relative w-full h-8 shrink-0 bg-muted rounded-lg cursor-pointer select-none overflow-hidden"
+            className="relative w-full h-11 shrink-0 bg-muted rounded-lg cursor-pointer select-none overflow-hidden touch-none"
             onClick={handleTimelineClick}
+            onTouchMove={(e) => {
+              const timeline = timelineRef.current;
+              const video = videoRef.current;
+              if (!timeline || !video || duration === 0) return;
+              const touch = e.touches[0];
+              const rect = timeline.getBoundingClientRect();
+              const ratio = Math.max(0, Math.min(1, (touch.clientX - rect.left) / rect.width));
+              video.currentTime = ratio * duration;
+            }}
           >
             {/* Section blocks */}
             {lick.sections.map((section, idx) => {
@@ -638,13 +753,36 @@ export default function PracticePage({
             </div>
           </div>
 
+          {/* Countdown overlay */}
+          {countdown !== null && (
+            <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/60 rounded-xl">
+              <div className="flex flex-col items-center gap-2">
+                <span className="text-7xl font-bold text-white tabular-nums animate-pulse">{countdown}</span>
+                <button
+                  className="text-sm text-white/60 hover:text-white"
+                  onClick={() => {
+                    if (countdownRef.current) clearInterval(countdownRef.current);
+                    countdownRef.current = null;
+                    setCountdown(null);
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Controls */}
-          <div className="shrink-0 flex flex-col gap-1.5 pb-2">
-            {/* Play/Pause + Loop + A-B */}
-            <div className="flex items-center justify-center gap-3">
-              <Button
-                variant={loopEnabled ? "default" : "outline"}
-                size="icon-lg"
+          <div className="shrink-0 flex flex-col gap-1.5 pb-4">
+            {/* Transport row — loop, A, B, rewind, play, countdown */}
+            <div className="flex items-center justify-center gap-1.5">
+              {/* Loop */}
+              <button
+                className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors ${
+                  loopEnabled
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-muted text-muted-foreground hover:text-foreground"
+                }`}
                 onClick={() => setLoopEnabled(!loopEnabled)}
                 title="Toggle loop"
               >
@@ -654,70 +792,139 @@ export default function PracticePage({
                   <polyline points="7 23 3 19 7 15" />
                   <path d="M21 13v2a4 4 0 0 1-4 4H3" />
                 </svg>
-              </Button>
+              </button>
 
+              {/* A */}
               <button
-                className="w-12 h-12 rounded-full bg-primary text-primary-foreground flex items-center justify-center hover:bg-primary/90 active:scale-95 transition-all shadow-lg"
+                className={`w-10 h-10 rounded-full text-sm font-bold transition-colors flex items-center justify-center ${
+                  abA !== null
+                    ? "bg-amber-500 text-white"
+                    : "bg-muted text-muted-foreground hover:text-foreground"
+                }`}
+                onClick={() => {
+                  if (abA === null) {
+                    setAbA(currentTime);
+                  }
+                }}
+                title={abA !== null ? `A: ${formatTime(abA)}` : "Set A point"}
+              >
+                A
+              </button>
+
+              {/* B */}
+              <button
+                className={`w-10 h-10 rounded-full text-sm font-bold transition-colors flex items-center justify-center ${
+                  abB !== null
+                    ? "bg-amber-500 text-white"
+                    : "bg-muted text-muted-foreground hover:text-foreground"
+                } ${abA === null ? "opacity-40 pointer-events-none" : ""}`}
+                onClick={() => {
+                  if (abB === null && abA !== null && currentTime > abA) {
+                    setAbB(currentTime);
+                  }
+                }}
+                title={abB !== null ? `B: ${formatTime(abB)}` : "Set B point"}
+              >
+                B
+              </button>
+
+              {/* Clear A-B */}
+              {abA !== null && (
+                <button
+                  className="w-10 h-10 rounded-full flex items-center justify-center bg-muted text-muted-foreground hover:text-destructive transition-colors"
+                  onClick={clearABLoop}
+                  title="Clear A-B loop"
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M18 6L6 18M6 6l12 12" />
+                  </svg>
+                </button>
+              )}
+
+              {/* Rewind */}
+              <button
+                className="w-10 h-10 rounded-full bg-muted text-muted-foreground hover:text-foreground flex items-center justify-center transition-colors"
+                onClick={handleRewind}
+                title={abA !== null ? "Rewind to A point" : "Rewind to start"}
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <polygon points="11 19 2 12 11 5" fill="currentColor" stroke="none" />
+                  <polygon points="22 19 13 12 22 5" fill="currentColor" stroke="none" />
+                </svg>
+              </button>
+
+              {/* Play/Pause */}
+              <button
+                className="w-13 h-13 rounded-full bg-primary text-primary-foreground flex items-center justify-center hover:bg-primary/90 active:scale-95 transition-all shadow-lg"
                 onClick={handlePlayPause}
               >
                 {isPlaying ? (
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor">
                     <rect x="6" y="4" width="4" height="16" rx="1" />
                     <rect x="14" y="4" width="4" height="16" rx="1" />
                   </svg>
                 ) : (
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor">
                     <polygon points="8,4 20,12 8,20" />
                   </svg>
                 )}
               </button>
 
-              {/* A-B loop */}
-              <div className="flex items-center gap-1">
+              {/* Countdown timer — tap to start, long-press or second tap toggles loop-countdown */}
+              <button
+                className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors relative ${
+                  countdownOnLoop
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-muted text-muted-foreground hover:text-foreground"
+                }`}
+                onClick={startCountdown}
+                title={`Start with ${countdownDuration}s countdown`}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="13" r="8" />
+                  <path d="M12 9v4l2 2" />
+                  <path d="M9 1h6" />
+                  <path d="M12 1v2" />
+                </svg>
+                <span className="absolute -bottom-0.5 -right-0.5 text-[9px] font-bold bg-muted-foreground text-background rounded-full w-4 h-4 flex items-center justify-center">{countdownDuration}</span>
+              </button>
+
+              {/* Countdown duration selector + loop toggle */}
+              <div className="flex flex-col items-center gap-0.5">
+                {[3, 4, 5].map((d) => (
+                  <button
+                    key={d}
+                    className={`w-5 h-3.5 rounded text-[9px] font-medium transition-colors ${
+                      countdownDuration === d
+                        ? "bg-primary/80 text-primary-foreground"
+                        : "bg-muted/50 text-muted-foreground/50 hover:text-muted-foreground"
+                    }`}
+                    onClick={() => setCountdownDuration(d)}
+                  >
+                    {d}
+                  </button>
+                ))}
                 <button
-                  className={`px-2.5 py-1.5 rounded-full text-sm font-bold transition-colors ${
-                    abA !== null
+                  className={`w-5 h-3.5 rounded text-[9px] font-medium transition-colors ${
+                    countdownOnLoop
                       ? "bg-amber-500 text-white"
-                      : "bg-muted text-muted-foreground hover:text-foreground"
+                      : "bg-muted/50 text-muted-foreground/50 hover:text-muted-foreground"
                   }`}
-                  onClick={() => {
-                    if (abA !== null && abB !== null) {
-                      setAbA(null);
-                      setAbB(null);
-                    } else {
-                      setAbA(currentTime);
-                    }
-                  }}
-                  title={abA !== null ? `A: ${formatTime(abA)} — tap to clear` : "Set A point"}
+                  onClick={() => { const next = !countdownOnLoop; setCountdownOnLoop(next); countdownOnLoopRef.current = next; }}
+                  title={countdownOnLoop ? "Countdown on every loop (on)" : "Countdown on every loop (off)"}
                 >
-                  A
-                </button>
-                <button
-                  className={`px-2.5 py-1.5 rounded-full text-sm font-bold transition-colors ${
-                    abB !== null
-                      ? "bg-amber-500 text-white"
-                      : "bg-muted text-muted-foreground hover:text-foreground"
-                  } ${abA === null ? "opacity-40 pointer-events-none" : ""}`}
-                  onClick={() => {
-                    if (abB !== null) {
-                      setAbB(null);
-                    } else if (abA !== null && currentTime > abA) {
-                      setAbB(currentTime);
-                    }
-                  }}
-                  title={abB !== null ? `B: ${formatTime(abB)} — tap to clear` : "Set B point"}
-                >
-                  B
+                  {countdownOnLoop ? "ON" : "LP"}
                 </button>
               </div>
             </div>
 
-            {/* Speed control */}
-            <div className="flex items-center justify-center gap-1.5 flex-wrap">
+            {/* Speed + Pitch + Crop — single row */}
+            <div className="flex items-center justify-center gap-1 flex-wrap">
+              {/* Speed buttons */}
               {SPEED_OPTIONS.map((s) => (
                 <button
                   key={s}
-                  className={`px-2.5 py-1 rounded-full text-sm font-medium transition-colors ${
+                  className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
                     speed === s
                       ? "bg-primary text-primary-foreground"
                       : "bg-muted hover:bg-muted/80 text-muted-foreground hover:text-foreground"
@@ -727,59 +934,52 @@ export default function PracticePage({
                   {s}x
                 </button>
               ))}
-            </div>
 
-            {/* Pitch + Crop row */}
-            <div className="flex items-center justify-center gap-4 flex-wrap">
-              {/* Pitch control */}
-              <div className="flex items-center gap-1.5">
-                <span className="text-xs text-muted-foreground">Pitch:</span>
+              <div className="w-px h-5 bg-border mx-1" />
+
+              {/* Pitch */}
+              <button
+                className="w-7 h-7 rounded-full bg-muted hover:bg-muted/80 text-foreground flex items-center justify-center text-sm font-medium disabled:opacity-40"
+                onClick={() => setPitch((p) => Math.max(-12, p - 1))}
+                disabled={pitch <= -12 || pitchProcessing}
+              >
+                -
+              </button>
+              <button
+                className={`px-2 py-1 rounded-full text-xs font-medium transition-colors min-w-[2.5rem] text-center ${
+                  pitch === 0
+                    ? "bg-muted text-muted-foreground"
+                    : "bg-primary text-primary-foreground"
+                }`}
+                onClick={() => setPitch(0)}
+                disabled={pitchProcessing}
+              >
+                {pitchProcessing ? "..." : `${pitch >= 0 ? "+" : ""}${pitch}st`}
+              </button>
+              <button
+                className="w-7 h-7 rounded-full bg-muted hover:bg-muted/80 text-foreground flex items-center justify-center text-sm font-medium disabled:opacity-40"
+                onClick={() => setPitch((p) => Math.min(12, p + 1))}
+                disabled={pitch >= 12 || pitchProcessing}
+              >
+                +
+              </button>
+
+              <div className="w-px h-5 bg-border mx-1" />
+
+              {/* Crop */}
+              {CROP_PRESETS.map((preset) => (
                 <button
-                  className="w-7 h-7 rounded-full bg-muted hover:bg-muted/80 text-foreground flex items-center justify-center text-base font-medium disabled:opacity-40"
-                  onClick={() => setPitch((p) => Math.max(-12, p - 1))}
-                  disabled={pitch <= -12 || pitchProcessing}
-                >
-                  -
-                </button>
-                <button
-                  className={`px-2.5 py-1 rounded-full text-sm font-medium transition-colors min-w-[3rem] text-center ${
-                    pitch === 0
-                      ? "bg-muted text-muted-foreground"
-                      : "bg-primary text-primary-foreground"
+                  key={preset.value}
+                  className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
+                    crop === preset.value
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-muted hover:bg-muted/80 text-muted-foreground hover:text-foreground"
                   }`}
-                  onClick={() => setPitch(0)}
-                  disabled={pitchProcessing}
+                  onClick={() => setCrop(preset.value)}
                 >
-                  {pitchProcessing ? "..." : `${pitch >= 0 ? "+" : ""}${pitch}st`}
+                  {preset.label}
                 </button>
-                <button
-                  className="w-7 h-7 rounded-full bg-muted hover:bg-muted/80 text-foreground flex items-center justify-center text-base font-medium disabled:opacity-40"
-                  onClick={() => setPitch((p) => Math.min(12, p + 1))}
-                  disabled={pitch >= 12 || pitchProcessing}
-                >
-                  +
-                </button>
-              </div>
-
-              <div className="w-px h-5 bg-border" />
-
-              {/* Crop control */}
-              <div className="flex items-center gap-1.5">
-                <span className="text-xs text-muted-foreground">Crop:</span>
-                {CROP_PRESETS.map((preset) => (
-                  <button
-                    key={preset.value}
-                    className={`px-2.5 py-1 rounded-full text-sm font-medium transition-colors ${
-                      crop === preset.value
-                        ? "bg-primary text-primary-foreground"
-                        : "bg-muted hover:bg-muted/80 text-muted-foreground hover:text-foreground"
-                    }`}
-                    onClick={() => setCrop(preset.value)}
-                  >
-                    {preset.label}
-                  </button>
-                ))}
-              </div>
+              ))}
             </div>
           </div>
 

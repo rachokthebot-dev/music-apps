@@ -1,0 +1,13 @@
+{
+  "name": "Rock Solo",
+  "chain": [
+    {"category": "Dynamics", "model": "NoiseGate"},
+    {"category": "Distort",  "model": "Minotaur"},
+    {"category": "Amp",      "model": "USDeluxeVib"},
+    {"category": "Cab",      "model": "auto"},
+    {"category": "EQ",       "model": "Parametric"},
+    {"category": "VolPan",   "model": "Gain"},
+    {"category": "Delay",    "model": "SimpleDelay"},
+    {"category": "Reverb",   "model": "Hall"}
+  ]
+}

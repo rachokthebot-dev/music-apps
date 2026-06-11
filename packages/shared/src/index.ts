@@ -12,3 +12,5 @@ export type { AppEntry } from "./app-registry";
 export { AppSwitcher } from "./app-switcher";
 
 export { corsHeaders } from "./cors";
+
+export { basepathShimSource } from "./basepath-shim";

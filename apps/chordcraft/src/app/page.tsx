@@ -458,68 +458,68 @@ export default function Home() {
           </div>
 
           {/* Backing track controls */}
-          <div className="flex flex-wrap items-center gap-3 mb-4 text-xs">
+          <div className="flex flex-wrap items-center gap-3 mb-4 text-sm">
             {/* Bass toggle */}
             <button
               onClick={handleBassToggle}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium transition-colors ${
+              className={`h-11 flex items-center gap-2 px-4 rounded-lg font-medium transition-colors ${
                 bassOn
                   ? "bg-blue-600/20 text-blue-400 border border-blue-600/30"
                   : "bg-secondary text-muted-foreground border border-transparent"
               }`}
             >
-              <Volume2 className="w-3.5 h-3.5" />
+              <Volume2 className="w-4 h-4" />
               Bass
             </button>
 
             {/* Drums toggle */}
             <button
               onClick={handleDrumsToggle}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium transition-colors ${
+              className={`h-11 flex items-center gap-2 px-4 rounded-lg font-medium transition-colors ${
                 drumsOn
                   ? "bg-orange-600/20 text-orange-400 border border-orange-600/30"
                   : "bg-secondary text-muted-foreground border border-transparent"
               }`}
             >
-              <Drum className="w-3.5 h-3.5" />
+              <Drum className="w-4 h-4" />
               Drums
             </button>
 
-            {/* Volume sliders */}
-            <div className="flex items-center gap-1.5 text-muted-foreground">
-              <span>Chords</span>
+            {/* Volume sliders — taller track + thumb for finger control */}
+            <div className="flex items-center gap-2 text-muted-foreground">
+              <span className="text-xs font-medium">Chords</span>
               <input
                 type="range"
                 min={-30}
                 max={0}
                 value={chordVol}
                 onChange={(e) => handleChordVolChange(Number(e.target.value))}
-                className="w-16 accent-primary"
+                className="cc-slider w-28 accent-primary"
               />
             </div>
             {bassOn && (
-              <div className="flex items-center gap-1.5 text-muted-foreground">
-                <span>Bass</span>
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <span className="text-xs font-medium">Bass</span>
                 <input
                   type="range"
                   min={-30}
                   max={0}
                   value={bassVol}
                   onChange={(e) => handleBassVolChange(Number(e.target.value))}
-                  className="w-16 accent-blue-400"
+                  className="cc-slider w-28 accent-blue-400"
                 />
               </div>
             )}
             {drumsOn && (
-              <div className="flex items-center gap-1.5 text-muted-foreground">
-                <span>Drums</span>
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <span className="text-xs font-medium">Drums</span>
                 <input
                   type="range"
                   min={-30}
                   max={0}
                   value={drumVol}
                   onChange={(e) => handleDrumVolChange(Number(e.target.value))}
-                  className="w-16 accent-orange-400"
+                  className="cc-slider w-28 accent-orange-400"
                 />
               </div>
             )}
@@ -543,18 +543,18 @@ export default function Home() {
           </div>
 
           {/* Chord sequence — always visible, highlights active chord */}
-          <div className="flex flex-wrap gap-1.5 mb-4">
+          <div className="flex flex-wrap gap-2 mb-4">
             {chords.map((chord, i) => (
               <button
                 key={`seq-${i}`}
                 onClick={() => handleChordTap(chord, i)}
-                className={`px-2.5 py-1.5 md:px-3 md:py-2 rounded-lg text-sm md:text-base font-medium transition-all ${
+                className={`min-w-14 min-h-14 px-4 py-3 rounded-xl text-base md:text-lg font-semibold transition-all flex items-center justify-center gap-2 ${
                   activeChordIndex === i
                     ? "bg-primary text-primary-foreground shadow-md scale-105"
                     : "bg-secondary text-secondary-foreground hover:bg-accent"
                 }`}
               >
-                <span className="text-[10px] text-muted-foreground mr-1">{selectedProgression.numerals[i]}</span>
+                <span className="text-xs text-muted-foreground">{selectedProgression.numerals[i]}</span>
                 {showChords && chord.name}
               </button>
             ))}
@@ -619,12 +619,13 @@ export default function Home() {
 
           {/* Audio init prompt */}
           {!audioReady && (
-            <div className="mt-4 text-center">
+            <div className="mt-4">
               <button
                 onClick={handleStartAudio}
-                className="text-xs text-muted-foreground hover:text-foreground transition-colors underline"
+                className="w-full h-14 flex items-center justify-center gap-2 rounded-xl bg-amber-500/15 border border-amber-500/40 text-amber-700 dark:text-amber-300 hover:bg-amber-500/25 transition-colors text-base font-semibold"
               >
-                Tap here or press Play to enable audio
+                <Volume2 className="w-5 h-5" />
+                Tap to enable audio
               </button>
             </div>
           )}

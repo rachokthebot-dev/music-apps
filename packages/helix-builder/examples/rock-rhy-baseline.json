@@ -1,0 +1,11 @@
+{
+  "target_snapshot": "ROCK RHY",
+  "enable": ["Comp", "Klon", "EQ", "Delay", "JCM800", "4x12 Greenback"],
+  "bypass": ["US Double", "2x12 Cab", "Boost"],
+  "params": {
+    "US Double": {"ChVol": 0.72, "Treble": 0.35, "Bass": 0.55},
+    "Delay":     {"Mix":   0.12},
+    "Boost":     {"Gain":  0.0},
+    "JCM800":    {"Drive": 0.45, "Bass": 0.57}
+  }
+}

@@ -119,6 +119,8 @@ function AppIcon({ appId }: { appId: string }) {
       return <div className={`${iconClass} bg-blue-500/15 text-blue-400`}>L</div>;
     case "chordcraft":
       return <div className={`${iconClass} bg-purple-500/15 text-purple-400`}>C</div>;
+    case "metronome":
+      return <div className={`${iconClass} bg-rose-500/15 text-rose-400`}>M</div>;
     case "dashboard":
       return <div className={`${iconClass} bg-emerald-500/15 text-emerald-400`}>D</div>;
     default:

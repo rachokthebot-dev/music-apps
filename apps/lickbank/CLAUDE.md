@@ -23,7 +23,9 @@ npm run build && npm start
 ```
 
 ### Access from iPad
-Open `http://<mac-ip>:3001` in Safari.
+Open `http://<mac-ip>:3001/lickbank` in Safari. The `/lickbank` prefix is
+required (basePath in `next.config.ts`). Or access all apps via the proxy at
+`http://<mac-ip>:8080`. See `../../proxy/README.md`.
 
 ## Tech stack
 - Next.js 16.2.1, React 19, TypeScript, Tailwind CSS v4, shadcn/ui

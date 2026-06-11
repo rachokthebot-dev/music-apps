@@ -1,0 +1,14 @@
+{
+  "name": "Heavy Solo",
+  "chain": [
+    {"category": "Dynamics", "model": "NoiseGate"},
+    {"category": "Distort",  "model": "Minotaur"},
+    {"category": "Distort",  "model": "VerminDist"},
+    {"category": "Amp",      "model": "USDeluxeVib"},
+    {"category": "Cab",      "model": "auto"},
+    {"category": "EQ",       "model": "Parametric"},
+    {"category": "VolPan",   "model": "Gain"},
+    {"category": "Delay",    "model": "SimpleDelay"},
+    {"category": "Reverb",   "model": "Hall"}
+  ]
+}

@@ -203,22 +203,24 @@ export function SectionStrip({
                     <span className="text-[10px] text-muted-foreground/70 block mb-1">~{bars} {bars === 1 ? "bar" : "bars"}</span>
                   ) : <span className="mb-1 block" />;
                 })()}
-                <div className="flex items-center justify-end">
-                  <div className="flex items-center gap-0">
-                    <button
-                      onClick={(e) => { e.stopPropagation(); onEditSection(section); }}
-                      className="p-1 rounded text-muted-foreground/30 hover:text-foreground"
-                    >
-                      <Pencil className="size-3" />
-                    </button>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); onDeleteSection(section.id); }}
-                      className="p-1 rounded text-muted-foreground/30 hover:text-destructive"
-                    >
-                      <Trash2 className="size-3" />
-                    </button>
+                {editMode && (
+                  <div className="flex items-center justify-end">
+                    <div className="flex items-center gap-0">
+                      <button
+                        onClick={(e) => { e.stopPropagation(); onEditSection(section); }}
+                        className="p-1 rounded text-muted-foreground/60 hover:text-foreground"
+                      >
+                        <Pencil className="size-3" />
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); onDeleteSection(section.id); }}
+                        className="p-1 rounded text-muted-foreground/60 hover:text-destructive"
+                      >
+                        <Trash2 className="size-3" />
+                      </button>
+                    </div>
                   </div>
-                </div>
+                )}
                 {(loopCounts[section.id] ?? 0) > 0 && (
                   <span className="text-[10px] text-muted-foreground flex items-center gap-0.5 mt-1">
                     <RotateCw className="size-2.5" />

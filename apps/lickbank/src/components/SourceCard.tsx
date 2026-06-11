@@ -8,6 +8,11 @@ function formatTime(sec: number): string {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
+interface SourceFolderRef {
+  folderId: string;
+  folder: { id: string; name: string };
+}
+
 interface SourceItem {
   id: string;
   title: string;
@@ -18,6 +23,7 @@ interface SourceItem {
   durationSec: number | null;
   createdAt: string;
   _count: { licks: number };
+  folders: SourceFolderRef[];
 }
 
 interface SourceCardProps {
@@ -26,6 +32,7 @@ interface SourceCardProps {
   isMenuOpen: boolean;
   onMenuToggle: () => void;
   onRename: () => void;
+  onMoveFolders: () => void;
   onImportToShreddy: () => void;
   shreddyImporting: boolean;
   shreddyMessage: { type: string; text: string } | null;
@@ -40,6 +47,7 @@ export function SourceCard({
   isMenuOpen,
   onMenuToggle,
   onRename,
+  onMoveFolders,
   onImportToShreddy,
   shreddyImporting,
   shreddyMessage,
@@ -51,6 +59,7 @@ export function SourceCard({
 
   const menuItems = [
     { label: "Rename", onClick: onRename },
+    { label: "Folders", onClick: onMoveFolders },
     {
       label: shreddyImporting ? "Sending..." : shreddyMessage ? shreddyMessage.text : "Send to Shreddy",
       onClick: onImportToShreddy,
@@ -109,6 +118,15 @@ export function SourceCard({
             {source._count.licks} {source._count.licks === 1 ? "lick" : "licks"}
             {source.artist && ` · ${source.artist}`}
           </p>
+          {source.folders.length > 0 && (
+            <span className="inline-flex flex-wrap gap-1 mt-1">
+              {source.folders.map((f) => (
+                <span key={f.folderId} className="text-[11px] bg-muted px-1.5 py-0.5 rounded">
+                  {f.folder.name}
+                </span>
+              ))}
+            </span>
+          )}
         </div>
 
         {isReady && (
