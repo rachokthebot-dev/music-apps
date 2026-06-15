@@ -27,11 +27,20 @@ export function useABLoop() {
     setPendingA(null);
   }, []);
 
+  // Programmatic setter for composing hooks (e.g. useBackwardChain). Bypasses
+  // the b-a>0.5 guard that protects user-driven sequential setA/setB taps.
+  // Added per Kieran's TS review for R2 backward-chaining composition.
+  const setLoop = useCallback((a: number, b: number) => {
+    setAbLoop({ a, b });
+    setPendingA(null);
+  }, []);
+
   return {
     abLoop,
     pendingA,
     setA,
     setB,
+    setLoop,
     clearABLoop,
   };
 }
