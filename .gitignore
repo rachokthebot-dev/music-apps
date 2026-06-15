@@ -41,3 +41,4 @@ packages/helix-builder/out/
 # Playwright artifacts (screenshots from agent-run browser sessions)
 .playwright-mcp/
 soundpath-*.png
+apps/data/sandbox/

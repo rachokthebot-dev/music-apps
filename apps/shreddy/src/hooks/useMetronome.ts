@@ -1,6 +1,8 @@
 import { useRef, useCallback, useEffect, useState } from "react";
 
-interface MetronomeOptions {
+// Exported so sandbox forks (e.g. useMetronomePattern for R4 dotted-rhythm)
+// can `extends` rather than redeclare these fields.
+export interface MetronomeOptions {
   bpm: number;               // effective BPM (song.bpm * tempo)
   enabled: boolean;
   volume: number;             // 0-1
