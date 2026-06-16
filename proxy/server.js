@@ -75,6 +75,21 @@ const AUTH = loadOrCreateAuth();
 const AUTH_HEADER_VALUE =
   "Basic " + Buffer.from(`${AUTH.user}:${AUTH.password}`).toString("base64");
 
+// Session cookie shape:
+//   Name:  music_auth
+//   Value: HMAC-SHA256(password, "music-auth-v1") truncated to 32 hex chars.
+// Constant per password; rotates when the password rotates. Set once after a
+// successful Basic-Auth challenge; checked first on every subsequent request.
+// Fixes iPad Safari's habit of re-prompting on every <audio> / chunk subresource.
+const SESSION_COOKIE_NAME = "music_auth";
+const SESSION_COOKIE_VALUE = crypto
+  .createHmac("sha256", AUTH.password)
+  .update("music-auth-v1")
+  .digest("hex")
+  .slice(0, 32);
+const SESSION_COOKIE_HEADER =
+  `${SESSION_COOKIE_NAME}=${SESSION_COOKIE_VALUE}; Path=/; Max-Age=2592000; SameSite=Lax; HttpOnly`;
+
 // Constant-time string compare so attackers can't gauge progress by timing.
 function safeEq(a, b) {
   const aBuf = Buffer.from(a);
@@ -105,10 +120,24 @@ function isPublicRequest(req) {
 }
 
 function isAuthorized(req) {
+  // Cookie-first: if the client already has the session cookie, accept it.
+  // This is how every request after the initial sign-in avoids re-prompting
+  // (browsers send Basic Auth credentials inconsistently to <audio> srcs,
+  // HMR sockets, and Next dev chunks — but cookies they always send).
+  const cookieHeader = req.headers["cookie"] || "";
+  const m = cookieHeader.match(/(?:^|;\s*)music_auth=([0-9a-f]+)/);
+  if (m && safeEq(m[1], SESSION_COOKIE_VALUE)) return true;
+
   const got = req.headers["authorization"];
   if (!got) return false;
-  // Compare against the precomputed expected header in constant time.
   return safeEq(got, AUTH_HEADER_VALUE);
+}
+
+/** True iff this request authenticated via Basic Auth (NOT via cookie).
+ *  Used to decide whether to set the cookie on the response. */
+function authedViaBasic(req) {
+  const got = req.headers["authorization"];
+  return !!got && safeEq(got, AUTH_HEADER_VALUE);
 }
 
 function challenge(res, message) {
@@ -200,6 +229,38 @@ function proxyHttp(req, res, slug) {
   req.pipe(upstream);
 }
 
+/** Wrap res.writeHead so it appends the session cookie when needed, regardless
+ *  of which handler downstream calls it (serveLanding, proxyHttp piping
+ *  upstream headers, the 404 fallback). One-shot — only adds on first call. */
+function injectSessionCookieIfNeeded(res) {
+  const original = res.writeHead.bind(res);
+  let injected = false;
+  res.writeHead = function (statusCode, ...rest) {
+    if (!injected) {
+      injected = true;
+      // Headers may live in rest[0] or rest[1] depending on call signature.
+      let headers;
+      let headersIdx = -1;
+      if (rest.length >= 1 && rest[rest.length - 1] && typeof rest[rest.length - 1] === "object") {
+        headersIdx = rest.length - 1;
+        headers = rest[headersIdx];
+      }
+      const existing = headers && headers["set-cookie"];
+      const merged = existing
+        ? Array.isArray(existing)
+          ? [...existing, SESSION_COOKIE_HEADER]
+          : [existing, SESSION_COOKIE_HEADER]
+        : SESSION_COOKIE_HEADER;
+      if (headers) {
+        headers["set-cookie"] = merged;
+      } else {
+        rest.push({ "set-cookie": SESSION_COOKIE_HEADER });
+      }
+    }
+    return original(statusCode, ...rest);
+  };
+}
+
 const server = http.createServer((req, res) => {
   const url = req.url || "/";
   // Match on pathname so /?foo=bar still routes to /.
@@ -210,6 +271,12 @@ const server = http.createServer((req, res) => {
   if (isPublicRequest(req) && !isAuthorized(req)) {
     challenge(res);
     return;
+  }
+  // If the client authed via Basic this time (vs cookie), set the session
+  // cookie so subsequent requests skip the Basic prompt entirely. This is
+  // the fix for iPad Safari re-prompting on every subresource.
+  if (isPublicRequest(req) && authedViaBasic(req)) {
+    injectSessionCookieIfNeeded(res);
   }
 
   if (pathname === "/" || pathname === "/index.html") {
