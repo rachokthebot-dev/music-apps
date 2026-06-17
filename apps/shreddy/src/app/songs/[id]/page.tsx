@@ -29,6 +29,7 @@ import {
 } from "lucide-react";
 import { useMetronome } from "@/hooks/useMetronome";
 import { usePitchShifter } from "@/hooks/usePitchShifter";
+import { useTempoStretch } from "@/hooks/useTempoStretch";
 import { useABLoop } from "@/hooks/useABLoop";
 import { useSectionEditor } from "@/hooks/useSectionEditor";
 import { WaveformBar } from "@/components/WaveformBar";
@@ -90,7 +91,9 @@ function transposeKey(key: string, semitones: number): string {
   return `${NOTE_NAMES[newIdx]} ${match[2]}`;
 }
 
-const TEMPO_VALUES = [0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2];
+// R1 Ultra-slow tempo: 0.1 .. 0.4 require a server-side ffmpeg stretch (iPad
+// Safari clamps audio.playbackRate at 0.5). useTempoStretch handles the swap.
+const TEMPO_VALUES = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2];
 
 
 function PracticeSkeleton() {
@@ -591,9 +594,20 @@ export default function PracticePage({
     pitch, tempo, audioRef, onPause: pausePlayback,
   });
 
+  // R1 Ultra-slow: when tempo < 0.5 (and pitch == 0), useTempoStretch renders
+  // and swaps audio.src. Otherwise it's a no-op and the normal playbackRate
+  // path runs.
+  const { processing: tempoProcessing } = useTempoStretch({
+    songId: song?.id ?? null,
+    audioUrl: song?.normalizedAudioPath ? `/api/media/${song.normalizedAudioPath}` : null,
+    tempo, pitch, audioRef, onPause: pausePlayback,
+  });
+
+  const transportBusy = pitchProcessing || tempoProcessing;
+
   function togglePlay() {
     const audio = audioRef.current;
-    if (!audio || pitchProcessing) return;
+    if (!audio || transportBusy) return;
     if (playing) {
       audio.pause();
     } else {
@@ -1112,9 +1126,9 @@ export default function PracticePage({
               <button
                 className="size-16 rounded-full bg-primary text-primary-foreground flex items-center justify-center active:scale-95 transition-transform shadow-sm disabled:opacity-50"
                 onClick={togglePlay}
-                disabled={pitchProcessing}
+                disabled={transportBusy}
               >
-                {pitchProcessing ? <Loader2 className="size-7 animate-spin" /> : playing ? <Pause className="size-7" /> : <Play className="size-7 ml-0.5" />}
+                {transportBusy ? <Loader2 className="size-7 animate-spin" /> : playing ? <Pause className="size-7" /> : <Play className="size-7 ml-0.5" />}
               </button>
               <Button
                 variant="outline"
