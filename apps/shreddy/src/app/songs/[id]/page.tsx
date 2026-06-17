@@ -36,6 +36,10 @@ import { SectionStrip } from "@/components/SectionStrip";
 import { MetronomePanel } from "@/components/MetronomePanel";
 import { NotesPanel } from "@/components/NotesPanel";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { SilentToggle } from "@/components/SilentToggle";
+import { CueOverlay } from "@/components/CueOverlay";
+import { DistractionOverlay } from "@/components/DistractionOverlay";
+import { Brain } from "lucide-react";
 
 interface Section {
   id: string;
@@ -165,6 +169,11 @@ export default function PracticePage({
   const [metronomeEnabled, setMetronomeEnabled] = useState(false);
   const [metronomeVolume, setMetronomeVolume] = useState(0.5);
   const [metronomeStandalone, setMetronomeStandalone] = useState(false);
+
+  // R3 Silent: mute audio + show rotating cue overlay above the waveform.
+  // R6 Distraction: open the dual-task overlay below the waveform.
+  const [silent, setSilent] = useState(false);
+  const [distractionOpen, setDistractionOpen] = useState(false);
 
   const activePlayTimeRef = useRef(0);
   const [loopCounts, setLoopCounts] = useState<Record<string, number>>({});
@@ -484,6 +493,16 @@ export default function PracticePage({
     };
     // Intentionally NOT depending on song.lastPositionSec — see initialPositionRef.
   }, [song?.normalizedAudioPath, id]);
+
+  // R3 Silent: keep audio.muted in sync. The audio element is recreated when
+  // normalizedAudioPath swaps (pitch render), so this effect re-applies after
+  // a swap. Metronome runs independently of the audio element so it keeps
+  // ticking in Silent mode.
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    audio.muted = silent;
+  }, [silent, song?.normalizedAudioPath]);
 
   // Save bookmark every 10 seconds while playing
   useEffect(() => {
@@ -968,6 +987,23 @@ export default function PracticePage({
                   {sharing ? "Sharing..." : "Share"}
                 </button>
               )}
+              <SilentToggle silent={silent} onToggle={() => setSilent((s) => !s)} />
+              <button
+                onClick={() => setDistractionOpen((d) => !d)}
+                className={`text-[11px] px-2 py-0.5 rounded-full transition-colors flex items-center gap-1 ${
+                  distractionOpen
+                    ? "bg-foreground text-background"
+                    : "bg-muted text-muted-foreground hover:bg-accent"
+                }`}
+                title={
+                  distractionOpen
+                    ? "Distraction practice on"
+                    : "Add dual-task distractions (advanced — R6)"
+                }
+              >
+                <Brain className="size-3" />
+                Distract
+              </button>
               {activePlayTime > 0 && (
                 <span className="text-[11px] text-muted-foreground/60 flex items-center gap-1 ml-auto">
                   <Clock className="size-3" />
@@ -977,6 +1013,15 @@ export default function PracticePage({
             </div>
           </div>
         </div>
+
+        {/* R3 Mental Rehearsal cue prompt — rendered only when Silent is on. */}
+        {silent && (
+          <CueOverlay
+            currentTime={currentTime}
+            bpm={song.bpm}
+            beatsPerBar={song.timeSignature}
+          />
+        )}
 
         {/* === LARGE WAVEFORM BAR (Cinema Transport) === */}
         {duration > 0 && song.sections.length > 0 ? (
@@ -1016,6 +1061,16 @@ export default function PracticePage({
               <span className="tabular-nums">{formatTime(duration)}</span>
             </div>
           </div>
+        )}
+
+        {/* R6 Distraction practice — rendered only when toggled on. Fixed-height
+            internal cards prevent layout shift when distractors spawn/clear. */}
+        {distractionOpen && (
+          <DistractionOverlay
+            playing={playing}
+            currentTime={currentTime}
+            onClose={() => setDistractionOpen(false)}
+          />
         )}
 
         {/* === UNIFIED TRANSPORT BAR === */}
