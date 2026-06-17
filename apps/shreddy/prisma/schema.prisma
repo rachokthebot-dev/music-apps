@@ -31,6 +31,12 @@ model Song {
   genre              String    @default("")
   year               String    @default("")
   timeSignature      Int       @default(4)  // beats per bar: 3, 4, or 6
+  // R5 stems pipeline (Demucs htdemucs). Stems are stored as
+  // <id>_stem_{vocals,drums,bass,other}.mp3 next to the normalized audio.
+  // State: pending, processing, ready, error.
+  stemsState         String    @default("pending")
+  stemsErrorMessage  String?
+  stemsCompletedAt   DateTime?
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
 

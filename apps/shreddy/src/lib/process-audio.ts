@@ -3,6 +3,7 @@ import path from "path";
 import { unlink, access, readFile } from "fs/promises";
 import { AUDIO_DIR, SETTINGS_FILE } from "./paths";
 import { prisma } from "./prisma";
+import { processStems } from "./process-stems";
 
 const PROJECT_ROOT = path.resolve(process.cwd(), "..");
 // SongFormer-based analyzer runs in its own Python 3.11 venv (.venv-sf).
@@ -293,6 +294,11 @@ export async function processAudio(songId: string, inputPath: string, options?: 
     } catch {
       // Not critical if cleanup fails
     }
+
+    // R5 stems pipeline. Fire-and-forget so the song page becomes available
+    // immediately — the practice UI shows stems as "rendering" until done.
+    // processStems never throws; failures are written to stemsErrorMessage.
+    void processStems(songId, outputPath);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
     await prisma.song.update({
