@@ -40,6 +40,9 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { SilentToggle } from "@/components/SilentToggle";
 import { CueOverlay } from "@/components/CueOverlay";
 import { DistractionOverlay } from "@/components/DistractionOverlay";
+import { StemMixer } from "@/components/StemMixer";
+import { useStemsEngine } from "@/hooks/useStemsEngine";
+import type { StemName } from "@/lib/stems-engine";
 import { Brain } from "lucide-react";
 
 interface Section {
@@ -497,15 +500,65 @@ export default function PracticePage({
     // Intentionally NOT depending on song.lastPositionSec — see initialPositionRef.
   }, [song?.normalizedAudioPath, id]);
 
-  // R3 Silent: keep audio.muted in sync. The audio element is recreated when
-  // normalizedAudioPath swaps (pitch render), so this effect re-applies after
-  // a swap. Metronome runs independently of the audio element so it keeps
-  // ticking in Silent mode.
+  // R5 stems: lazy engine; activates on first mute toggle.
+  const stems = useStemsEngine({ songId: song?.id ?? null });
+  const stemsActive = !!stems.engine;
+  const anyStemMuted = useMemo(
+    () => Object.values(stems.muted).some(Boolean),
+    [stems.muted]
+  );
+
+  // R3 Silent + R5 stems: keep audio.muted in sync. The audio element is
+  // recreated when normalizedAudioPath swaps (pitch / tempo render), so this
+  // effect re-applies after a swap. When the stems engine is active the
+  // audible output comes from it; the audio element stays muted but keeps
+  // playing so currentTime / loops / bookmark logic still work unchanged.
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio) return;
-    audio.muted = silent;
-  }, [silent, song?.normalizedAudioPath]);
+    audio.muted = silent || stemsActive;
+  }, [silent, stemsActive, song?.normalizedAudioPath]);
+
+  // Mirror play/pause/tempo from the audio element into the stems engine.
+  // Seek is mirrored explicitly at each user-seek call site (see seek()).
+  useEffect(() => {
+    const engine = stems.engine;
+    const audio = audioRef.current;
+    if (!engine || !audio) return;
+    if (playing) {
+      engine.play(audio.currentTime, tempo);
+    } else {
+      engine.pause();
+    }
+  }, [playing, stems.engine]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    stems.engine?.setPlaybackRate(tempo);
+  }, [tempo, stems.engine]);
+
+  // First-mute handler. Activates the engine (lazy load + decode the 4
+  // stems), then applies the requested mute. Audio element keeps playing,
+  // muted, so currentTime + transport logic stay intact.
+  const handleStemMuteToggle = useCallback(
+    async (stem: StemName) => {
+      const next = !stems.muted[stem];
+      if (!stems.engine) {
+        const engine = await stems.activate();
+        if (!engine) return; // stems weren't ready yet
+        // After activation, sync to current playback so the engine catches up.
+        const audio = audioRef.current;
+        if (audio) {
+          if (!audio.paused) {
+            engine.play(audio.currentTime, tempo);
+          } else {
+            engine.seek(audio.currentTime, tempo);
+          }
+        }
+      }
+      stems.setMute(stem, next);
+    },
+    [stems, tempo]
+  );
 
   // Save bookmark every 10 seconds while playing
   useEffect(() => {
@@ -629,6 +682,9 @@ export default function PracticePage({
     const v = Array.isArray(value) ? value[0] : value;
     audio.currentTime = v;
     setCurrentTime(v);
+    // Stems engine doesn't observe audio.currentTime — mirror explicitly so
+    // it stays sample-locked with the visible playhead after a user seek.
+    stems.engine?.seek(v, tempo);
   }
 
   function jumpToStart() {
@@ -1076,6 +1132,15 @@ export default function PracticePage({
             </div>
           </div>
         )}
+
+        {/* R5 Vocal Integration — 4 stem mute pills. Renders the in-progress
+            placeholder while Demucs is rendering on the server, the pill row
+            once stemsState='ready'. Tapping a pill lazy-activates the engine. */}
+        <StemMixer
+          state={stems.state}
+          muted={stems.muted}
+          onMuteToggle={handleStemMuteToggle}
+        />
 
         {/* R6 Distraction practice — rendered only when toggled on. Fixed-height
             internal cards prevent layout shift when distractors spawn/clear. */}
