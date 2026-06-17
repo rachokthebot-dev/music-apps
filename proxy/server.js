@@ -101,7 +101,12 @@ function safeEq(a, b) {
 // A request is considered "public" (came in through ngrok or similar) when it
 // carries headers we know the local LAN never sets. Direct LAN/localhost hits
 // don't get challenged.
+//
+// PROXY_OPEN=1 disables the public-traffic auth gate entirely — useful when
+// iPad Safari + Basic Auth subresource quirks make the cookie session
+// unreliable behind ngrok. URL secrecy is the only protection in that mode.
 function isPublicRequest(req) {
+  if (process.env.PROXY_OPEN === "1") return false;
   if (req.headers["x-forwarded-for"]) return true;
   if (req.headers["x-forwarded-host"]) return true;
   if (req.headers["ngrok-agent-ips"]) return true;
