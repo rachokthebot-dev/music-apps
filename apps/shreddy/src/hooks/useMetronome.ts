@@ -1,4 +1,5 @@
 import { useRef, useCallback, useEffect, useState } from "react";
+import { getAudioContext, suspendAudioContext } from "@/lib/audio-context";
 
 // Exported so sandbox forks (e.g. useMetronomePattern for R4 dotted-rhythm)
 // can `extends` rather than redeclare these fields.
@@ -51,15 +52,19 @@ export function useMetronome({
   tempoRef.current = tempo;
   beatTimestampsRef.current = beatTimestamps;
 
-  // Initialize AudioContext
+  // Initialize AudioContext via the shared module singleton — see
+  // src/lib/audio-context.ts. Multiple feature hooks (metronome + future
+  // stems engine) share one context so we don't blow iPad Safari's context
+  // cap. Gain node is per-hook so each feature can rebalance its own volume.
   const initAudio = useCallback(() => {
-    if (audioCtxRef.current) return audioCtxRef.current;
-    const ctx = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
-    const gain = ctx.createGain();
-    gain.connect(ctx.destination);
-    gain.gain.value = volumeRef.current;
+    const ctx = getAudioContext();
+    if (!gainRef.current) {
+      const gain = ctx.createGain();
+      gain.connect(ctx.destination);
+      gain.gain.value = volumeRef.current;
+      gainRef.current = gain;
+    }
     audioCtxRef.current = ctx;
-    gainRef.current = gain;
     return ctx;
   }, []);
 
@@ -268,14 +273,50 @@ export function useMetronome({
     return () => stopScheduler();
   }, [enabled, playing, standalone, bpm, manualBpm, tempo, initAudio, startScheduler, stopScheduler]);
 
-  // Cleanup on unmount
+  // Recover cleanly when iPad Safari suspends and resumes the AudioContext
+  // (screen lock, tab background, headphone unplug). Without this, on resume
+  // the scheduler's `nextTickTimeRef` lags far behind ctx.currentTime and
+  // dumps a burst of clicks queued during the suspend window.
+  useEffect(() => {
+    const ctx = audioCtxRef.current;
+    if (!ctx) return;
+    const onStateChange = () => {
+      if (ctx.state === "running") {
+        nextTickTimeRef.current = ctx.currentTime;
+        beatCountRef.current = 0;
+        lastScheduledBeatRef.current = -1;
+      }
+    };
+    ctx.addEventListener("statechange", onStateChange);
+    return () => ctx.removeEventListener("statechange", onStateChange);
+  }, [isActive]);
+
+  // Stop scheduling while the tab is hidden so the scheduler doesn't queue
+  // a buildup of clicks that all fire when the user returns.
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const onVis = () => {
+      if (document.hidden) {
+        stopScheduler();
+        setCurrentBeat(-1);
+      } else if (audioCtxRef.current?.state === "running") {
+        nextTickTimeRef.current = audioCtxRef.current.currentTime;
+      }
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => document.removeEventListener("visibilitychange", onVis);
+  }, [stopScheduler]);
+
+  // Cleanup on unmount. Suspend (don't close) the shared AudioContext so the
+  // next navigation can resume it without paying re-init cost. The gain node
+  // becomes garbage once gainRef is cleared.
   useEffect(() => {
     return () => {
       stopScheduler();
-      if (audioCtxRef.current) {
-        audioCtxRef.current.close().catch(() => {});
-        audioCtxRef.current = null;
-      }
+      gainRef.current?.disconnect();
+      gainRef.current = null;
+      audioCtxRef.current = null;
+      void suspendAudioContext();
     };
   }, [stopScheduler]);
 

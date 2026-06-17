@@ -347,13 +347,47 @@ export function useMetronome({ bpm, volume, beatsPerMeasure, pattern, timerDurat
     tapTimesRef.current = [];
   }, []);
 
-  // Cleanup on unmount
+  // Recover cleanly when iPad Safari suspends/resumes the AudioContext (lock
+  // screen, tab background). Without this, the scheduler dumps a backlog of
+  // clicks on resume.
+  useEffect(() => {
+    const ctx = audioCtxRef.current;
+    if (!ctx) return;
+    const onStateChange = () => {
+      if (ctx.state === "running") {
+        nextTickTimeRef.current = ctx.currentTime;
+        beatCountRef.current = 0;
+        subdivIndexRef.current = 0;
+      }
+    };
+    ctx.addEventListener("statechange", onStateChange);
+    return () => ctx.removeEventListener("statechange", onStateChange);
+  }, [isPlaying]);
+
+  // Pause scheduling while the tab is hidden.
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const onVis = () => {
+      if (document.hidden) {
+        stopScheduler();
+        setCurrentBeat(-1);
+      } else if (audioCtxRef.current?.state === "running") {
+        nextTickTimeRef.current = audioCtxRef.current.currentTime;
+      }
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => document.removeEventListener("visibilitychange", onVis);
+  }, [stopScheduler]);
+
+  // Cleanup on unmount: suspend (don't close) so the context slot stays
+  // reusable. Closing it permanently destroys it and iPad eventually denies
+  // new ones if you churn through them.
   useEffect(() => {
     return () => {
       stopScheduler();
-      if (audioCtxRef.current) {
-        audioCtxRef.current.close().catch(() => {});
-        audioCtxRef.current = null;
+      const ctx = audioCtxRef.current;
+      if (ctx && ctx.state !== "closed") {
+        ctx.suspend().catch(() => {});
       }
     };
   }, [stopScheduler]);
