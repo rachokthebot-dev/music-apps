@@ -3,13 +3,23 @@
 import { useState, useEffect, useCallback } from "react";
 import { Play, Square, Hand, Sun, Moon, Timer, RotateCcw } from "lucide-react";
 import { AppSwitcher } from "@music-apps/shared/app-switcher";
-import { useMetronome } from "@/hooks/useMetronome";
+import { useMetronome, type MetronomePattern } from "@/hooks/useMetronome";
 
 const TIME_SIGNATURES = [
   { label: "4/4", beats: 4 },
   { label: "3/4", beats: 3 },
   { label: "6/8", beats: 6 },
 ] as const;
+
+// R4 Rhythmic Alternation patterns. Glyphs mirror common notation: a single
+// note for straight, a dotted-eighth + sixteenth pair for the dotted feels,
+// and a triplet bracket for the triplet.
+const PATTERNS: { value: MetronomePattern; label: string; desc: string }[] = [
+  { value: "straight", label: "♩", desc: "Straight" },
+  { value: "dotted-fwd", label: "♩.♬", desc: "Dotted →" },
+  { value: "dotted-rev", label: "♬♩.", desc: "Dotted ←" },
+  { value: "triplet", label: "♪³", desc: "Triplet" },
+];
 
 const TIMER_PRESETS = [
   { label: "Off", seconds: 0 },
@@ -32,6 +42,7 @@ function formatTime(seconds: number): string {
 export default function MetronomePage() {
   const [bpm, setBpm] = useState(120);
   const [timeSigIndex, setTimeSigIndex] = useState(0);
+  const [pattern, setPattern] = useState<MetronomePattern>("straight");
   const [timerSeconds, setTimerSeconds] = useState(0);
   const [customTimerMin, setCustomTimerMin] = useState(0);
   const [customTimerSec, setCustomTimerSec] = useState(0);
@@ -52,6 +63,7 @@ export default function MetronomePage() {
     bpm,
     volume: VOLUME,
     beatsPerMeasure: timeSig.beats,
+    pattern,
     timerDuration: timerSeconds,
   });
 
@@ -64,6 +76,9 @@ export default function MetronomePage() {
         if (s.bpm) setBpm(Math.min(MAX_BPM, s.bpm));
         if (s.timeSigIndex !== undefined) setTimeSigIndex(s.timeSigIndex);
         if (s.timerSeconds !== undefined) setTimerSeconds(s.timerSeconds);
+        if (s.pattern && PATTERNS.some((p) => p.value === s.pattern)) {
+          setPattern(s.pattern as MetronomePattern);
+        }
       }
     } catch {}
   }, []);
@@ -72,10 +87,10 @@ export default function MetronomePage() {
     try {
       localStorage.setItem(
         "metronome-settings",
-        JSON.stringify({ bpm, timeSigIndex, timerSeconds })
+        JSON.stringify({ bpm, timeSigIndex, pattern, timerSeconds })
       );
     } catch {}
-  }, [bpm, timeSigIndex, timerSeconds]);
+  }, [bpm, timeSigIndex, pattern, timerSeconds]);
 
   // Dark mode sync
   useEffect(() => {
@@ -238,6 +253,29 @@ export default function MetronomePage() {
               <Hand className="w-4 h-4 lg:w-5 lg:h-5" />
               Tap
             </button>
+          </div>
+
+          {/* R4 Rhythm pattern picker — live-switchable while playing. */}
+          <div className="w-full space-y-2">
+            <div className="flex items-center justify-center gap-1 text-xs text-muted-foreground">
+              Rhythm
+            </div>
+            <div className="flex items-center justify-center gap-2 flex-wrap">
+              {PATTERNS.map((p) => (
+                <button
+                  key={p.value}
+                  onClick={() => setPattern(p.value)}
+                  title={p.desc}
+                  className={`px-4 py-2 lg:px-5 lg:py-2.5 rounded-xl text-sm lg:text-base font-medium transition-colors min-w-16 ${
+                    pattern === p.value
+                      ? "bg-foreground text-background"
+                      : "bg-secondary text-secondary-foreground hover:bg-accent"
+                  }`}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
           </div>
 
           {/* Timer presets */}

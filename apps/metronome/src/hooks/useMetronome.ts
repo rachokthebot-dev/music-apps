@@ -10,10 +10,27 @@ export interface MetronomeState {
   isFadingOut: boolean;
 }
 
+// R4 Rhythmic Alternation — subdivision patterns within each beat.
+// Offsets are fractions of a beat (0..1); the scheduler emits a click at each.
+// straight     — every beat. Default behaviour.
+// dotted-fwd   — long-short. Dotted-eighth + sixteenth feel.
+// dotted-rev   — short-long. Sixteenth + dotted-eighth.
+// triplet      — three even subdivisions.
+export type MetronomePattern = "straight" | "dotted-fwd" | "dotted-rev" | "triplet";
+
+const PATTERN_OFFSETS: Record<MetronomePattern, number[]> = {
+  straight: [0],
+  "dotted-fwd": [0, 0.667],
+  "dotted-rev": [0, 0.333],
+  triplet: [0, 0.333, 0.667],
+};
+
 interface UseMetronomeOptions {
   bpm: number;
   volume: number;
   beatsPerMeasure: number;
+  /** Subdivision pattern within each beat (R4 Rhythmic Alternation). */
+  pattern: MetronomePattern;
   /** Timer duration in seconds, 0 = no timer */
   timerDuration: number;
 }
@@ -22,13 +39,16 @@ const SCHEDULE_AHEAD = 0.15; // seconds to look ahead
 const TICK_INTERVAL = 20; // ms between scheduler runs
 const FADE_OUT_DURATION = 2; // seconds for fade-out
 
-export function useMetronome({ bpm, volume, beatsPerMeasure, timerDuration }: UseMetronomeOptions) {
+export function useMetronome({ bpm, volume, beatsPerMeasure, pattern, timerDuration }: UseMetronomeOptions) {
   const audioCtxRef = useRef<AudioContext | null>(null);
   const gainRef = useRef<GainNode | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const nextTickTimeRef = useRef(0);
+  // beatCountRef counts measure beats (0, 1, 2, ...); subdivIndexRef tracks
+  // which subdivision within the current beat we're scheduling next.
   const beatCountRef = useRef(0);
+  const subdivIndexRef = useRef(0);
   const visualTimeoutsRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
 
   const [isPlaying, setIsPlaying] = useState(false);
@@ -40,11 +60,13 @@ export function useMetronome({ bpm, volume, beatsPerMeasure, timerDuration }: Us
   const bpmRef = useRef(bpm);
   const volumeRef = useRef(volume);
   const beatsPerMeasureRef = useRef(beatsPerMeasure);
+  const patternRef = useRef(pattern);
   const timerDurationRef = useRef(timerDuration);
 
   bpmRef.current = bpm;
   volumeRef.current = volume;
   beatsPerMeasureRef.current = beatsPerMeasure;
+  patternRef.current = pattern;
   timerDurationRef.current = timerDuration;
 
   // Tap tempo state
@@ -131,6 +153,7 @@ export function useMetronome({ bpm, volume, beatsPerMeasure, timerDuration }: Us
     visualTimeoutsRef.current.forEach(clearTimeout);
     visualTimeoutsRef.current.clear();
     beatCountRef.current = 0;
+    subdivIndexRef.current = 0;
   }, []);
 
   // Fade out then stop
@@ -166,13 +189,17 @@ export function useMetronome({ bpm, volume, beatsPerMeasure, timerDuration }: Us
     }, FADE_OUT_DURATION * 1000);
   }, [stopScheduler]);
 
-  // Start the scheduler
+  // Start the scheduler. Schedules every subdivision according to the current
+  // pattern's offsets, but only the beat=0 subdivision counts as a downbeat /
+  // visual update, so triplet/dotted patterns still feel anchored to the
+  // measure beat.
   const startScheduler = useCallback(() => {
     const ctx = audioCtxRef.current;
     if (!ctx) return;
 
     nextTickTimeRef.current = ctx.currentTime;
     beatCountRef.current = 0;
+    subdivIndexRef.current = 0;
 
     const scheduler = () => {
       const ctx = audioCtxRef.current;
@@ -185,20 +212,39 @@ export function useMetronome({ bpm, volume, beatsPerMeasure, timerDuration }: Us
       const beats = beatsPerMeasureRef.current;
 
       while (nextTickTimeRef.current < ctx.currentTime + SCHEDULE_AHEAD) {
-        const isDownbeat = beatCountRef.current % beats === 0;
+        const offsets = PATTERN_OFFSETS[patternRef.current];
+        // Live pattern switching can land us on an out-of-range sIdx (e.g.
+        // triplet → dotted while sIdx was 2). Clamp into the new pattern's
+        // range so we resume cleanly on the next subdivision.
+        const sIdx = subdivIndexRef.current % offsets.length;
         const beatIndex = beatCountRef.current % beats;
+        const isFirstSubdiv = sIdx === 0;
+        // Downbeat = first subdivision of beat 1 of the measure.
+        const isDownbeat = isFirstSubdiv && beatIndex === 0;
         const clickTime = nextTickTimeRef.current;
         scheduleClick(clickTime, isDownbeat);
 
-        const delayMs = Math.max(0, (clickTime - ctx.currentTime) * 1000);
-        const handle = setTimeout(() => {
-          setCurrentBeat(beatIndex);
-          visualTimeoutsRef.current.delete(handle);
-        }, delayMs);
-        visualTimeoutsRef.current.add(handle);
+        // Visual indicator advances once per beat, on the first subdivision.
+        if (isFirstSubdiv) {
+          const delayMs = Math.max(0, (clickTime - ctx.currentTime) * 1000);
+          const handle = setTimeout(() => {
+            setCurrentBeat(beatIndex);
+            visualTimeoutsRef.current.delete(handle);
+          }, delayMs);
+          visualTimeoutsRef.current.add(handle);
+        }
 
-        nextTickTimeRef.current += secPerBeat;
-        beatCountRef.current++;
+        // Advance to the next subdivision; wrap to next beat at end of pattern.
+        const nextSubdiv = (sIdx + 1) % offsets.length;
+        const thisOffset = offsets[sIdx];
+        const nextOffset = offsets[nextSubdiv];
+        const delta =
+          nextSubdiv === 0
+            ? (1 - thisOffset + nextOffset) * secPerBeat
+            : (nextOffset - thisOffset) * secPerBeat;
+        nextTickTimeRef.current += delta;
+        subdivIndexRef.current = nextSubdiv;
+        if (nextSubdiv === 0) beatCountRef.current++;
       }
     };
 
