@@ -1398,6 +1398,8 @@ export default function PracticePage({
         onEditSection={openEditSection}
         onDeleteSection={deleteSection}
         onAddSection={openNewSection}
+        abLoop={abLoop}
+        onClearTransition={clearABLoop}
         onTransitionLoop={(boundarySec, aSec, bSec) => {
           // Clear section selection so the A-B loop wins, then jump into
           // the loop window so the user hears the transition immediately.
