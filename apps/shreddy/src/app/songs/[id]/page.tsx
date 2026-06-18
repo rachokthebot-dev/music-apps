@@ -41,8 +41,9 @@ import { SilentToggle } from "@/components/SilentToggle";
 import { CueOverlay } from "@/components/CueOverlay";
 import { DistractionOverlay } from "@/components/DistractionOverlay";
 import { StemMixer } from "@/components/StemMixer";
+import { TempoSelect } from "@/components/TempoSelect";
 import { useStemsEngine } from "@/hooks/useStemsEngine";
-import type { StemName } from "@/lib/stems-engine";
+import { STEM_NAMES, type StemName } from "@/lib/stems-engine";
 import { Brain } from "lucide-react";
 
 interface Section {
@@ -416,16 +417,39 @@ export default function PracticePage({
     if (!song?.normalizedAudioPath || sharing) return;
     setSharing(true);
     try {
+      // Selected stems = the ones the user has NOT muted in the dropdown.
+      // When all 4 are on (the default), this is the full song. When some
+      // are muted, the clip route mixes only the audible ones.
+      const audibleStems = STEM_NAMES.filter((s) => !stems.muted[s]);
+      const partialStems = audibleStems.length < STEM_NAMES.length;
       const useClip = selectedSectionIds.length > 0 && loopRange;
-      const res = useClip
-        ? await fetch(`/api/songs/${song.id}/clip?start=${loopRange.startSec}&end=${loopRange.endSec}`)
-        : await fetch(`/api/media/${song.normalizedAudioPath}`);
+      let url: string;
+      if (useClip || partialStems) {
+        // Default clip range = whole song when no section is selected.
+        const startSec = useClip ? loopRange.startSec : 0;
+        const endSec = useClip ? loopRange.endSec : song.durationSec ?? 0;
+        const qs = new URLSearchParams({
+          start: String(startSec),
+          end: String(endSec),
+        });
+        if (partialStems) qs.set("stems", audibleStems.join(","));
+        url = `/api/songs/${song.id}/clip?${qs.toString()}`;
+      } else {
+        url = `/api/media/${song.normalizedAudioPath}`;
+      }
+      const res = await fetch(url);
       if (!res.ok) throw new Error("fetch failed");
       const blob = await res.blob();
-      const suffix = useClip
-        ? loopRange.names.length === 1 ? loopRange.names[0] : "Loop"
-        : "";
-      const baseName = [song.artist, song.title, suffix].filter(Boolean).join(" - ");
+      const suffixParts: string[] = [];
+      if (useClip) {
+        suffixParts.push(loopRange.names.length === 1 ? loopRange.names[0] : "Loop");
+      }
+      if (partialStems) {
+        suffixParts.push(audibleStems.length === 1 ? audibleStems[0] : `${audibleStems.length}stems`);
+      }
+      const baseName = [song.artist, song.title, ...suffixParts]
+        .filter(Boolean)
+        .join(" - ");
       const safeName = baseName.replace(/[^a-zA-Z0-9\-_ ]/g, "").trim() + ".mp3";
       const file = new File([blob], safeName, { type: "audio/mpeg" });
 
@@ -500,8 +524,10 @@ export default function PracticePage({
     // Intentionally NOT depending on song.lastPositionSec — see initialPositionRef.
   }, [song?.normalizedAudioPath, id]);
 
-  // R5 stems: lazy engine; activates on first mute toggle.
-  const stems = useStemsEngine({ songId: song?.id ?? null });
+  // R5 stems: pre-decode in the background as soon as the server reports
+  // stems ready, so the dropdown's checkboxes apply with no perceptible
+  // latency. Trades ~250MB of decoded audio for instant interaction.
+  const stems = useStemsEngine({ songId: song?.id ?? null, eager: true });
   const stemsActive = !!stems.engine;
   const anyStemMuted = useMemo(
     () => Object.values(stems.muted).some(Boolean),
@@ -1133,15 +1159,6 @@ export default function PracticePage({
           </div>
         )}
 
-        {/* R5 Vocal Integration — 4 stem mute pills. Renders the in-progress
-            placeholder while Demucs is rendering on the server, the pill row
-            once stemsState='ready'. Tapping a pill lazy-activates the engine. */}
-        <StemMixer
-          state={stems.state}
-          muted={stems.muted}
-          onMuteToggle={handleStemMuteToggle}
-        />
-
         {/* R6 Distraction practice — rendered only when toggled on. Fixed-height
             internal cards prevent layout shift when distractors spawn/clear. */}
         {distractionOpen && (
@@ -1154,25 +1171,17 @@ export default function PracticePage({
 
         {/* === UNIFIED TRANSPORT BAR === */}
         <div className="sticky bottom-2 z-30 bg-card/95 backdrop-blur border border-border rounded-2xl p-3 mb-3 shadow-lg shadow-black/5">
-          {/* Top row: tempo + (desktop-only transport) + pitch.
-              On phone the row wraps — tempo can scroll horizontally; pitch sits on its own line. */}
+          {/* Top row: tempo + (desktop-only transport) + stems + pitch.
+              Tempo and stems use compact dropdowns so the whole row fits on
+              iPhone width without horizontal scroll. */}
           <div className="flex md:items-center md:justify-between gap-2 mb-2 md:mb-0 flex-wrap md:flex-nowrap">
-            {/* Tempo pills — horizontal scroll on phone, free-width on desktop */}
-            <div className="flex items-center gap-1 md:shrink-0 overflow-x-auto -mx-1 px-1 w-full md:w-auto snap-x">
-              {TEMPO_VALUES.map((t) => (
-                <button
-                  key={t}
-                  onClick={() => setTempo(t)}
-                  className={`min-w-10 sm:min-w-11 h-10 sm:h-11 px-2 sm:px-3 rounded-lg text-xs sm:text-sm font-semibold transition-colors active:scale-95 snap-start ${
-                    tempo === t
-                      ? "bg-primary text-primary-foreground"
-                      : "text-muted-foreground hover:bg-muted"
-                  }`}
-                >
-                  {t}x
-                </button>
-              ))}
-            </div>
+            {/* Tempo dropdown — single button + grid popover */}
+            <TempoSelect
+              value={tempo}
+              values={TEMPO_VALUES}
+              onChange={setTempo}
+              busy={tempoProcessing}
+            />
 
             {/* Center: Transport controls — hidden on phone, shown on md+ */}
             <div className="hidden md:flex items-center gap-2">
@@ -1230,6 +1239,13 @@ export default function PracticePage({
                 </Button>
               )}
             </div>
+
+            {/* Stems dropdown — single button + checkbox menu */}
+            <StemMixer
+              state={stems.state}
+              muted={stems.muted}
+              onMuteToggle={handleStemMuteToggle}
+            />
 
             {/* Pitch — compact on phone (no label, smaller buttons), full on desktop */}
             <div className="flex items-center gap-1 shrink-0 ml-auto md:ml-0">

@@ -34,6 +34,10 @@ interface StemsStatusResponse {
 
 interface UseStemsEngineOptions {
   songId: string | null;
+  /** When true, decode all 4 stems as soon as the server says they're
+   *  ready. Trades ~250MB of audio buffer memory for instant mute toggles
+   *  (no decode latency on first interaction). */
+  eager?: boolean;
 }
 
 interface UseStemsEngineResult {
@@ -57,7 +61,7 @@ interface UseStemsEngineResult {
 // row SELECT) so 4s feels live enough without spamming.
 const POLL_INTERVAL_MS = 4000;
 
-export function useStemsEngine({ songId }: UseStemsEngineOptions): UseStemsEngineResult {
+export function useStemsEngine({ songId, eager = false }: UseStemsEngineOptions): UseStemsEngineResult {
   const [status, setStatus] = useState<StemsStatusResponse | null>(null);
   const [engine, setEngine] = useState<StemsEngine | null>(null);
   const [muted, setMutedState] = useState<Record<StemName, boolean>>(() =>
@@ -125,6 +129,19 @@ export function useStemsEngine({ songId }: UseStemsEngineOptions): UseStemsEngin
     // go through setMute() below, which calls engine.setMute() directly.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Eager preload: as soon as the server reports state="ready", decode the
+  // 4 stems in the background so the first mute toggle is instant. The
+  // AudioContext can be suspended (no user gesture yet) — decodeAudioData
+  // works regardless of context state, only playback needs a resumed
+  // context. ~250MB of decoded buffers for a 4-min song; acceptable on
+  // iPad in exchange for zero-latency interaction.
+  useEffect(() => {
+    if (!eager) return;
+    if (status?.state !== "ready") return;
+    if (engineRef.current) return;
+    void activate();
+  }, [eager, status?.state, activate]);
 
   const setMute = useCallback((stem: StemName, m: boolean) => {
     setMutedState((prev) => (prev[stem] === m ? prev : { ...prev, [stem]: m }));

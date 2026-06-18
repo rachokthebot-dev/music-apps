@@ -320,6 +320,16 @@ export async function reanalyzeAudio(songId: string, audioPath: string) {
     });
 
     const song = await prisma.song.findUnique({ where: { id: songId } });
+
+    // Stems live next to song-structure analysis: if the song doesn't have
+    // them yet (or the last run errored), re-analyze re-triggers the stem
+    // pipeline alongside the SongFormer rerun. Already-ready songs are
+    // skipped here — reanalyse is for filling in the missing pieces, not
+    // wasting 5 min of CPU on a stem set that's already correct.
+    if (song && song.stemsState !== "ready") {
+      void processStems(songId, audioPath);
+    }
+
     const analysis = await analyzeAudio(audioPath, song?.title || "", song?.originalFilename || "");
 
     // Update BPM, key, and beat timestamps
