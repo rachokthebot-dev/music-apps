@@ -16,6 +16,7 @@ import {
 } from "@music-apps/ui";
 import {
   ArrowLeft,
+  ArrowRightLeft,
   Play,
   Pause,
   SkipBack,
@@ -531,6 +532,17 @@ export default function PracticePage({
     // Intentionally NOT depending on song.lastPositionSec — see initialPositionRef.
   }, [song?.normalizedAudioPath, id]);
 
+  // Defined early so handleStemMuteToggle (declared right below) can call
+  // it. pausePlayback is the shared "any property change pauses audio"
+  // primitive — see the property-change sites for handlers that use it.
+  const pausePlayback = useCallback(() => {
+    const audio = audioRef.current;
+    if (audio && !audio.paused) {
+      audio.pause();
+      setPlaying(false);
+    }
+  }, []);
+
   // R5 stems: pre-decode in the background as soon as the server reports
   // stems ready, so the dropdown's checkboxes apply with no perceptible
   // latency. Trades ~250MB of decoded audio for instant interaction.
@@ -571,9 +583,12 @@ export default function PracticePage({
 
   // First-mute handler. Activates the engine (lazy load + decode the 4
   // stems), then applies the requested mute. Audio element keeps playing,
-  // muted, so currentTime + transport logic stay intact.
+  // muted, so currentTime + transport logic stay intact. Pause-on-change
+  // policy: any stem mute also pauses playback so the new mix takes effect
+  // on the next play tap rather than mid-phrase.
   const handleStemMuteToggle = useCallback(
     async (stem: StemName) => {
+      pausePlayback();
       const next = !stems.muted[stem];
       if (!stems.engine) {
         const engine = await stems.activate();
@@ -590,7 +605,7 @@ export default function PracticePage({
       }
       stems.setMute(stem, next);
     },
-    [stems, tempo]
+    [stems, tempo, pausePlayback]
   );
 
   // Save bookmark every 10 seconds while playing
@@ -666,14 +681,6 @@ export default function PracticePage({
     return () => cancelAnimationFrame(rafId);
   }, [playing, hasAnyLoop]);
 
-  const pausePlayback = useCallback(() => {
-    const audio = audioRef.current;
-    if (audio && !audio.paused) {
-      audio.pause();
-      setPlaying(false);
-    }
-  }, []);
-
   const { processing: pitchProcessing } = usePitchShifter({
     songId: song?.id ?? null,
     audioUrl: song?.normalizedAudioPath ? `/api/media/${song.normalizedAudioPath}` : null,
@@ -734,6 +741,10 @@ export default function PracticePage({
   }
 
   function selectSection(section: Section, extend: boolean) {
+    // Pause on any property change so the user isn't fighting playback when
+    // they re-scope the loop. Tapping play afterwards resumes from the new
+    // section's start.
+    pausePlayback();
     // Clear A-B loop when selecting sections
     if (abLoop) {
       clearLoop();
@@ -771,11 +782,13 @@ export default function PracticePage({
   }
 
   function clearLoop() {
+    pausePlayback();
     setSelectedSectionIds([]);
     setLoopEnabled(false);
   }
 
   function setA() {
+    pausePlayback();
     clearLoop();
     _setA(currentTime);
   }
@@ -996,6 +1009,77 @@ export default function PracticePage({
     (s) => currentTime >= s.startSec && currentTime < s.endSec
   );
 
+  // Transition loop target: ±2 bars around the END of a section. The pill
+  // describes whichever transition is *being looped* if abLoop matches any
+  // section's transition window — that way the label stays "Chorus 1 →
+  // Verse 2" while the playhead actually plays inside Verse 2. If no loop
+  // is active, fall back to the current section's outgoing transition so
+  // tapping "Transition" enables exactly what the user expects.
+  const TRANSITION_BARS = 2;
+  const TRANSITION_TOL_SEC = 0.1;
+  const computeRange = (idx: number): { boundary: number; a: number; b: number } | null => {
+    if (!song.bpm) return null;
+    const from = song.sections[idx];
+    const next = song.sections[idx + 1];
+    if (!from || !next) return null;
+    const bpb = song.timeSignature || 4;
+    const secPerBar = (60 / song.bpm) * bpb;
+    const boundary = from.endSec;
+    const a = Math.max(from.startSec, boundary - TRANSITION_BARS * secPerBar);
+    const b = Math.min(
+      next.endSec,
+      song.durationSec ?? boundary + TRANSITION_BARS * secPerBar,
+      boundary + TRANSITION_BARS * secPerBar
+    );
+    return b - a < 0.5 ? null : { boundary, a, b };
+  };
+  // If a loop is set, find which section's transition produced it (so the
+  // pill keeps reading "Chorus 1 → Verse 2" once the playhead has moved
+  // past the boundary into Verse 2).
+  let activeTransitionIdx = -1;
+  if (abLoop) {
+    for (let i = 0; i < song.sections.length - 1; i++) {
+      const r = computeRange(i);
+      if (
+        r &&
+        Math.abs(abLoop.a - r.a) < TRANSITION_TOL_SEC &&
+        Math.abs(abLoop.b - r.b) < TRANSITION_TOL_SEC
+      ) {
+        activeTransitionIdx = i;
+        break;
+      }
+    }
+  }
+  const currentSectionIdx = currentSection
+    ? song.sections.findIndex((s) => s.id === currentSection.id)
+    : -1;
+  const transitionTargetIdx =
+    activeTransitionIdx >= 0 ? activeTransitionIdx : currentSectionIdx;
+  const transitionRange = transitionTargetIdx >= 0 ? computeRange(transitionTargetIdx) : null;
+  const transitionFrom = transitionTargetIdx >= 0 ? song.sections[transitionTargetIdx] : null;
+  const transitionTo = transitionTargetIdx >= 0 ? song.sections[transitionTargetIdx + 1] : null;
+  const transitionActive = activeTransitionIdx >= 0;
+  const toggleTransition = () => {
+    if (transitionActive) {
+      clearABLoop();
+      return;
+    }
+    if (!transitionRange) return;
+    setSelectedSectionIds([]);
+    setLoopEnabled(false);
+    setLoop(transitionRange.a, transitionRange.b);
+    const audio = audioRef.current;
+    if (audio) {
+      audio.currentTime = transitionRange.a;
+      setCurrentTime(transitionRange.a);
+      stems.engine?.seek(transitionRange.a, tempo);
+      if (audio.paused) {
+        audio.play();
+        setPlaying(true);
+      }
+    }
+  };
+
   const metaParts: string[] = [];
   if (song.artist) metaParts.push(song.artist);
   if (song.album) metaParts.push(song.album);
@@ -1186,7 +1270,7 @@ export default function PracticePage({
             <TempoSelect
               value={tempo}
               values={TEMPO_VALUES}
-              onChange={setTempo}
+              onChange={(t) => { pausePlayback(); setTempo(t); }}
               busy={tempoProcessing}
             />
 
@@ -1225,7 +1309,7 @@ export default function PracticePage({
               <Button
                 variant="outline"
                 size="icon"
-                onClick={() => setB(currentTime)}
+                onClick={() => { pausePlayback(); setB(currentTime); }}
                 disabled={pendingA === null}
                 className={`size-11 text-sm font-bold active:scale-90 ${
                   abLoop ? "bg-orange-500 text-white border-orange-500 hover:bg-orange-600 hover:text-white" : ""
@@ -1258,7 +1342,7 @@ export default function PracticePage({
             <div className="flex items-center gap-1 shrink-0 ml-auto md:ml-0">
               <span className="hidden md:inline text-xs text-muted-foreground whitespace-nowrap mr-1">Pitch</span>
               <button
-                onClick={() => setPitch(Math.max(-6, pitch - 1))}
+                onClick={() => { pausePlayback(); setPitch(Math.max(-6, pitch - 1)); }}
                 disabled={pitch <= -6}
                 className="size-9 md:size-11 rounded-lg border border-border flex items-center justify-center text-base font-medium active:scale-90 transition-transform disabled:opacity-30"
                 title="Pitch down"
@@ -1267,7 +1351,7 @@ export default function PracticePage({
               </button>
               <span className="text-sm font-medium tabular-nums w-8 text-center">{pitch > 0 ? `+${pitch}` : pitch}</span>
               <button
-                onClick={() => setPitch(Math.min(6, pitch + 1))}
+                onClick={() => { pausePlayback(); setPitch(Math.min(6, pitch + 1)); }}
                 disabled={pitch >= 6}
                 className="size-9 md:size-11 rounded-lg border border-border flex items-center justify-center text-base font-medium active:scale-90 transition-transform disabled:opacity-30"
                 title="Pitch up"
@@ -1336,6 +1420,26 @@ export default function PracticePage({
         </div>
 
         {/* Loop / A-B indicators */}
+        {transitionRange && transitionFrom && transitionTo && (
+          <div className="mb-3 flex items-center justify-center">
+            <button
+              onClick={toggleTransition}
+              title={
+                transitionActive
+                  ? `Stop looping ${transitionFrom.name} → ${transitionTo.name}`
+                  : `Loop the ±${TRANSITION_BARS}-bar transition: ${transitionFrom.name} → ${transitionTo.name}`
+              }
+              className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors active:scale-95 ${
+                transitionActive
+                  ? "bg-orange-500 text-white hover:bg-orange-600"
+                  : "bg-muted text-foreground hover:bg-accent border border-border"
+              }`}
+            >
+              <ArrowRightLeft className="size-3" />
+              {transitionActive ? "Looping" : "Transition"}: {transitionFrom.name} → {transitionTo.name}
+            </button>
+          </div>
+        )}
         {(loopEnabled && loopRange) || abLoop || (pendingA !== null && !abLoop) ? (
           <div className="space-y-1.5 mb-3">
             {loopEnabled && loopRange && (
@@ -1384,8 +1488,6 @@ export default function PracticePage({
         editMode={editMode}
         beatTimestamps={parsedBeats}
         timeSignature={song.timeSignature ?? 4}
-        songBpm={song.bpm}
-        songDurationSec={song.durationSec}
         songMeta={{
           title: song.title,
           artist: song.artist,
@@ -1398,26 +1500,6 @@ export default function PracticePage({
         onEditSection={openEditSection}
         onDeleteSection={deleteSection}
         onAddSection={openNewSection}
-        abLoop={abLoop}
-        onClearTransition={clearABLoop}
-        onTransitionLoop={(boundarySec, aSec, bSec) => {
-          // Clear section selection so the A-B loop wins, then jump into
-          // the loop window so the user hears the transition immediately.
-          setSelectedSectionIds([]);
-          setLoopEnabled(false);
-          setLoop(aSec, bSec);
-          const audio = audioRef.current;
-          if (audio) {
-            audio.currentTime = aSec;
-            setCurrentTime(aSec);
-            stems.engine?.seek(aSec, tempo);
-            if (audio.paused) {
-              audio.play();
-              setPlaying(true);
-            }
-          }
-          void boundarySec; // boundary passed for future telemetry
-        }}
       />
       </ErrorBoundary>
 

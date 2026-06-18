@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Pencil, Plus, Trash2, RotateCw, Share2, Copy, Download, Check, ArrowRightLeft } from "lucide-react";
+import { Pencil, Plus, Trash2, RotateCw, Share2, Copy, Download, Check } from "lucide-react";
 import { Button } from "@music-apps/ui";
 
 interface Section {
@@ -54,31 +54,13 @@ interface SectionStripProps {
   editMode: boolean;
   beatTimestamps: number[];
   timeSignature: number;
-  /** Used to convert "2 bars" into a seconds window around the transition. */
-  songBpm: number | null;
-  songDurationSec: number | null;
-  /** Current A-B loop, so the per-section "Loop transition" toggle can
-   *  show active state when it owns the current loop. */
-  abLoop?: { a: number; b: number } | null;
   songMeta: SongMeta;
   onEditModeToggle: () => void;
   onSelectSection: (section: Section) => void;
   onEditSection: (section: Section) => void;
   onDeleteSection: (sectionId: string) => void;
   onAddSection: () => void;
-  /** Loop the boundary between this section and the next one — 2 bars
-   *  on each side, clamped to song duration / neighbour bounds. */
-  onTransitionLoop?: (boundarySec: number, aSec: number, bSec: number) => void;
-  /** Clear the current A-B loop (toggle off). */
-  onClearTransition?: () => void;
 }
-
-const TRANSITION_BARS_BEFORE = 2;
-const TRANSITION_BARS_AFTER = 2;
-// A-B loop edge match tolerance. Two transitions can land within 1s of
-// the same boundary at different bar counts — 0.1s is below the smallest
-// realistic transition window so false matches are unlikely.
-const AB_MATCH_TOL_SEC = 0.1;
 
 export function SectionStrip({
   sections,
@@ -88,17 +70,12 @@ export function SectionStrip({
   editMode,
   beatTimestamps,
   timeSignature,
-  songBpm,
-  songDurationSec,
-  abLoop,
   songMeta,
   onEditModeToggle,
   onSelectSection,
   onEditSection,
   onDeleteSection,
   onAddSection,
-  onTransitionLoop,
-  onClearTransition,
 }: SectionStripProps) {
   const [exportOpen, setExportOpen] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -201,42 +178,6 @@ export function SectionStrip({
           {sections.map((section, idx) => {
             const isSelected = selectedSectionIds.includes(section.id);
             const isPlaying = currentTime >= section.startSec && currentTime < section.endSec;
-            // Transition pill: only on sections that have a next section.
-            // The boundary lives at section.endSec === next.startSec; we
-            // build a ±2 bar window using songBpm + timeSignature.
-            const nextSection = sections[idx + 1];
-            const canTransition =
-              !!nextSection && !!onTransitionLoop && (songBpm ?? 0) > 0;
-            const transitionRange = canTransition && songBpm
-              ? (() => {
-                  const secPerBar = (60 / songBpm) * (timeSignature || 4);
-                  const boundary = section.endSec;
-                  const a = Math.max(
-                    section.startSec,
-                    boundary - TRANSITION_BARS_BEFORE * secPerBar
-                  );
-                  const b = Math.min(
-                    nextSection!.endSec,
-                    songDurationSec ?? boundary + TRANSITION_BARS_AFTER * secPerBar,
-                    boundary + TRANSITION_BARS_AFTER * secPerBar
-                  );
-                  return b - a < 0.5 ? null : { boundary, a, b };
-                })()
-              : null;
-            const isTransitionActive =
-              !!transitionRange &&
-              !!abLoop &&
-              Math.abs(abLoop.a - transitionRange.a) < AB_MATCH_TOL_SEC &&
-              Math.abs(abLoop.b - transitionRange.b) < AB_MATCH_TOL_SEC;
-            const handleTransition = (e: React.MouseEvent) => {
-              e.stopPropagation();
-              if (!transitionRange) return;
-              if (isTransitionActive) {
-                onClearTransition?.();
-              } else {
-                onTransitionLoop?.(transitionRange.boundary, transitionRange.a, transitionRange.b);
-              }
-            };
             return (
               <div
                 key={section.id}
@@ -262,24 +203,6 @@ export function SectionStrip({
                     <span className="text-[10px] text-muted-foreground/70 block mb-1">~{bars} {bars === 1 ? "bar" : "bars"}</span>
                   ) : <span className="mb-1 block" />;
                 })()}
-                {canTransition && transitionRange && (
-                  <button
-                    onClick={handleTransition}
-                    title={
-                      isTransitionActive
-                        ? `Stop looping the transition into ${nextSection!.name}`
-                        : `Loop the ±${TRANSITION_BARS_BEFORE}-bar transition into ${nextSection!.name}`
-                    }
-                    className={`w-full h-7 mt-1 rounded-md text-[11px] font-medium inline-flex items-center justify-center gap-1 transition-colors active:scale-95 ${
-                      isTransitionActive
-                        ? "bg-orange-500 text-white hover:bg-orange-600"
-                        : "border border-border text-muted-foreground hover:text-foreground hover:bg-muted"
-                    }`}
-                  >
-                    <ArrowRightLeft className="size-3" />
-                    {isTransitionActive ? "Looping" : "Transition"}
-                  </button>
-                )}
                 {editMode && (
                   <div className="flex items-center justify-end">
                     <div className="flex items-center gap-0">
