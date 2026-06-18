@@ -12,6 +12,14 @@ export interface MetronomeOptions {
   beatTimestamps?: number[];  // librosa-detected beat times (at 1x tempo)
   tempo: number;              // tempo multiplier
   standalone: boolean;        // standalone mode (no song playing)
+  // Beats-per-bar from song.timeSignature (3, 4, or 6). Drives downbeat
+  // accent. Defaults to 4 if the caller doesn't pass it.
+  beatsPerMeasure?: number;
+  // Section start times at 1x tempo. When a librosa beat lands within
+  // half a beat of a section start, that beat is treated as the
+  // downbeat — so accents track the song's actual structure rather
+  // than whichever beat librosa happened to detect first.
+  sectionStarts?: number[];
 }
 
 const SCHEDULE_AHEAD = 0.15;  // seconds to look ahead
@@ -26,6 +34,8 @@ export function useMetronome({
   beatTimestamps,
   tempo,
   standalone,
+  beatsPerMeasure = 4,
+  sectionStarts,
 }: MetronomeOptions) {
   const audioCtxRef = useRef<AudioContext | null>(null);
   const gainRef = useRef<GainNode | null>(null);
@@ -33,6 +43,14 @@ export function useMetronome({
   const nextTickTimeRef = useRef(0);
   const beatCountRef = useRef(0);
   const lastScheduledBeatRef = useRef(-1);
+  // downbeatAnchorBeatIdxRef holds the librosa beat index we currently
+  // treat as "beat 1." It's re-anchored to the first beat that lands at
+  // a section start so accents follow song structure, not librosa's
+  // first detected beat (which has no idea where the actual downbeat is).
+  const downbeatAnchorBeatIdxRef = useRef(0);
+  // Track which section start times we've already anchored to, so a beat
+  // can't anchor twice as the scheduler rescans on each tick.
+  const anchoredSectionStartsRef = useRef<Set<number>>(new Set());
   const [isActive, setIsActive] = useState(false);
   const [currentBeat, setCurrentBeat] = useState(-1);
 
@@ -45,12 +63,16 @@ export function useMetronome({
   const volumeRef = useRef(volume);
   const tempoRef = useRef(tempo);
   const beatTimestampsRef = useRef(beatTimestamps);
+  const beatsPerMeasureRef = useRef(beatsPerMeasure);
+  const sectionStartsRef = useRef(sectionStarts);
 
   // If user tapped a manual BPM, override the passed-in bpm
   bpmRef.current = manualBpm !== null ? manualBpm * tempo : bpm;
   volumeRef.current = volume;
   tempoRef.current = tempo;
   beatTimestampsRef.current = beatTimestamps;
+  beatsPerMeasureRef.current = beatsPerMeasure;
+  sectionStartsRef.current = sectionStarts;
 
   // Initialize AudioContext via the shared module singleton — see
   // src/lib/audio-context.ts. Multiple feature hooks (metronome + future
@@ -116,6 +138,8 @@ export function useMetronome({
     nextTickTimeRef.current = ctx.currentTime;
     beatCountRef.current = 0;
     lastScheduledBeatRef.current = -1;
+    downbeatAnchorBeatIdxRef.current = 0;
+    anchoredSectionStartsRef.current.clear();
 
     const scheduler = () => {
       const ctx = audioCtxRef.current;
@@ -126,6 +150,7 @@ export function useMetronome({
 
       const beats = beatTimestampsRef.current;
       const hasSyncedBeats = beats && beats.length > 0 && !standalone;
+      const bpb = beatsPerMeasureRef.current;
 
       if (hasSyncedBeats) {
         // Beat-synced mode: read audio time directly for precision
@@ -133,16 +158,22 @@ export function useMetronome({
         if (!audio) return;
         const songTime = audio.currentTime;
         const currentTempo = tempoRef.current;
+        const secPerBeat = 60 / currentBpm;
+        // Half-beat tolerance — closest librosa beat to a section start
+        // gets promoted to that section's downbeat.
+        const anchorTol = secPerBeat / 2;
+        const sectionStarts = sectionStartsRef.current;
 
         // Find next unscheduled beat using binary search from current position
         let startIdx = lastScheduledBeatRef.current + 1;
-        // If we seeked backwards, reset
+        // If we seeked backwards, reset (and re-anchor downbeats).
         if (startIdx > 0 && startIdx < beats.length) {
           const prevBeatTime = beats[startIdx - 1] / currentTempo;
           if (songTime < prevBeatTime - 1) {
-            // Seeked backwards — find new position
             startIdx = 0;
             lastScheduledBeatRef.current = -1;
+            downbeatAnchorBeatIdxRef.current = 0;
+            anchoredSectionStartsRef.current.clear();
           }
         }
 
@@ -159,11 +190,28 @@ export function useMetronome({
             continue;
           }
 
-          // Schedule this beat
-          const isDownbeat = i % 4 === 0;
+          // Re-anchor the downbeat counter to this beat if it's the
+          // closest librosa beat to a section start we haven't anchored
+          // to yet. Walk the section list (small, usually <20 entries
+          // per song) and check distance. Anchoring is idempotent per
+          // start time via anchoredSectionStartsRef.
+          if (sectionStarts) {
+            const sourceBeatTime = beats[i]; // 1× tempo
+            for (const ss of sectionStarts) {
+              if (anchoredSectionStartsRef.current.has(ss)) continue;
+              if (Math.abs(sourceBeatTime - ss) <= anchorTol) {
+                downbeatAnchorBeatIdxRef.current = i;
+                anchoredSectionStartsRef.current.add(ss);
+                break;
+              }
+            }
+          }
+
+          const phaseIdx = ((i - downbeatAnchorBeatIdxRef.current) % bpb + bpb) % bpb;
+          const isDownbeat = phaseIdx === 0;
           const scheduleAt = ctx.currentTime + Math.max(0, delta);
           scheduleClick(scheduleAt, isDownbeat);
-          setCurrentBeat(i % 4);
+          setCurrentBeat(phaseIdx);
           lastScheduledBeatRef.current = i;
         }
       } else {
@@ -171,9 +219,10 @@ export function useMetronome({
         const secPerBeat = 60 / currentBpm;
 
         while (nextTickTimeRef.current < ctx.currentTime + SCHEDULE_AHEAD) {
-          const isDownbeat = beatCountRef.current % 4 === 0;
+          const phaseIdx = beatCountRef.current % bpb;
+          const isDownbeat = phaseIdx === 0;
           scheduleClick(nextTickTimeRef.current, isDownbeat);
-          setCurrentBeat(beatCountRef.current % 4);
+          setCurrentBeat(phaseIdx);
           nextTickTimeRef.current += secPerBeat;
           beatCountRef.current++;
         }

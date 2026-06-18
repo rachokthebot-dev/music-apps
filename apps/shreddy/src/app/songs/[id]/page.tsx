@@ -151,7 +151,7 @@ export default function PracticePage({
   const notesSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // A-B loop (custom range, not section-based)
-  const { abLoop, pendingA, setA: _setA, setB, clearABLoop } = useABLoop();
+  const { abLoop, pendingA, setA: _setA, setB, setLoop, clearABLoop } = useABLoop();
 
   // Section editor
   const {
@@ -366,6 +366,11 @@ export default function PracticePage({
     try { return JSON.parse(song.beatTimestamps); } catch { return []; }
   })();
 
+  const sectionStarts = useMemo(
+    () => (song?.sections ?? []).map((s) => s.startSec),
+    [song?.sections]
+  );
+
   const { isActive: metronomeActive, currentBeat, tapSync, doCountIn, handleTapTempo, manualBpm, resetManualBpm } = useMetronome({
     bpm: (song?.bpm ?? 0) * tempo,
     enabled: metronomeEnabled,
@@ -375,6 +380,8 @@ export default function PracticePage({
     beatTimestamps: parsedBeats,
     tempo,
     standalone: metronomeStandalone,
+    beatsPerMeasure: song?.timeSignature ?? 4,
+    sectionStarts,
   });
 
   const baseBpm = manualBpm ?? song?.bpm ?? 0;
@@ -1377,6 +1384,8 @@ export default function PracticePage({
         editMode={editMode}
         beatTimestamps={parsedBeats}
         timeSignature={song.timeSignature ?? 4}
+        songBpm={song.bpm}
+        songDurationSec={song.durationSec}
         songMeta={{
           title: song.title,
           artist: song.artist,
@@ -1389,6 +1398,24 @@ export default function PracticePage({
         onEditSection={openEditSection}
         onDeleteSection={deleteSection}
         onAddSection={openNewSection}
+        onTransitionLoop={(boundarySec, aSec, bSec) => {
+          // Clear section selection so the A-B loop wins, then jump into
+          // the loop window so the user hears the transition immediately.
+          setSelectedSectionIds([]);
+          setLoopEnabled(false);
+          setLoop(aSec, bSec);
+          const audio = audioRef.current;
+          if (audio) {
+            audio.currentTime = aSec;
+            setCurrentTime(aSec);
+            stems.engine?.seek(aSec, tempo);
+            if (audio.paused) {
+              audio.play();
+              setPlaying(true);
+            }
+          }
+          void boundarySec; // boundary passed for future telemetry
+        }}
       />
       </ErrorBoundary>
 

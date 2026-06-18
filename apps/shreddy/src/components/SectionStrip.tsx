@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Pencil, Plus, Trash2, RotateCw, Share2, Copy, Download, Check } from "lucide-react";
+import { Pencil, Plus, Trash2, RotateCw, Share2, Copy, Download, Check, ArrowRightLeft } from "lucide-react";
 import { Button } from "@music-apps/ui";
 
 interface Section {
@@ -54,13 +54,22 @@ interface SectionStripProps {
   editMode: boolean;
   beatTimestamps: number[];
   timeSignature: number;
+  /** Used to convert "2 bars" into a seconds window around the transition. */
+  songBpm: number | null;
+  songDurationSec: number | null;
   songMeta: SongMeta;
   onEditModeToggle: () => void;
   onSelectSection: (section: Section) => void;
   onEditSection: (section: Section) => void;
   onDeleteSection: (sectionId: string) => void;
   onAddSection: () => void;
+  /** Loop the boundary between this section and the next one — 2 bars
+   *  on each side, clamped to song duration / neighbour bounds. */
+  onTransitionLoop?: (boundarySec: number, aSec: number, bSec: number) => void;
 }
+
+const TRANSITION_BARS_BEFORE = 2;
+const TRANSITION_BARS_AFTER = 2;
 
 export function SectionStrip({
   sections,
@@ -70,12 +79,15 @@ export function SectionStrip({
   editMode,
   beatTimestamps,
   timeSignature,
+  songBpm,
+  songDurationSec,
   songMeta,
   onEditModeToggle,
   onSelectSection,
   onEditSection,
   onDeleteSection,
   onAddSection,
+  onTransitionLoop,
 }: SectionStripProps) {
   const [exportOpen, setExportOpen] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -178,10 +190,33 @@ export function SectionStrip({
           {sections.map((section, idx) => {
             const isSelected = selectedSectionIds.includes(section.id);
             const isPlaying = currentTime >= section.startSec && currentTime < section.endSec;
+            // Transition button: only on sections that have a next section.
+            // The boundary lives at section.endSec === next.startSec; we
+            // build a ±2 bar window using songBpm + timeSignature.
+            const nextSection = sections[idx + 1];
+            const canTransition =
+              !!nextSection && !!onTransitionLoop && (songBpm ?? 0) > 0;
+            const handleTransition = (e: React.MouseEvent) => {
+              e.stopPropagation();
+              if (!canTransition || !nextSection || !songBpm) return;
+              const secPerBar = (60 / songBpm) * (timeSignature || 4);
+              const boundary = section.endSec;
+              const a = Math.max(
+                section.startSec,
+                boundary - TRANSITION_BARS_BEFORE * secPerBar
+              );
+              const b = Math.min(
+                nextSection.endSec,
+                songDurationSec ?? boundary + TRANSITION_BARS_AFTER * secPerBar,
+                boundary + TRANSITION_BARS_AFTER * secPerBar
+              );
+              if (b - a < 0.5) return;
+              onTransitionLoop?.(boundary, a, b);
+            };
             return (
               <div
                 key={section.id}
-                className={`shrink-0 snap-start w-[120px] sm:w-[140px] p-2.5 sm:p-3 rounded-xl border transition-all cursor-pointer active:scale-[0.97] ${
+                className={`shrink-0 snap-start w-[120px] sm:w-[140px] p-2.5 sm:p-3 rounded-xl border transition-all cursor-pointer active:scale-[0.97] relative ${
                   isSelected
                     ? "bg-blue-50 dark:bg-blue-950 border-blue-300 dark:border-blue-700 shadow-sm"
                     : isPlaying
@@ -190,7 +225,16 @@ export function SectionStrip({
                 }`}
                 onClick={() => onSelectSection(section)}
               >
-                <div className="flex items-center gap-1.5 mb-1">
+                {canTransition && (
+                  <button
+                    onClick={handleTransition}
+                    title={`Loop transition into ${nextSection!.name} (±${TRANSITION_BARS_BEFORE} bars)`}
+                    className="absolute top-1.5 right-1.5 size-6 rounded-md text-muted-foreground/50 hover:text-foreground hover:bg-muted flex items-center justify-center transition-colors active:scale-90"
+                  >
+                    <ArrowRightLeft className="size-3" />
+                  </button>
+                )}
+                <div className="flex items-center gap-1.5 mb-1 pr-5">
                   <div className={`size-2.5 rounded-full ${SECTION_DOT_COLORS[idx % SECTION_DOT_COLORS.length]} ${isPlaying ? "animate-pulse" : ""}`} />
                   <span className="text-sm font-medium text-foreground truncate">{section.name}</span>
                 </div>
