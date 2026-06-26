@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import MatchSongModal, { type MatchSongResult } from "@/components/MatchSongModal";
 import ToneDiscoveryModal from "@/components/ToneDiscoveryModal";
 import SignalChainFlow from "@/components/SignalChainFlow";
+import MeasurePanel from "@/components/MeasurePanel";
 import GainTargetsPanel, {
   type AlignProposal as GainProposal,
   type Insertion as GainInsertion,
@@ -99,6 +100,7 @@ export default function Home() {
   const [matchSongOpen, setMatchSongOpen] = useState(false);
   const [toneDiscoveryOpen, setToneDiscoveryOpen] = useState(false);
   const [gainTargetsOpen, setGainTargetsOpen] = useState(false);
+  const [measureOpen, setMeasureOpen] = useState(false);
   const [pending, setPending] = useState<Pending>({});
   /** Block to insert at preset level when the aligner needs a fresh Boost. */
   const [pendingInsertion, setPendingInsertion] = useState<GainInsertion>(null);
@@ -403,6 +405,17 @@ export default function Home() {
             {gainTargetsOpen ? "Close Align" : "Align Gain"}
           </button>
           <button
+            onClick={() => setMeasureOpen((prev) => !prev)}
+            disabled={busy !== null}
+            className={`px-3 py-1.5 text-sm rounded-md border disabled:opacity-50 ${
+              measureOpen
+                ? "border-teal-500/70 bg-teal-800/60 text-teal-50"
+                : "border-teal-700/50 bg-teal-900/40 text-teal-100 hover:bg-teal-900/60"
+            }`}
+          >
+            {measureOpen ? "Close Measure" : "Measure"}
+          </button>
+          <button
             onClick={() => setMatchSongOpen(true)}
             disabled={busy !== null}
             className="px-3 py-1.5 text-sm rounded-md border border-blue-700/50 bg-blue-900/40 text-blue-100 hover:bg-blue-900/60 disabled:opacity-50"
@@ -498,6 +511,8 @@ export default function Home() {
         onStage={handleGainStaged}
         onError={(msg) => showFlash("err", msg)}
       />
+
+      <MeasurePanel open={measureOpen} onClose={() => setMeasureOpen(false)} />
 
       {/* Loudness landscape — 8 cards, one per snapshot
           Shows predicted post-stage value (rose) when pending changes touch a snapshot. */}

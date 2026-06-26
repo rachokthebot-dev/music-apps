@@ -78,3 +78,6 @@ export {
   type DesignedSnapshot,
   type ApplyDesignReport,
 } from "./applyPresetDesign";
+
+export { integratedLufs, type LoudnessResult } from "./loudness/bs1770";
+export { decodeWav, type DecodedWav } from "./loudness/wav";
