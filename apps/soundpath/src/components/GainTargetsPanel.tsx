@@ -195,7 +195,7 @@ export default function GainTargetsPanel({
   const handleCompute = useCallback(async () => {
     setBusy("computing");
     try {
-      const r = await fetch("/api/master/align", {
+      const r = await fetch("/soundpath/api/master/align", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

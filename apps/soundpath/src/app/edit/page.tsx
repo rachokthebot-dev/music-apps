@@ -111,7 +111,7 @@ export default function Home() {
 
   const reload = useCallback(async () => {
     try {
-      const r = await fetch("/api/master");
+      const r = await fetch("/soundpath/api/master");
       const j = (await r.json()) as MasterResponse;
       setData(j);
     } catch (err) {
@@ -134,7 +134,7 @@ export default function Home() {
     }
     const handle = setTimeout(async () => {
       try {
-        const r = await fetch("/api/master/preview", {
+        const r = await fetch("/soundpath/api/master/preview", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -166,7 +166,7 @@ export default function Home() {
       try {
         const form = new FormData();
         form.append("file", file);
-        const r = await fetch("/api/master", { method: "POST", body: form });
+        const r = await fetch("/soundpath/api/master", { method: "POST", body: form });
         const j = (await r.json()) as { ok: boolean; name?: string; error?: string };
         if (!j.ok) throw new Error(j.error ?? "upload failed");
         setPending({});
@@ -274,7 +274,7 @@ export default function Home() {
   const handleExport = useCallback(async () => {
     setBusy("export");
     try {
-      const r = await fetch("/api/master/export", {
+      const r = await fetch("/soundpath/api/master/export", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -315,7 +315,7 @@ export default function Home() {
   const handleOpenInHxEdit = useCallback(async () => {
     setBusy("open");
     try {
-      const r = await fetch("/api/master/open-in-hx-edit", { method: "POST" });
+      const r = await fetch("/soundpath/api/master/open-in-hx-edit", { method: "POST" });
       const j = (await r.json()) as { ok: boolean; error?: string };
       if (!j.ok) throw new Error(j.error ?? "open failed");
       showFlash("ok", "Opened in HX Edit on this Mac");

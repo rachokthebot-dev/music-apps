@@ -47,7 +47,7 @@ function getDayLabel(dateStr: string): string {
 }
 
 export default function StatsPage() {
-  const { data: stats, isLoading: loading } = useSWR<Stats>("/api/stats", fetcher);
+  const { data: stats, isLoading: loading } = useSWR<Stats>("/shreddy/api/stats", fetcher);
 
   if (loading) {
     return (

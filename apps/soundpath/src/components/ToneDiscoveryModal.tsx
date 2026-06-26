@@ -52,7 +52,7 @@ export default function ToneDiscoveryModal({ open, onClose, snapshots, onStaged,
     setResult(null);
     setError(null);
     try {
-      const r = await fetch("/api/tone-discovery", {
+      const r = await fetch("/soundpath/api/tone-discovery", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ vibe: vibe.trim(), targetSnapshotIndex: target, provider }),

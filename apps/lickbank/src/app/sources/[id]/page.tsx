@@ -102,7 +102,7 @@ export default function ClipperPage({
   const fetchSource = useCallback(async () => {
     if (!sourceId) return;
     try {
-      const res = await fetch(`/api/sources/${sourceId}`);
+      const res = await fetch(`/lickbank/api/sources/${sourceId}`);
       if (!res.ok) {
         setError("Source not found");
         return;
@@ -125,7 +125,7 @@ export default function ClipperPage({
   }, [fetchSource]);
 
   useEffect(() => {
-    fetch("/api/folders")
+    fetch("/lickbank/api/folders")
       .then((r) => r.json())
       .then(setFolders)
       .catch(() => {});
@@ -295,7 +295,7 @@ export default function ClipperPage({
 
       setAdjustingBoundary(true);
       try {
-        await fetch(`/api/licks/${lickId}`, {
+        await fetch(`/lickbank/api/licks/${lickId}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -400,7 +400,7 @@ export default function ClipperPage({
     if (!id || !trimmed) return;
     setSavingName(true);
     try {
-      const res = await fetch(`/api/licks/${id}`, {
+      const res = await fetch(`/lickbank/api/licks/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: trimmed }),
@@ -431,7 +431,7 @@ export default function ClipperPage({
       pendingLickRef.current = null;
       setAdjustingBoundary(true);
       try {
-        await fetch(`/api/licks/${pending.id}`, {
+        await fetch(`/lickbank/api/licks/${pending.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ startSec: pending.startSec, endSec: pending.endSec }),
@@ -500,7 +500,7 @@ export default function ClipperPage({
     if (!lickName.trim() || !sourceId) return;
     setSaving(true);
     try {
-      const res = await fetch("/api/licks", {
+      const res = await fetch("/lickbank/api/licks", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -535,7 +535,7 @@ export default function ClipperPage({
   const handleCreateFolder = async () => {
     if (!newFolderName.trim()) return;
     try {
-      const res = await fetch("/api/folders", {
+      const res = await fetch("/lickbank/api/folders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: newFolderName.trim() }),
@@ -596,7 +596,7 @@ export default function ClipperPage({
             <div className="relative rounded-xl overflow-hidden bg-black cursor-pointer group/video" onClick={handlePlayPause}>
               <video
                 ref={videoRef}
-                src={`/api/media/${source.videoPath}`}
+                src={`/lickbank/api/media/${source.videoPath}`}
                 className="w-full max-h-[40vh] md:max-h-[50vh] object-contain"
                 onLoadedMetadata={handleVideoLoaded}
                 playsInline

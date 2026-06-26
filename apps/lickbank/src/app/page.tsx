@@ -94,9 +94,9 @@ function LibraryPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [activeTab, setActiveTab] = useState<Tab>(searchParams.get("tab") === "sources" ? "sources" : "licks");
-  const { data: licks = [], mutate: mutateLicks, isLoading: licksLoading } = useSWR<Lick[]>("/api/licks", fetcher);
-  const { data: folders = [], mutate: mutateFolders } = useSWR<Folder[]>("/api/folders", fetcher);
-  const { data: sources = [], mutate: mutateSources } = useSWR<SourceItem[]>("/api/sources", fetcher);
+  const { data: licks = [], mutate: mutateLicks, isLoading: licksLoading } = useSWR<Lick[]>("/lickbank/api/licks", fetcher);
+  const { data: folders = [], mutate: mutateFolders } = useSWR<Folder[]>("/lickbank/api/folders", fetcher);
+  const { data: sources = [], mutate: mutateSources } = useSWR<SourceItem[]>("/lickbank/api/sources", fetcher);
   const loading = licksLoading;
   const [selectedFolder, _setSelectedFolder] = useState<string | null>(searchParams.get("folder"));
 
@@ -181,7 +181,7 @@ function LibraryPage() {
     setImportError(null);
 
     try {
-      const res = await fetch("/api/import/youtube", {
+      const res = await fetch("/lickbank/api/import/youtube", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ url: youtubeUrl.trim() }),
@@ -208,7 +208,7 @@ function LibraryPage() {
       // Poll job status
       const poll = setInterval(async () => {
         try {
-          const jobRes = await fetch(`/api/jobs/${jobId}`);
+          const jobRes = await fetch(`/lickbank/api/jobs/${jobId}`);
           if (!jobRes.ok) return;
           const job: ImportJob = await jobRes.json();
           setImportStatus(job.progressMessage || job.status);
@@ -238,7 +238,7 @@ function LibraryPage() {
   const handleCreateFolder = async () => {
     if (!newFolderName.trim()) return;
     try {
-      const res = await fetch("/api/folders", {
+      const res = await fetch("/lickbank/api/folders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: newFolderName.trim() }),
@@ -255,7 +255,7 @@ function LibraryPage() {
 
   const handleDeleteLick = async (lick: Lick) => {
     try {
-      const res = await fetch(`/api/licks/${lick.id}`, { method: "DELETE" });
+      const res = await fetch(`/lickbank/api/licks/${lick.id}`, { method: "DELETE" });
       if (res.ok) {
         setDeleteTarget(null);
         fetchData();
@@ -288,8 +288,8 @@ function LibraryPage() {
     if (!moveTarget) return;
     const folderIds = Array.from(selectedFolderIds);
     const url = moveTarget.kind === "lick"
-      ? `/api/licks/${moveTarget.lick.id}`
-      : `/api/sources/${moveTarget.source.id}`;
+      ? `/lickbank/api/licks/${moveTarget.lick.id}`
+      : `/lickbank/api/sources/${moveTarget.source.id}`;
     try {
       const res = await fetch(url, {
         method: "PATCH",
@@ -309,7 +309,7 @@ function LibraryPage() {
   const handleRenameSource = async () => {
     if (!renamingSource || !renameValue.trim()) return;
     try {
-      const res = await fetch(`/api/sources/${renamingSource.id}`, {
+      const res = await fetch(`/lickbank/api/sources/${renamingSource.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ title: renameValue.trim() }),
@@ -327,7 +327,7 @@ function LibraryPage() {
   const handleRenameLick = async () => {
     if (!renamingLick || !renameValue.trim()) return;
     try {
-      const res = await fetch(`/api/licks/${renamingLick.id}`, {
+      const res = await fetch(`/lickbank/api/licks/${renamingLick.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: renameValue.trim() }),

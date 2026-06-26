@@ -54,7 +54,7 @@ export function usePitchShifter({
     const controller = new AbortController();
     setProcessing(true);
 
-    fetch(`/api/songs/${songId}/pitch`, {
+    fetch(`/shreddy/api/songs/${songId}/pitch`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ semitones: pitch }),
@@ -65,7 +65,7 @@ export function usePitchShifter({
         return res.json();
       })
       .then(({ filename }) => {
-        const newUrl = `/api/media/${filename}`;
+        const newUrl = `/shreddy/api/media/${filename}`;
         setPitchedUrl(newUrl);
         setProcessing(false);
 

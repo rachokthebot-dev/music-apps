@@ -26,7 +26,7 @@ export default function SettingsPage() {
   useEffect(() => {
     setDarkMode(document.documentElement.classList.contains("dark"));
 
-    fetch("/api/settings")
+    fetch("/shreddy/api/settings")
       .then((res) => res.json())
       .then((data) => {
         setYoutubeMaxDuration(Math.floor((data.youtubeMaxDuration || 600) / 60));
@@ -35,7 +35,7 @@ export default function SettingsPage() {
         setLoading(false);
       });
 
-    fetch("/api/health")
+    fetch("/shreddy/api/health")
       .then((res) => res.json())
       .then((data) => {
         setDeps(data.dependencies || []);
@@ -57,7 +57,7 @@ export default function SettingsPage() {
       analyzeOnImport,
       combineSubsections,
     };
-    await fetch("/api/settings", {
+    await fetch("/shreddy/api/settings", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),

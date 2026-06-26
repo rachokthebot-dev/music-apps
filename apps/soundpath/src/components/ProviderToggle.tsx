@@ -27,7 +27,7 @@ export function useProvider(): [Provider, (p: Provider) => void, Probe | null] {
   const [probe, setProbe] = useState<Probe | null>(null);
 
   useEffect(() => {
-    fetch("/api/llm/probe")
+    fetch("/soundpath/api/llm/probe")
       .then((r) => r.json())
       .then((j: Probe) => {
         setProbe(j);

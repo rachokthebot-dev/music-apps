@@ -203,7 +203,7 @@ export default function PracticePage({
 
   const fetchSong = useCallback(async () => {
     try {
-      const res = await fetch(`/api/songs/${id}`);
+      const res = await fetch(`/shreddy/api/songs/${id}`);
       if (!res.ok) throw new Error("Song not found");
       const data = await res.json();
       // Capture the bookmark from the first fetch only; subsequent refetches
@@ -235,7 +235,7 @@ export default function PracticePage({
   const savePracticeSettings = useCallback((t: number, p: number, sIds: string[]) => {
     if (settingsSaveTimerRef.current) clearTimeout(settingsSaveTimerRef.current);
     settingsSaveTimerRef.current = setTimeout(() => {
-      fetch(`/api/songs/${id}`, {
+      fetch(`/shreddy/api/songs/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -255,7 +255,7 @@ export default function PracticePage({
   // Start practice session on mount, end on unmount
   useEffect(() => {
     if (!song || song.processingStatus !== "ready") return;
-    fetch("/api/practice-sessions", {
+    fetch("/shreddy/api/practice-sessions", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ songId: id, tempo, pitch }),
@@ -276,7 +276,7 @@ export default function PracticePage({
         durationSec,
       });
       // Use fetch with keepalive (sendBeacon only sends POST, but we need PATCH)
-      fetch(`/api/practice-sessions/${sid}`, {
+      fetch(`/shreddy/api/practice-sessions/${sid}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: endData,
@@ -301,7 +301,7 @@ export default function PracticePage({
       const times = sectionTimesRef.current;
       for (const sId of Object.keys(counts)) {
         if (counts[sId] > 0 || (times[sId] ?? 0) > 0) {
-          fetch(`/api/practice-sessions/${sessionId}/logs`, {
+          fetch(`/shreddy/api/practice-sessions/${sessionId}/logs`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -403,10 +403,10 @@ export default function PracticePage({
     if (reanalyzing) return;
     setReanalyzing(true);
     try {
-      await fetch(`/api/songs/${id}/reanalyze`, { method: "POST" });
+      await fetch(`/shreddy/api/songs/${id}/reanalyze`, { method: "POST" });
       // Poll until processing is done
       const poll = setInterval(async () => {
-        const res = await fetch(`/api/songs/${id}`);
+        const res = await fetch(`/shreddy/api/songs/${id}`);
         const data = await res.json();
         if (data.processingStatus === "ready") {
           clearInterval(poll);
@@ -441,9 +441,9 @@ export default function PracticePage({
           end: String(endSec),
         });
         if (partialStems) qs.set("stems", audibleStems.join(","));
-        url = `/api/songs/${song.id}/clip?${qs.toString()}`;
+        url = `/shreddy/api/songs/${song.id}/clip?${qs.toString()}`;
       } else {
-        url = `/api/media/${song.normalizedAudioPath}`;
+        url = `/shreddy/api/media/${song.normalizedAudioPath}`;
       }
       const res = await fetch(url);
       if (!res.ok) throw new Error("fetch failed");
@@ -482,7 +482,7 @@ export default function PracticePage({
   useEffect(() => {
     if (!song?.normalizedAudioPath) return;
 
-    const audio = new Audio(`/api/media/${song.normalizedAudioPath}`);
+    const audio = new Audio(`/shreddy/api/media/${song.normalizedAudioPath}`);
     audio.preload = "auto";
     audioRef.current = audio;
 
@@ -519,7 +519,7 @@ export default function PracticePage({
     return () => {
       // Save position on unmount
       if (audio.currentTime > 0) {
-        fetch(`/api/songs/${id}`, {
+        fetch(`/shreddy/api/songs/${id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ lastPositionSec: audio.currentTime }),
@@ -615,7 +615,7 @@ export default function PracticePage({
       const audio = audioRef.current;
       if (audio && Math.abs(audio.currentTime - lastSaveRef.current) > 5) {
         lastSaveRef.current = audio.currentTime;
-        fetch(`/api/songs/${id}`, {
+        fetch(`/shreddy/api/songs/${id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ lastPositionSec: audio.currentTime }),
@@ -639,10 +639,14 @@ export default function PracticePage({
   const abLoopRef = useRef(abLoop);
   const loopEnabledRef = useRef(loopEnabled);
   const loopSongRef = useRef(loopSong);
+  const stemsRef = useRef(stems);
+  const tempoRef = useRef(tempo);
   loopRangeRef.current = loopRange;
   abLoopRef.current = abLoop;
   loopEnabledRef.current = loopEnabled;
   loopSongRef.current = loopSong;
+  stemsRef.current = stems;
+  tempoRef.current = tempo;
 
   // Loop enforcement via rAF — only active when a loop mode is on
   const hasAnyLoop = loopSong || (loopEnabled && !!loopRange) || !!abLoop;
@@ -656,21 +660,30 @@ export default function PracticePage({
       const t = audio.currentTime;
       const dur = audio.duration;
 
+      // Seek the audio element and mirror it to the stems engine. When stems
+      // are active the audio element is muted and the audible output comes from
+      // the engine, so a loop jump that only moved audio.currentTime would
+      // leave the engine playing on past B (correct playhead, wrong audio).
+      const loopSeek = (target: number) => {
+        audio.currentTime = target;
+        stemsRef.current.engine?.seek(target, tempoRef.current);
+      };
+
       // A-B loop takes highest priority
       if (abLoopRef.current) {
         if (t >= abLoopRef.current.b) {
-          audio.currentTime = abLoopRef.current.a;
+          loopSeek(abLoopRef.current.a);
         }
       }
       // Section loop
       else if (loopEnabledRef.current && loopRangeRef.current) {
         if (t >= loopRangeRef.current.endSec || t < loopRangeRef.current.startSec) {
-          audio.currentTime = loopRangeRef.current.startSec;
+          loopSeek(loopRangeRef.current.startSec);
         }
       }
       // Whole-song loop
       else if (loopSongRef.current && dur > 0 && t >= dur - 0.05) {
-        audio.currentTime = 0;
+        loopSeek(0);
         if (audio.paused) audio.play();
       }
 
@@ -683,7 +696,7 @@ export default function PracticePage({
 
   const { processing: pitchProcessing } = usePitchShifter({
     songId: song?.id ?? null,
-    audioUrl: song?.normalizedAudioPath ? `/api/media/${song.normalizedAudioPath}` : null,
+    audioUrl: song?.normalizedAudioPath ? `/shreddy/api/media/${song.normalizedAudioPath}` : null,
     pitch, tempo, audioRef, onPause: pausePlayback,
   });
 
@@ -692,7 +705,7 @@ export default function PracticePage({
   // path runs.
   const { processing: tempoProcessing } = useTempoStretch({
     songId: song?.id ?? null,
-    audioUrl: song?.normalizedAudioPath ? `/api/media/${song.normalizedAudioPath}` : null,
+    audioUrl: song?.normalizedAudioPath ? `/shreddy/api/media/${song.normalizedAudioPath}` : null,
     tempo, pitch, audioRef, onPause: pausePlayback,
   });
 
@@ -738,6 +751,9 @@ export default function PracticePage({
       audio.currentTime = 0;
     }
     setCurrentTime(audio.currentTime);
+    // Mirror to the stems engine — when stems are active the audio element is
+    // muted and the audible output comes from the engine.
+    stems.engine?.seek(audio.currentTime, tempo);
   }
 
   function selectSection(section: Section, extend: boolean) {
@@ -788,8 +804,10 @@ export default function PracticePage({
   }
 
   function setA() {
-    pausePlayback();
-    clearLoop();
+    // Keep playing — let the user mark A and B on the fly. Clear any section
+    // loop directly (clearLoop() pauses, which we don't want here).
+    setSelectedSectionIds([]);
+    setLoopEnabled(false);
     _setA(currentTime);
   }
 
@@ -816,7 +834,7 @@ export default function PracticePage({
       setMetadataDialogOpen(false);
       return;
     }
-    await fetch(`/api/songs/${id}`, {
+    await fetch(`/shreddy/api/songs/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(patch),
@@ -830,7 +848,7 @@ export default function PracticePage({
     setNotesDraft(value);
     if (notesSaveTimerRef.current) clearTimeout(notesSaveTimerRef.current);
     notesSaveTimerRef.current = setTimeout(() => {
-      fetch(`/api/songs/${id}`, {
+      fetch(`/shreddy/api/songs/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ notes: value }),
@@ -851,13 +869,13 @@ export default function PracticePage({
       // via this dialog are treated like border adjustments and keep playing.
       // Adding a new section (the else branch) also keeps playing.
       if (sectionName !== editingSection.name) pausePlayback();
-      await fetch(`/api/sections/${editingSection.id}`, {
+      await fetch(`/shreddy/api/sections/${editingSection.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: sectionName, startSec, endSec }),
       });
     } else {
-      await fetch(`/api/songs/${id}/sections`, {
+      await fetch(`/shreddy/api/songs/${id}/sections`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: sectionName, startSec, endSec }),
@@ -870,7 +888,7 @@ export default function PracticePage({
 
   async function deleteSection(sectionId: string) {
     pausePlayback();
-    await fetch(`/api/sections/${sectionId}`, { method: "DELETE" });
+    await fetch(`/shreddy/api/sections/${sectionId}`, { method: "DELETE" });
     if (selectedSectionIds.includes(sectionId)) {
       const remaining = selectedSectionIds.filter((id) => id !== sectionId);
       setSelectedSectionIds(remaining);
@@ -933,12 +951,12 @@ export default function PracticePage({
         const right = prev[borderIdx + 1];
         if (left && right) {
           // Save to API in background
-          fetch(`/api/sections/${left.id}`, {
+          fetch(`/shreddy/api/sections/${left.id}`, {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ endSec: left.endSec }),
           }).catch(() => {});
-          fetch(`/api/sections/${right.id}`, {
+          fetch(`/shreddy/api/sections/${right.id}`, {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ startSec: right.startSec }),
@@ -1139,7 +1157,7 @@ export default function PracticePage({
               <button
                 onClick={async () => {
                   const next = song.timeSignature === 4 ? 3 : song.timeSignature === 3 ? 6 : 4;
-                  await fetch(`/api/songs/${song.id}`, {
+                  await fetch(`/shreddy/api/songs/${song.id}`, {
                     method: "PATCH",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ timeSignature: next }),
@@ -1309,7 +1327,7 @@ export default function PracticePage({
               <Button
                 variant="outline"
                 size="icon"
-                onClick={() => { pausePlayback(); setB(currentTime); }}
+                onClick={() => setB(currentTime)}
                 disabled={pendingA === null}
                 className={`size-11 text-sm font-bold active:scale-90 ${
                   abLoop ? "bg-orange-500 text-white border-orange-500 hover:bg-orange-600 hover:text-white" : ""

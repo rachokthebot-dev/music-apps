@@ -134,7 +134,7 @@ export default function DesignPage() {
     setErr(null);
     setResult(null);
     try {
-      const r = await fetch("/api/design-preset", {
+      const r = await fetch("/soundpath/api/design-preset", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ tones, provider, mode }),
@@ -159,7 +159,7 @@ export default function DesignPage() {
       });
       const form = new FormData();
       form.append("file", file);
-      const r = await fetch("/api/master", { method: "POST", body: form });
+      const r = await fetch("/soundpath/api/master", { method: "POST", body: form });
       const j = (await r.json()) as { ok: boolean; error?: string };
       if (!j.ok) throw new Error(j.error ?? "save failed");
       router.push("/edit");

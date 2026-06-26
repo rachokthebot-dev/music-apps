@@ -168,6 +168,12 @@ export function createStemsEngine(): StemsEngine {
   }
 
   function setPlaybackRate(rate: number): void {
+    // KNOWN LIMITATION (2026-06-26, not fixed): AudioBufferSourceNode.playbackRate
+    // resamples, so this shifts pitch along with tempo — Web Audio has no
+    // preservesPitch equivalent. At 0.8× muted stems play ~3.9 semitones flat.
+    // The audio-element path (non-stems) preserves pitch; stems do not. Proper
+    // fix = per-stem server-rendered time-stretch or a phase-vocoder. See
+    // ~/vault/projects/shreddy.md "Known limitations".
     if (rate === playbackRate) return;
     // Snapshot the current source-time so the new rate doesn't make
     // getCurrentTime() jump backwards or forwards.

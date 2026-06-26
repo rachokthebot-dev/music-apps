@@ -86,7 +86,7 @@ export function useTempoStretch({
     const controller = new AbortController();
     setProcessing(true);
 
-    fetch(`/api/songs/${songId}/tempo`, {
+    fetch(`/shreddy/api/songs/${songId}/tempo`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ multiplier: tempo }),
@@ -99,7 +99,7 @@ export function useTempoStretch({
       .then(({ filename }: { filename: string }) => {
         // A newer tempo selection has already kicked off — drop this result.
         if (myId !== requestIdRef.current) return;
-        const newUrl = `/api/media/${filename}`;
+        const newUrl = `/shreddy/api/media/${filename}`;
         const a = audioRef.current;
         if (!a) return;
         const pos = a.currentTime;

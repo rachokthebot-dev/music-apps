@@ -40,10 +40,10 @@ export async function GET(
 
   if (song.stemsState === "ready") {
     body.stems = {
-      vocals: `/api/media/${stemFilename(id, "vocals")}`,
-      drums: `/api/media/${stemFilename(id, "drums")}`,
-      bass: `/api/media/${stemFilename(id, "bass")}`,
-      other: `/api/media/${stemFilename(id, "other")}`,
+      vocals: `/shreddy/api/media/${stemFilename(id, "vocals")}`,
+      drums: `/shreddy/api/media/${stemFilename(id, "drums")}`,
+      bass: `/shreddy/api/media/${stemFilename(id, "bass")}`,
+      other: `/shreddy/api/media/${stemFilename(id, "other")}`,
     };
   }
 

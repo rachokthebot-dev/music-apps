@@ -144,7 +144,7 @@ export default function PracticePage({
   const fetchLick = useCallback(async () => {
     if (!lickId) return;
     try {
-      const res = await fetch(`/api/licks/${lickId}`);
+      const res = await fetch(`/lickbank/api/licks/${lickId}`);
       if (!res.ok) {
         setError("Lick not found");
         return;
@@ -170,7 +170,7 @@ export default function PracticePage({
 
     const createSession = async () => {
       try {
-        const res = await fetch("/api/practice-sessions", {
+        const res = await fetch("/lickbank/api/practice-sessions", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ lickId }),
@@ -196,7 +196,7 @@ export default function PracticePage({
       if (sessionIdRef.current) {
         const durationSec = activePlayTimeRef.current;
         flushSectionLogs();
-        fetch(`/api/practice-sessions/${sessionIdRef.current}`, {
+        fetch(`/lickbank/api/practice-sessions/${sessionIdRef.current}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -216,7 +216,7 @@ export default function PracticePage({
     if (!sessionIdRef.current) return;
     const logs = sectionLogsRef.current;
     logs.forEach((log) => {
-      fetch(`/api/practice-sessions/${sessionIdRef.current}/logs`, {
+      fetch(`/lickbank/api/practice-sessions/${sessionIdRef.current}/logs`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(log),
@@ -238,7 +238,7 @@ export default function PracticePage({
   useEffect(() => {
     if (!lickId || speed === lick?.lastTempo) return;
     const timer = setTimeout(() => {
-      fetch(`/api/licks/${lickId}`, {
+      fetch(`/lickbank/api/licks/${lickId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ lastTempo: speed }),
@@ -272,7 +272,7 @@ export default function PracticePage({
     const controller = new AbortController();
     setPitchProcessing(true);
 
-    fetch(`/api/licks/${lickId}/pitch`, {
+    fetch(`/lickbank/api/licks/${lickId}/pitch`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ semitones: pitch }),
@@ -294,7 +294,7 @@ export default function PracticePage({
           audio = new Audio();
           pitchAudioRef.current = audio;
         }
-        audio.src = `/api/media/${filename}`;
+        audio.src = `/lickbank/api/media/${filename}`;
         audio.currentTime = v.currentTime;
         audio.playbackRate = speed;
         audio.preservesPitch = true;
@@ -336,7 +336,7 @@ export default function PracticePage({
   useEffect(() => {
     if (!lickId || pitch === (lick?.lastPitch ?? 0)) return;
     const timer = setTimeout(() => {
-      fetch(`/api/licks/${lickId}`, {
+      fetch(`/lickbank/api/licks/${lickId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ lastPitch: pitch }),
@@ -555,7 +555,7 @@ export default function PracticePage({
   const handleAddSection = async () => {
     if (!sectionName.trim() || !lickId) return;
     try {
-      const res = await fetch(`/api/licks/${lickId}/sections`, {
+      const res = await fetch(`/lickbank/api/licks/${lickId}/sections`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -576,7 +576,7 @@ export default function PracticePage({
 
   const handleDeleteSection = async (sectionId: string) => {
     try {
-      const res = await fetch(`/api/sections/${sectionId}`, {
+      const res = await fetch(`/lickbank/api/sections/${sectionId}`, {
         method: "DELETE",
       });
       if (res.ok) {
@@ -657,7 +657,7 @@ export default function PracticePage({
             <div className="flex-1 min-h-0 max-h-[40vh] md:max-h-[55vh] rounded-xl overflow-hidden bg-black">
               <video
                 ref={videoRef}
-                src={`/api/media/${lick.videoClipPath}`}
+                src={`/lickbank/api/media/${lick.videoClipPath}`}
                 className="w-full h-full object-contain"
                 style={crop !== "full" ? CROP_PRESETS.find((p) => p.value === crop)?.style : undefined}
                 onLoadedMetadata={() => {

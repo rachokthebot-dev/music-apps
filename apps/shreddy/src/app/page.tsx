@@ -135,7 +135,7 @@ function LibraryPage() {
 
   const fetchSongs = useCallback(async () => {
     try {
-      const res = await fetch("/api/songs");
+      const res = await fetch("/shreddy/api/songs");
       if (!res.ok) throw new Error("Failed to load");
       const data = await res.json();
       setSongs(data);
@@ -149,7 +149,7 @@ function LibraryPage() {
 
   const fetchFolders = useCallback(async () => {
     try {
-      const res = await fetch("/api/folders");
+      const res = await fetch("/shreddy/api/folders");
       if (!res.ok) throw new Error("Failed to load");
       const data = await res.json();
       setFolders(data);
@@ -199,7 +199,7 @@ function LibraryPage() {
   const [analyzeDefault, setAnalyzeDefault] = useState(false);
 
   useEffect(() => {
-    fetch("/api/settings")
+    fetch("/shreddy/api/settings")
       .then((r) => r.json())
       .then((data) => {
         const def = !!data.analyzeOnImport;
@@ -243,7 +243,7 @@ function LibraryPage() {
           }
         };
         xhr.onerror = () => reject(new Error("Upload failed"));
-        xhr.open("POST", "/api/uploads");
+        xhr.open("POST", "/shreddy/api/uploads");
         xhr.send(formData);
       });
 
@@ -262,7 +262,7 @@ function LibraryPage() {
     setYoutubeImporting(true);
     setYoutubeError(null);
     try {
-      const res = await fetch("/api/import/youtube", {
+      const res = await fetch("/shreddy/api/import/youtube", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ url: youtubeUrl.trim(), analyzeSections }),
@@ -283,18 +283,18 @@ function LibraryPage() {
   }
 
   async function handleDuplicate(id: string) {
-    await fetch(`/api/songs/${id}/duplicate`, { method: "POST" });
+    await fetch(`/shreddy/api/songs/${id}/duplicate`, { method: "POST" });
     await fetchSongs();
   }
 
   async function handleDelete(id: string, title: string) {
     if (!confirm(`Delete "${title}"?`)) return;
-    await fetch(`/api/songs/${id}`, { method: "DELETE" });
+    await fetch(`/shreddy/api/songs/${id}`, { method: "DELETE" });
     await fetchSongs();
   }
 
   async function handleTogglePin(id: string, currentPinned: boolean) {
-    await fetch(`/api/songs/${id}`, {
+    await fetch(`/shreddy/api/songs/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ pinned: !currentPinned }),
@@ -320,7 +320,7 @@ function LibraryPage() {
 
   async function saveSongFolders() {
     if (!movingSongId) return;
-    await fetch(`/api/songs/${movingSongId}`, {
+    await fetch(`/shreddy/api/songs/${movingSongId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ folderIds: Array.from(selectedFolderIds) }),
@@ -347,13 +347,13 @@ function LibraryPage() {
   async function saveFolder() {
     if (!folderName.trim()) return;
     if (editingFolder) {
-      await fetch(`/api/folders/${editingFolder.id}`, {
+      await fetch(`/shreddy/api/folders/${editingFolder.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: folderName }),
       });
     } else {
-      await fetch("/api/folders", {
+      await fetch("/shreddy/api/folders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: folderName }),
@@ -365,7 +365,7 @@ function LibraryPage() {
 
   async function deleteFolder(id: string, name: string) {
     if (!confirm(`Delete folder "${name}"? Songs will be moved to unfiled.`)) return;
-    await fetch(`/api/folders/${id}`, { method: "DELETE" });
+    await fetch(`/shreddy/api/folders/${id}`, { method: "DELETE" });
     if (activeFolder === id) setActiveFolder(null);
     await fetchFolders();
     await fetchSongs();

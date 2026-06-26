@@ -82,7 +82,7 @@ export function useStemsEngine({ songId, eager = false }: UseStemsEngineOptions)
 
     async function tick() {
       try {
-        const res = await fetch(`/api/songs/${songId}/stems`);
+        const res = await fetch(`/shreddy/api/songs/${songId}/stems`);
         if (!res.ok) throw new Error(`status ${res.status}`);
         const json = (await res.json()) as StemsStatusResponse;
         if (cancelled) return;

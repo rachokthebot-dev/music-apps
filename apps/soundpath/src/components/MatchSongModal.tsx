@@ -64,7 +64,7 @@ export default function MatchSongModal({ open, onClose, snapshots, onApplied, on
     setResult(null);
     setError(null);
     try {
-      const r = await fetch("/api/match-song", {
+      const r = await fetch("/soundpath/api/match-song", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -96,7 +96,7 @@ export default function MatchSongModal({ open, onClose, snapshots, onApplied, on
     // Legacy download flow
     setBusy("apply");
     try {
-      const r = await fetch("/api/match-song/apply", {
+      const r = await fetch("/soundpath/api/match-song/apply", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(result),

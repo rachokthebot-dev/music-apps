@@ -38,7 +38,7 @@ const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 export default function StatsPage() {
   const router = useRouter();
-  const { data: stats, isLoading: loading, error } = useSWR<Stats>("/api/stats", fetcher);
+  const { data: stats, isLoading: loading, error } = useSWR<Stats>("/lickbank/api/stats", fetcher);
 
   if (loading) {
     return (
