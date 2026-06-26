@@ -7,15 +7,29 @@ import { AUDIO_DIR } from "@/lib/paths";
 import { STEM_NAMES, type StemName } from "@/lib/stems-engine";
 import { stemFilename } from "@/lib/process-stems";
 
-// GET /api/songs/[id]/clip?start=…&end=…&stems=vocals,drums,bass,other
+// GET /api/songs/[id]/clip?start=…&end=…&stems=vocals,drums,bass,other&pitch=2
 //
-// `start`/`end` (seconds) clip the audio to a section range.
+// `start`/`end` (seconds) clip the audio to a section range (or the A-B loop
+// range — the caller decides what the range means).
 // `stems` (optional, comma-separated) selects which stems to mix in. When
 // present, the clip is rendered from the chosen stems instead of the full
 // mix — used by the Share button to extract a "drums + bass only" backing
 // track, or any other partial mix the user assembles via the stems menu.
 // When all 4 stems are listed (or `stems` omitted), the existing fast path
 // streams the normalized full-mix file.
+// `pitch` (optional, semitones -12..12) shifts pitch via the same ffmpeg
+// filter chain as the live pitch render (asetrate/aresample/atempo), so the
+// exported file matches what the user hears. Applied to both the full-mix and
+// stem-mix paths. All source files are 44100Hz on disk.
+
+// Pitch-preserving-duration shift: asetrate changes pitch+speed, aresample
+// restores the sample rate (locking in the pitch change), atempo restores the
+// duration. Mirrors shiftPitch() in @music-apps/shared. semitones must be -12..12
+// non-zero so the single atempo stays in its [0.5, 2.0] range.
+function pitchFilterChain(semitones: number): string {
+  const factor = Math.pow(2, semitones / 12);
+  return `asetrate=44100*${factor},aresample=44100,atempo=${1 / factor}`;
+}
 
 export async function GET(
   request: NextRequest,
@@ -45,6 +59,13 @@ export async function GET(
     : [];
   const useStemMix =
     requestedStems.length > 0 && requestedStems.length < STEM_NAMES.length;
+
+  // Optional pitch shift in semitones. Reject out-of-range / non-integer /
+  // zero so it can't reach ffmpeg as junk or push atempo out of range.
+  const pitchParam = url.searchParams.get("pitch");
+  const semitones = pitchParam === null ? 0 : Number(pitchParam);
+  const applyPitch =
+    Number.isInteger(semitones) && semitones !== 0 && semitones >= -12 && semitones <= 12;
 
   // Build the ffmpeg argv. Two flavours:
   //   * Full-mix path: -i <normalized.mp3>, copy stream.
@@ -83,7 +104,9 @@ export async function GET(
     const mixInputs = stemFiles
       .map((_f, i) => `[${i}:a]`)
       .join("");
-    const filter = `${mixInputs}amix=inputs=${stemFiles.length}:duration=longest:normalize=0`;
+    const mix = `${mixInputs}amix=inputs=${stemFiles.length}:duration=longest:normalize=0`;
+    // Chain the pitch shift after the mix in the same filter graph.
+    const filter = applyPitch ? `${mix},${pitchFilterChain(semitones)}` : mix;
     ffmpegArgs = [
       ...inputArgs,
       "-filter_complex",
@@ -116,6 +139,7 @@ export async function GET(
       "-i",
       sourceFile,
       "-vn",
+      ...(applyPitch ? ["-af", pitchFilterChain(semitones)] : []),
       "-ar",
       "44100",
       "-ac",

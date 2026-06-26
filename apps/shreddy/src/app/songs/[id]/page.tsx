@@ -430,17 +430,29 @@ export default function PracticePage({
       // are muted, the clip route mixes only the audible ones.
       const audibleStems = STEM_NAMES.filter((s) => !stems.muted[s]);
       const partialStems = audibleStems.length < STEM_NAMES.length;
-      const useClip = selectedSectionIds.length > 0 && loopRange;
+      // Clip range priority mirrors loop enforcement: A-B loop > section
+      // selection > whole song.
+      const range = abLoop
+        ? { start: abLoop.a, end: abLoop.b, label: "A-B" }
+        : selectedSectionIds.length > 0 && loopRange
+        ? {
+            start: loopRange.startSec,
+            end: loopRange.endSec,
+            label: loopRange.names.length === 1 ? loopRange.names[0] : "Loop",
+          }
+        : null;
+      const applyPitch = pitch !== 0;
       let url: string;
-      if (useClip || partialStems) {
-        // Default clip range = whole song when no section is selected.
-        const startSec = useClip ? loopRange.startSec : 0;
-        const endSec = useClip ? loopRange.endSec : song.durationSec ?? 0;
+      if (range || partialStems || applyPitch) {
+        // Default clip range = whole song when no section / A-B loop is set.
+        const startSec = range ? range.start : 0;
+        const endSec = range ? range.end : song.durationSec ?? 0;
         const qs = new URLSearchParams({
           start: String(startSec),
           end: String(endSec),
         });
         if (partialStems) qs.set("stems", audibleStems.join(","));
+        if (applyPitch) qs.set("pitch", String(pitch));
         url = `/shreddy/api/songs/${song.id}/clip?${qs.toString()}`;
       } else {
         url = `/shreddy/api/media/${song.normalizedAudioPath}`;
@@ -449,12 +461,11 @@ export default function PracticePage({
       if (!res.ok) throw new Error("fetch failed");
       const blob = await res.blob();
       const suffixParts: string[] = [];
-      if (useClip) {
-        suffixParts.push(loopRange.names.length === 1 ? loopRange.names[0] : "Loop");
-      }
+      if (range) suffixParts.push(range.label);
       if (partialStems) {
         suffixParts.push(audibleStems.length === 1 ? audibleStems[0] : `${audibleStems.length}stems`);
       }
+      if (applyPitch) suffixParts.push(pitch > 0 ? `+${pitch}st` : `${pitch}st`);
       const baseName = [song.artist, song.title, ...suffixParts]
         .filter(Boolean)
         .join(" - ");
