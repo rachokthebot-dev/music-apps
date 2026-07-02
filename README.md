@@ -56,6 +56,14 @@ Drop in any MP3 or paste a YouTube URL. Shreddy auto-detects sections (Intro, Ve
 - Remembers position, tempo, pitch, selected section across reloads
 - Optimized for iPad Safari — full-network mode (`--hostname 0.0.0.0`) for couch practice
 
+Stem mixer — isolate or mute vocals / drums / bass / other:
+
+![Shreddy stem mixer](apps/landing/assets/screenshots/shreddy-stems.png)
+
+Deep practice — a dual-task Distraction overlay layers a read-aloud prompt over the passage:
+
+![Shreddy distraction overlay](apps/landing/assets/screenshots/shreddy-distraction.png)
+
 *Practice stats*
 
 ![Shreddy stats](apps/landing/assets/screenshots/shreddy-stats.png)
