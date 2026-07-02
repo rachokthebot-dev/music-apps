@@ -44,9 +44,11 @@ Drop in any MP3 or paste a YouTube URL. Shreddy auto-detects sections (Intro, Ve
 ![Shreddy practice](apps/landing/assets/screenshots/shreddy-practice.png)
 
 - Section timeline color-coded by detected sections — tap to loop, shift-tap to chain multiple sections
-- Tempo control 0.5× → 1.2× without affecting pitch
+- Tempo control 0.1× → 1.2× without affecting pitch (ultra-slow 0.1×–0.4× via a server-side ffmpeg stretch, since iPad Safari clamps `playbackRate` at 0.5×)
 - Pitch shifter ±12 semitones without affecting tempo (server-side ffmpeg, cached per song/pitch)
+- Stem separation (Demucs) with a per-stem mixer — isolate or mute vocals / drums / bass / other
 - A-B loop with custom markers anywhere in the song
+- Deep-practice modes: Silent/mental-rehearsal toggle, rotating cue prompts, and a dual-task Distraction overlay
 - Bar count per section, time signature display (4/4, 3/4, 6/8), section CSV export
 - Share a clip of any section as a downloadable audio file
 - Practice notes per song

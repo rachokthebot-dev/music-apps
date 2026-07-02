@@ -2,17 +2,18 @@
 
 A living list of what's known-open, deferred, or wanting review across the monorepo. Not bug tracking — issues belong in GitHub Issues. This file is for "context the source code doesn't reveal."
 
-Last reviewed: 2026-06-11
+Last reviewed: 2026-07-02
 
 ---
 
 ## Shreddy
 
 **Recently landed (need review pass):**
-- Bar count per section + time signature support (see `docs/plans/2026-04-05-001-feat-bar-count-and-section-export-plan.md`)
-- Section export to CSV with proportional timing (see `docs/plans/2026-04-05-002-feat-proportional-export-and-csv-plan.md`)
-- Share Audio File API endpoint at `apps/shreddy/src/app/api/songs/[id]/clip/` (see `docs/plans/2026-04-05-003-feat-share-audio-file-plan.md`)
-- SongFormer section detection — replaces Claude Vision flow in `apps/scripts/analyze.py`. Runs locally, ~30–60 s per song on M-series Macs.
+- **Deep-practice v1** (branch `feat/integrate-deep-practice-v1`, shipped 2026-06-18, ~1900 lines; **not yet merged to main**). See `docs/plans/2026-06-18-deep-practice-v1-shipped.md`. Bundles: ultra-slow tempo 0.1×–0.4× via server ffmpeg stretch, R5 stems pipeline (Demucs) + mixer, section-transition loop pill, R3 Silent/mental-rehearsal toggle, rotating cue overlay, R6 Distraction overlay, share-with-stems, basePath API-fetch fixes.
+- Distraction overlay timer reworked 2026-07-02 — wall-clock ticker that restarts on playhead move; sentence prompts (`DistractionOverlay.tsx`).
+
+**Shipped earlier (reviewed):**
+- Bar count per section + time signature, section CSV export, Share Audio File endpoint (`apps/shreddy/src/app/api/songs/[id]/clip/`), and local SongFormer section detection (replaced the old Claude Vision flow in `apps/scripts/analyze.py`).
 
 **Known gaps:**
 - SongFormer model (`apps/data/models/songformer/`) is **not bundled in the repo** (~3 GB, gitignored). Need a setup script or docs entry that fetches it. Without the model, section detection will fail at runtime.

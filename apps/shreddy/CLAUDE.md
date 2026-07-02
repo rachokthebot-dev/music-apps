@@ -34,13 +34,13 @@ proxy at `http://<mac-ip>:8080/shreddy`. See `../../proxy/README.md`.
 - Next.js 16.2.1 (async params, async cookies/headers, route.ts handlers)
 - React 19, TypeScript, Tailwind CSS v4, shadcn/ui
 - SQLite via Prisma 7.x with @prisma/adapter-libsql
-- ffmpeg/ffprobe for audio processing
-- Python venv (librosa) + Claude Vision API for auto-segmentation
+- ffmpeg/ffprobe for audio processing; Demucs for stem separation
+- Python venv (librosa for BPM/key/beats) + local SongFormer model for section auto-segmentation
 
 ## Key paths
 - `prisma/schema.prisma` — data model
 - `src/app/page.tsx` — library page
 - `src/app/songs/[id]/page.tsx` — practice player
 - `src/lib/process-audio.ts` — upload processing pipeline
-- `../scripts/analyze.py` — audio analysis + Claude Vision
+- `../scripts/analyze.py` — audio analysis + SongFormer section detection
 - `../data/` — SQLite DB, uploads, audio files, settings
