@@ -1,56 +1,32 @@
 /** Central registry of all apps in the music-apps suite.
- *  Add new apps here — all app switchers update automatically. */
+ *  Add new apps here — all app switchers update automatically.
+ *
+ *  URLs are proxy-relative: every app is mounted at its slug (Next basePath)
+ *  behind proxy/server.js on a single origin, so a bare path like "/shreddy"
+ *  is all that's needed. The all-apps launcher lives at the proxy root "/".  */
 
 export interface AppEntry {
   id: string;
   name: string;
   description: string;
-  port: number;
-  /** Path within the app that serves as its "home" */
-  path: string;
+  /** Proxy-relative base path where this app is mounted (its "home"). */
+  basePath: string;
 }
 
+/** The all-apps launcher (landing page) served by the proxy at its root. */
+export const LAUNCHER_PATH = "/";
+
 export const APP_REGISTRY: AppEntry[] = [
-  {
-    id: "shreddy",
-    name: "Shreddy",
-    description: "Practice companion",
-    port: 3000,
-    path: "/",
-  },
-  {
-    id: "lickbank",
-    name: "LickBank",
-    description: "Lick & solo library",
-    port: 3001,
-    path: "/",
-  },
-  {
-    id: "chordcraft",
-    name: "ChordCraft",
-    description: "Chord progressions",
-    port: 3002,
-    path: "/",
-  },
-  {
-    id: "metronome",
-    name: "Metronome",
-    description: "Tempo & timer",
-    port: 3003,
-    path: "/",
-  },
-  {
-    id: "dashboard",
-    name: "Dashboard",
-    description: "Practice overview",
-    port: 3002,
-    path: "/dashboard",
-  },
+  { id: "shreddy",    name: "Shreddy",    description: "Practice companion",   basePath: "/shreddy" },
+  { id: "lickbank",   name: "LickBank",   description: "Lick & solo library",  basePath: "/lickbank" },
+  { id: "chordcraft", name: "ChordCraft", description: "Chord progressions",   basePath: "/chordcraft" },
+  { id: "metronome",  name: "Metronome",  description: "Tempo & timer",        basePath: "/metronome" },
+  { id: "soundpath",  name: "SoundPath",  description: "Tone & signal paths",  basePath: "/soundpath" },
+  { id: "helaix",     name: "HelAIx",     description: "AI Helix presets",     basePath: "/helaix" },
 ];
 
-/** Build the URL for an app based on the current window location.
- *  Preserves the hostname so it works on iPad (192.168.x.x) and localhost. */
+/** Build the URL for an app. Proxy-relative, so it works on localhost, the
+ *  iPad over Wi-Fi, and through ngrok — every device hits the same origin. */
 export function getAppUrl(app: AppEntry): string {
-  if (typeof window === "undefined") return `http://localhost:${app.port}${app.path}`;
-  return `${window.location.protocol}//${window.location.hostname}:${app.port}${app.path}`;
+  return app.basePath;
 }

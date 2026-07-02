@@ -1,10 +1,12 @@
 "use client";
 
 import Link from "next/link";
+import { BackToHome } from "@music-apps/shared/back-to-home";
 
 export default function DraftsIndex() {
   return (
     <main className="flex-1 max-w-lg mx-auto w-full px-4 py-12">
+      <BackToHome label="Library" className="mb-4" />
       <h1 className="text-2xl font-semibold text-foreground mb-2">Practice Page Drafts</h1>
       <p className="text-sm text-muted-foreground mb-8">
         4 design options for the practice page. Tap to preview each one.

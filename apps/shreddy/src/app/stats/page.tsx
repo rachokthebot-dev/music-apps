@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowLeft, Clock, Flame, Music, TrendingUp, Loader2 } from "lucide-react";
+import { Clock, Flame, Music, TrendingUp, Loader2 } from "lucide-react";
+import { BackToHome } from "@music-apps/shared/back-to-home";
 import useSWR from "swr";
 
 interface DailyBreakdown {
@@ -53,9 +54,7 @@ export default function StatsPage() {
     return (
       <main className="flex-1 max-w-2xl mx-auto w-full px-4 py-6">
         <div className="flex items-center gap-3 mb-6">
-          <Link href="/" className="p-2 -ml-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-all">
-            <ArrowLeft className="size-5" />
-          </Link>
+          <BackToHome label="" />
           <h1 className="text-xl font-semibold text-foreground">Practice Stats</h1>
         </div>
         <div className="flex items-center justify-center py-12">
@@ -72,9 +71,7 @@ export default function StatsPage() {
   return (
     <main className="flex-1 max-w-2xl mx-auto w-full px-4 py-6">
       <div className="flex items-center gap-3 mb-6">
-        <Link href="/" className="p-2 -ml-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-all">
-          <ArrowLeft className="size-5" />
-        </Link>
+        <BackToHome label="" />
         <h1 className="text-xl font-semibold text-foreground">Practice Stats</h1>
       </div>
 

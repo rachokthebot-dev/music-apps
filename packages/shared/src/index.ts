@@ -13,10 +13,12 @@ export {
 export { calculateStreak, buildDailyBreakdown, getDateRanges } from "./practice-stats";
 export type { DailyBreakdown } from "./practice-stats";
 
-export { APP_REGISTRY, getAppUrl } from "./app-registry";
+export { APP_REGISTRY, getAppUrl, LAUNCHER_PATH } from "./app-registry";
 export type { AppEntry } from "./app-registry";
 
 export { AppSwitcher } from "./app-switcher";
+
+export { BackToHome } from "./back-to-home";
 
 export { corsHeaders } from "./cors";
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { Button } from "@music-apps/ui";
+import { BackToHome } from "@music-apps/shared/back-to-home";
 import useSWR from "swr";
 
 function formatDuration(sec: number): string {
@@ -52,9 +52,7 @@ export default function StatsPage() {
     return (
       <div className="flex flex-col items-center justify-center h-screen gap-3">
         <p className="text-destructive">{error || "No stats available"}</p>
-        <Button variant="outline" onClick={() => router.push("/")}>
-          Back to Library
-        </Button>
+        <BackToHome label="Back to Library" />
       </div>
     );
   }
@@ -68,12 +66,7 @@ export default function StatsPage() {
     <div className="flex flex-col h-screen">
       {/* Header */}
       <header className="flex items-center gap-3 px-4 py-3 border-b border-border bg-card">
-        <Button variant="ghost" size="sm" onClick={() => router.push("/")}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M19 12H5M12 19l-7-7 7-7" />
-          </svg>
-          Library
-        </Button>
+        <BackToHome label="Library" />
         <h1 className="text-sm font-medium">Practice Stats</h1>
       </header>
 

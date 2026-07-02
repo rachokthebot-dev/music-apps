@@ -3,6 +3,7 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { Play, SkipForward, Headphones, Music, ChevronUp, ChevronDown, Volume2 } from "lucide-react";
 import { AppSwitcher } from "@music-apps/shared/app-switcher";
+import { BackToHome } from "@music-apps/shared/back-to-home";
 import { progressions, type Progression } from "@/lib/progressions";
 import { getProgressionInKey, ALL_KEYS, type Chord } from "@/lib/music-theory";
 import { playProgressionOnce, playChord, ensureAudioContext, stopPlayback } from "@/lib/audio-engine";
@@ -285,6 +286,7 @@ export default function EarTrainingPage() {
       {/* Header */}
       <header className="border-b border-border px-4 md:px-6 py-3 md:py-4 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-2">
+          <BackToHome label="" />
           <Headphones className="w-6 h-6 md:w-7 md:h-7 text-primary" />
           <h1 className="text-xl md:text-2xl font-bold tracking-tight">Ear Training</h1>
         </div>

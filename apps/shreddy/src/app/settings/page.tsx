@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
 import { Button } from "@music-apps/ui";
-import { ArrowLeft, Save, Loader2, Moon, Sun, Activity, CheckCircle2, XCircle, AlertTriangle } from "lucide-react";
+import { BackToHome } from "@music-apps/shared/back-to-home";
+import { Save, Loader2, Moon, Sun, Activity, CheckCircle2, XCircle, AlertTriangle } from "lucide-react";
 
 interface DepStatus {
   name: string;
@@ -77,12 +77,7 @@ export default function SettingsPage() {
   return (
     <main className="flex-1 max-w-2xl mx-auto w-full px-4 py-6">
       <div className="flex items-center gap-3 mb-6">
-        <Link
-          href="/"
-          className="p-2 -ml-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted active:scale-90 transition-all"
-        >
-          <ArrowLeft className="size-5" />
-        </Link>
+        <BackToHome label="" />
         <h1 className="text-xl font-semibold text-foreground">Settings</h1>
       </div>
 

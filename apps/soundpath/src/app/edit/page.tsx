@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { BackToHome } from "@music-apps/shared/back-to-home";
 import MatchSongModal, { type MatchSongResult } from "@/components/MatchSongModal";
 import ToneDiscoveryModal from "@/components/ToneDiscoveryModal";
 import SignalChainFlow from "@/components/SignalChainFlow";
@@ -372,6 +373,7 @@ export default function Home() {
     >
       <header className="mb-6 flex items-baseline justify-between gap-4 flex-wrap">
         <div className="flex items-baseline gap-4 flex-wrap">
+          <BackToHome label="" className="self-center" />
           <h1 className="text-2xl font-semibold">soundpath</h1>
           <div className="text-sm text-zinc-500">
             Master: <span className="text-zinc-300">{masterName ?? "(none)"}</span>

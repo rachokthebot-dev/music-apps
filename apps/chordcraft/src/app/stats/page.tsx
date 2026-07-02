@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { usePracticeStats, formatDuration, type PracticeStats } from "@/hooks/usePracticeStats";
 import { Flame, Clock, Calendar, TrendingUp } from "lucide-react";
+import { BackToHome } from "@music-apps/shared/back-to-home";
 
 export default function StatsPage() {
   const { stats, refreshStats } = usePracticeStats();
@@ -25,6 +26,7 @@ export default function StatsPage() {
 
   return (
     <div className="flex-1 flex flex-col p-4 md:p-8 max-w-2xl mx-auto w-full">
+      <BackToHome label="Back" className="mb-2 self-start" />
       <h1 className="text-2xl md:text-3xl font-bold mb-6">Practice Stats</h1>
 
       {/* Stat cards */}

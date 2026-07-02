@@ -3,6 +3,19 @@
 @theme {
   --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue",
     Arial, sans-serif;
+
+  /* Tokens consumed by the shared AppSwitcher / BackToHome components.
+     Mapped to soundpath's dark + violet palette. */
+  --color-foreground: #e6e6e8;
+  --color-border: #2a2a2e;
+  --color-card: #161618;
+  --color-secondary: #1e1e22;
+  --color-secondary-foreground: #e6e6e8;
+  --color-accent: #2a2a2e;
+  --color-muted: #1e1e22;
+  --color-muted-foreground: #9a9aa0;
+  --color-primary: #a855f7;
+  --color-primary-foreground: #ffffff;
 }
 
 @layer base {

@@ -12,6 +12,7 @@
 
 import { useCallback, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { AppSwitcher } from "@music-apps/shared/app-switcher";
 
 export default function Landing() {
   const router = useRouter();
@@ -47,6 +48,9 @@ export default function Landing() {
 
   return (
     <main className="min-h-screen flex items-center justify-center p-8">
+      <div className="absolute top-4 right-4">
+        <AppSwitcher currentAppId="soundpath" />
+      </div>
       <div className="w-full max-w-3xl">
         <div className="text-center mb-10">
           <h1 className="text-3xl font-semibold mb-2">soundpath</h1>
@@ -92,6 +96,15 @@ export default function Landing() {
               parallel paths, 8 snapshots, and solo variants.
             </p>
             <div className="text-xs text-purple-300">Start from blank →</div>
+          </button>
+        </div>
+
+        <div className="mt-4 text-center">
+          <button
+            onClick={() => router.push("/library")}
+            className="text-xs text-zinc-400 hover:text-zinc-200 transition"
+          >
+            Browse saved presets in the Library →
           </button>
         </div>
 

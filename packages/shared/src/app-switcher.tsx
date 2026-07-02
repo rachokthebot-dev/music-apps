@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { APP_REGISTRY, getAppUrl, type AppEntry } from "./app-registry";
+import { APP_REGISTRY, getAppUrl, LAUNCHER_PATH } from "./app-registry";
 
 interface AppSwitcherProps {
   /** The id of the current app (must match an id in APP_REGISTRY) */
@@ -63,6 +63,21 @@ export function AppSwitcher({ currentAppId }: AppSwitcherProps) {
             </span>
           </div>
           <div className="p-1.5">
+            {/* Back to the all-apps launcher. Plain <a> (not next/link) so the
+                app's basePath is NOT prepended — this must hit the proxy root. */}
+            <a
+              href={LAUNCHER_PATH}
+              className="flex items-center gap-3 px-3 py-2.5 md:py-3 rounded-lg transition-colors hover:bg-secondary text-foreground cursor-pointer"
+            >
+              <div className="w-8 h-8 md:w-9 md:h-9 rounded-lg flex items-center justify-center bg-secondary text-muted-foreground">
+                <HomeIcon />
+              </div>
+              <div className="flex-1 min-w-0">
+                <span className="font-semibold text-sm">All apps</span>
+                <span className="block text-xs text-muted-foreground truncate">Back to the launcher</span>
+              </div>
+            </a>
+            <div className="my-1 border-t border-border" />
             {APP_REGISTRY.map((app) => {
               const isCurrent = app.id === currentAppId;
               return (
@@ -109,6 +124,20 @@ function GridIcon() {
   );
 }
 
+function HomeIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className="md:w-[18px] md:h-[18px]">
+      <path
+        d="M2 7.5L8 2.5l6 5M3.5 6.5V13a.5.5 0 00.5.5h8a.5.5 0 00.5-.5V6.5"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 function AppIcon({ appId }: { appId: string }) {
   const iconClass = "w-8 h-8 md:w-9 md:h-9 rounded-lg flex items-center justify-center text-sm font-bold";
 
@@ -121,8 +150,10 @@ function AppIcon({ appId }: { appId: string }) {
       return <div className={`${iconClass} bg-purple-500/15 text-purple-400`}>C</div>;
     case "metronome":
       return <div className={`${iconClass} bg-rose-500/15 text-rose-400`}>M</div>;
-    case "dashboard":
-      return <div className={`${iconClass} bg-emerald-500/15 text-emerald-400`}>D</div>;
+    case "soundpath":
+      return <div className={`${iconClass} bg-violet-500/15 text-violet-400`}>P</div>;
+    case "helaix":
+      return <div className={`${iconClass} bg-amber-500/15 text-amber-400`}>H</div>;
     default:
       return <div className={`${iconClass} bg-secondary text-muted-foreground`}>{appId[0]?.toUpperCase()}</div>;
   }

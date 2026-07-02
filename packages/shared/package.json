@@ -10,6 +10,7 @@
     "./ffmpeg-pitch": "./src/ffmpeg-pitch.ts",
     "./practice-stats": "./src/practice-stats.ts",
     "./app-registry": "./src/app-registry.ts",
-    "./app-switcher": "./src/app-switcher.tsx"
+    "./app-switcher": "./src/app-switcher.tsx",
+    "./back-to-home": "./src/back-to-home.tsx"
   }
 }
