@@ -22,17 +22,30 @@ type Interval = 1 | 3 | 5 | 10;
 
 const WARNING_DISMISSED_KEY = "shreddy.distraction.warningDismissed";
 
-const WORDS = [
-  "apple", "river", "stone", "candle", "table", "north", "lemon",
-  "voice", "circle", "salt", "thunder", "honey", "iron", "willow",
+// Short read-aloud cues — double as practice reminders for the dual-task.
+const SENTENCES = [
+  "Keep your wrist relaxed.",
+  "Breathe out on the beat.",
+  "Let the last note ring.",
+  "Watch your picking hand.",
+  "Stay light on the strings.",
+  "Feel the pulse, not the notes.",
+  "Ease your grip on the neck.",
+  "Land each note on time.",
+  "Drop your shoulders down.",
+  "Small motions, big sound.",
 ];
+
+// A jump in currentTime larger than this = a scrub / seek / loop wrap, not a
+// normal timeupdate tick (~4x/sec). Used to restart the distractor timer.
+const SEEK_THRESHOLD_SEC = 1;
 
 function generateDistractor(mode: Mode): string {
   if (mode === "numbers") {
     return String(Math.floor(Math.random() * 90) + 10);
   }
   if (mode === "words") {
-    return WORDS[Math.floor(Math.random() * WORDS.length)];
+    return SENTENCES[Math.floor(Math.random() * SENTENCES.length)];
   }
   const a = Math.floor(Math.random() * 12) + 2;
   const b = Math.floor(Math.random() * 12) + 2;
@@ -63,8 +76,22 @@ export function DistractionOverlay({
   // effect below so localStorage doesn't break the static render.
   const [showWarning, setShowWarning] = useState(false);
   const [result, setResult] = useState<Result>({ total: 0, passed: 0, failed: 0 });
+  const [secondsLeft, setSecondsLeft] = useState<number>(interval);
 
-  const lastShownRef = useRef(0);
+  // Wall-clock timestamp for the next spawn, plus mirrors of props/state the
+  // ticker reads so it doesn't need to re-subscribe on every change. Timing is
+  // wall-clock so tempo changes and seeks can't corrupt the cadence the way
+  // the old song-time coupling did.
+  const nextAtRef = useRef(0);
+  const prevTimeRef = useRef(currentTime);
+  const currentTimeRef = useRef(currentTime);
+  const modeRef = useRef<Mode>(mode);
+
+  // Keep the ticker's mirrors current without re-subscribing the interval.
+  useEffect(() => {
+    currentTimeRef.current = currentTime;
+    modeRef.current = mode;
+  });
 
   // Persist warning dismissal so iPad practice sessions don't re-show the
   // novice/advanced caveat every time the overlay opens. Read after mount to
@@ -88,18 +115,43 @@ export function DistractionOverlay({
     }
   }, []);
 
-  // Spawn a new distractor when interval has elapsed (driven by song
-  // currentTime so distractor pacing follows tempo/seek, not wall-clock).
+  // A single wall-clock ticker owns spawning + the countdown. It runs only
+  // while playing (so distractors never fire while paused) and is torn down /
+  // restarted whenever play toggles or the interval changes — which is what
+  // resets the cadence on those transport changes. Because setState lives in
+  // the interval callback (not the effect body) this is a legitimate external
+  // subscription, and refs let the callback read fresh props without
+  // re-subscribing on every tick.
   useEffect(() => {
-    if (!playing) {
-      setDistractor(null);
-      return;
-    }
-    if (currentTime - lastShownRef.current >= interval) {
-      lastShownRef.current = currentTime;
-      setDistractor(generateDistractor(mode));
-    }
-  }, [currentTime, interval, mode, playing]);
+    if (!playing) return;
+    // Fresh cadence each time the ticker (re)starts; the first tick (≤200ms)
+    // reconciles the visible countdown and any lingering card.
+    nextAtRef.current = Date.now() + interval * 1000;
+    prevTimeRef.current = currentTimeRef.current;
+
+    const id = window.setInterval(() => {
+      const now = Date.now();
+      const ct = currentTimeRef.current;
+      // A jump larger than any normal playback tick = the user scrubbed /
+      // seeked / a loop wrapped. Restart the timer from here so distractors
+      // keep coming instead of stalling on a stale mark.
+      if (Math.abs(ct - prevTimeRef.current) > SEEK_THRESHOLD_SEC) {
+        prevTimeRef.current = ct;
+        nextAtRef.current = now + interval * 1000;
+        setDistractor(null);
+        setSecondsLeft(interval);
+        return;
+      }
+      prevTimeRef.current = ct;
+      if (now >= nextAtRef.current) {
+        nextAtRef.current = now + interval * 1000;
+        setDistractor(generateDistractor(modeRef.current));
+      }
+      setSecondsLeft(Math.max(0, Math.ceil((nextAtRef.current - now) / 1000)));
+    }, 200);
+
+    return () => window.clearInterval(id);
+  }, [playing, interval]);
 
   const recordResult = useCallback(
     (passed: boolean) => {
@@ -160,7 +212,13 @@ export function DistractionOverlay({
       <section className="relative h-24 rounded-xl bg-muted/40 border border-border flex items-center justify-center overflow-hidden">
         {distractor ? (
           <div className="text-center">
-            <div className="text-4xl sm:text-5xl font-mono tabular-nums text-foreground leading-none">
+            <div
+              className={
+                mode === "words"
+                  ? "text-xl sm:text-2xl font-medium text-foreground leading-tight text-balance px-4"
+                  : "text-4xl sm:text-5xl font-mono tabular-nums text-foreground leading-none"
+              }
+            >
               {distractor}
             </div>
             <div className="text-[10px] text-muted-foreground mt-1.5 uppercase tracking-wider">
@@ -170,14 +228,7 @@ export function DistractionOverlay({
         ) : (
           <div className="text-center text-muted-foreground">
             {playing ? (
-              <span className="text-xs">
-                Next in{" "}
-                {Math.max(
-                  0,
-                  Math.ceil(interval - (currentTime - lastShownRef.current))
-                )}
-                s
-              </span>
+              <span className="text-xs">Next in {secondsLeft}s</span>
             ) : (
               <span className="text-xs">Press play to start</span>
             )}
