@@ -20,6 +20,7 @@ import {
 import { designPreset, validateDesign } from "@/lib/designPreset";
 import { designPresetTwoAgents } from "@/lib/designPresetAgents";
 import type { LlmProvider } from "@/lib/llm";
+import { savePreset } from "@/lib/presetStore";
 
 export const dynamic = "force-dynamic";
 
@@ -32,6 +33,7 @@ export async function POST(req: Request) {
       provider?: LlmProvider;
       mode?: DesignMode;
       ollamaModel?: string;
+      parentId?: string; // set when iterating from a saved Library preset
     };
     const tones = body.tones ?? [];
     if (tones.length !== 3 || tones.some((t) => !t || !t.trim())) {
@@ -77,9 +79,34 @@ export async function POST(req: Request) {
       loudnessDb: Number((s.loudnessDb - estimateAllSnapshots(preset)[0].loudnessDb).toFixed(2)),
     }));
 
+    const hlx = stringifyHelixPreset(preset);
+
+    // Persist the generation to the Library (best-effort — never fail the
+    // response the user just waited on). Returns the row id so the UI can
+    // reference it for iterate/download.
+    let presetId: string | null = null;
+    try {
+      const saved = await savePreset({
+        name: tones.map((t) => t.trim()).join(" · ").slice(0, 80),
+        flow: "design",
+        provider: body.provider ?? null,
+        model: body.ollamaModel ?? null,
+        hardwareTarget: "LT",
+        tones: tones.map((t) => t.trim()),
+        hlx,
+        snapshots: loudness.map((l) => l.name),
+        loudness,
+        parentId: body.parentId ?? null,
+      });
+      presetId = saved.id;
+    } catch (e) {
+      console.error("[design-preset] failed to save to Library:", e);
+    }
+
     return Response.json({
       ok: true,
       mode,
+      presetId,       // Library row id; null if the save failed
       rig,            // null for single-agent mode
       design,
       applyReport: report,
@@ -89,7 +116,7 @@ export async function POST(req: Request) {
       },
       loudness,
       durations,      // present for two-agent mode
-      hlx: stringifyHelixPreset(preset),
+      hlx,
     });
   } catch (err) {
     return Response.json(

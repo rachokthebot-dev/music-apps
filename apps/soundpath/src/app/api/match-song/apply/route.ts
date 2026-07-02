@@ -12,11 +12,13 @@ import { join } from "node:path";
 import {
   applySnapshotPatch,
   stringifyHelixPreset,
+  estimateAllSnapshots,
   type SnapshotPatch,
 } from "@music-apps/gain-estimator";
 
 import { PRESET_DIR, readActiveMaster } from "@/lib/masterStore";
 import type { MatchSongResult } from "@/lib/matchSong";
+import { savePreset } from "@/lib/presetStore";
 
 export const dynamic = "force-dynamic";
 
@@ -51,6 +53,34 @@ export async function POST(req: Request) {
     );
     const body = stringifyHelixPreset(patched);
     writeFileSync(outPath, body, "utf-8");
+
+    // Persist to the Library (best-effort). Tone Discovery routes through this
+    // same apply endpoint; the whyThisExemplar field distinguishes it.
+    const isToneDiscovery =
+      typeof (result as { whyThisExemplar?: unknown }).whyThisExemplar === "string";
+    try {
+      const loudness = estimateAllSnapshots(patched).map((s, i, arr) => ({
+        index: i,
+        name: s.snapshotName,
+        loudnessDb: Number((s.loudnessDb - arr[0].loudnessDb).toFixed(2)),
+      }));
+      await savePreset({
+        name: `${result.song} — ${result.artist} (${result.targetSnapshotName})`.slice(0, 80),
+        flow: isToneDiscovery ? "tone-discovery" : "match-song",
+        hardwareTarget: "LT",
+        tones: {
+          song: result.song,
+          artist: result.artist,
+          targetSnapshotName: result.targetSnapshotName,
+          whyThisExemplar: (result as { whyThisExemplar?: string }).whyThisExemplar,
+        },
+        hlx: body,
+        snapshots: loudness.map((l) => l.name),
+        loudness,
+      });
+    } catch (e) {
+      console.error("[match-song/apply] failed to save to Library:", e);
+    }
 
     const fileName = `${preset.data.meta.name || "preset"} — match ${result.targetSnapshotName} — ${tag}.hlx`;
 

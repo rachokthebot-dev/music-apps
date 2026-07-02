@@ -1,0 +1,32 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+// One row per AI generation from SoundPath or HelAIx. Stores the full preset
+// payload so a saved generation can be re-downloaded, reopened for editing, or
+// re-aligned without depending on a loose .hlx still existing on disk.
+model GeneratedPreset {
+  id             String   @id @default(uuid())
+  name           String
+  sourceApp      String   @default("soundpath") // "soundpath" | "helaix"
+  flow           String                          // "design" | "match-song" | "tone-discovery" | "helaix"
+  provider       String?                         // LLM provider used, if known
+  model          String?                         // LLM model used, if known
+  hardwareTarget String?                         // e.g. "LT" | "Floor" | "Stomp"
+  tones          String?                         // JSON: tone descriptions / prompt inputs
+  hlx            String                          // the preset JSON (importable .hlx contents)
+  snapshots      String?                         // JSON: snapshot name list
+  loudness       String?                         // JSON: per-snapshot loudness (dB rel. snapshot 0)
+  favorite       Boolean  @default(false)
+  parentId       String?                         // set when this gen was iterated from another
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  parent   GeneratedPreset?  @relation("PresetLineage", fields: [parentId], references: [id], onDelete: SetNull)
+  children GeneratedPreset[] @relation("PresetLineage")
+}

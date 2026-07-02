@@ -10,6 +10,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { BackToHome } from "@music-apps/shared/back-to-home";
 import LlmProgress from "@/components/LlmProgress";
 import ProviderToggle, { useProvider } from "@/components/ProviderToggle";
 
@@ -107,6 +108,22 @@ export default function DesignPage() {
   const [err, setErr] = useState<string | null>(null);
   const [provider, setProvider, probe] = useProvider();
   const [mode, setMode] = useState<"single" | "two-agent">("two-agent");
+  // Set when iterating from a saved Library preset — links the new generation
+  // back to its parent for version history.
+  const [parentId, setParentId] = useState<string | null>(null);
+
+  // Prefill tones + parentId when arriving via the Library "Iterate" action
+  // (?t0=…&t1=…&t2=…&parentId=…). Read from the URL directly to avoid the
+  // useSearchParams Suspense requirement in this fully-client page.
+  useEffect(() => {
+    const sp = new URLSearchParams(window.location.search);
+    const t = [sp.get("t0"), sp.get("t1"), sp.get("t2")];
+    if (t.some((v) => v)) {
+      setTones([t[0] ?? "", t[1] ?? "", t[2] ?? ""]);
+    }
+    const pid = sp.get("parentId");
+    if (pid) setParentId(pid);
+  }, []);
 
   // Hard rule: two-agent mode is cloud-only. Local Gemma takes 6–8 min PER call,
   // making two sequential calls impractical. Auto-snap to single-agent whenever
@@ -137,7 +154,7 @@ export default function DesignPage() {
       const r = await fetch("/soundpath/api/design-preset", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tones, provider, mode }),
+        body: JSON.stringify({ tones, provider, mode, parentId }),
       });
       const j = (await r.json()) as DesignResponse;
       if (!j.ok) throw new Error(j.error ?? "design failed");
@@ -147,7 +164,7 @@ export default function DesignPage() {
     } finally {
       setBusy(null);
     }
-  }, [tones]);
+  }, [tones, provider, mode, parentId]);
 
   const handleOpenInEditor = useCallback(async () => {
     if (!result?.hlx) return;
@@ -189,12 +206,7 @@ export default function DesignPage() {
             Describe 3 tones. Gemini designs the chain, 8 snapshots, and solo variants.
           </p>
         </div>
-        <button
-          onClick={() => router.push("/")}
-          className="px-3 py-1.5 text-sm rounded-md border border-zinc-700 bg-zinc-900 hover:bg-zinc-800"
-        >
-          ← Back
-        </button>
+        <BackToHome label="Back" />
       </header>
 
       {/* Input form */}
