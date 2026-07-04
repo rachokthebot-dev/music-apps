@@ -6,6 +6,11 @@
 <meta name="theme-color" content="#0b0b0e" media="(prefers-color-scheme: dark)" />
 <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
 <title>Music apps</title>
+<script>
+// Theme boot — same contract as the apps' layout scripts:
+// "dark" → dark · any other value → light · absent → follow the system.
+try{const t=localStorage.getItem('theme');if(t==='dark'||(!t&&matchMedia('(prefers-color-scheme:dark)').matches))document.documentElement.classList.add('dark')}catch{}
+</script>
 <style>
   :root {
     --ink: #0b0b0e;
@@ -16,15 +21,13 @@
     --canvas-alt: #f6f6f8;
     --radius: 22px;
   }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --ink: #f5f5f7;
-      --ink-soft: #c7c7cc;
-      --ink-mute: #8e8e93;
-      --line: #2a2a2e;
-      --canvas: #0b0b0e;
-      --canvas-alt: #1a1a1e;
-    }
+  html.dark {
+    --ink: #f5f5f7;
+    --ink-soft: #c7c7cc;
+    --ink-mute: #8e8e93;
+    --line: #2a2a2e;
+    --canvas: #0b0b0e;
+    --canvas-alt: #1a1a1e;
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   html, body { margin: 0; padding: 0; }
@@ -48,7 +51,11 @@
 
   header {
     margin-bottom: 32px;
-    text-align: left;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
   }
   h1 {
     margin: 0 0 8px;
@@ -63,6 +70,32 @@
     line-height: 1.45;
     color: var(--ink-mute);
     max-width: 36ch;
+  }
+
+  /* Theme segmented control */
+  .seg {
+    display: inline-flex;
+    gap: 2px;
+    padding: 3px;
+    border-radius: 12px;
+    background: var(--canvas-alt);
+    margin-top: 8px;
+  }
+  .seg button {
+    appearance: none;
+    border: 0;
+    background: transparent;
+    color: var(--ink-mute);
+    font: inherit;
+    font-size: 13px;
+    padding: 6px 12px;
+    border-radius: 9px;
+    cursor: pointer;
+  }
+  .seg button.active {
+    background: var(--canvas);
+    color: var(--ink);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.12);
   }
 
   .grid {
@@ -131,19 +164,96 @@
   .a-lickbank   { --accent: #5b6cff; }
   .a-chordcraft { --accent: #17c27a; }
   .a-metronome  { --accent: #0b0b0e; }
-  @media (prefers-color-scheme: dark) {
-    .a-metronome { --accent: #f5f5f7; }
-    .a-metronome .icon { color: #0b0b0e; }
-  }
+  .dark .a-metronome { --accent: #f5f5f7; }
+  .dark .a-metronome .icon { color: #0b0b0e; }
   .a-soundpath  { --accent: #a855f7; }
   .a-helaix     { --accent: #fb923c; }
+
+  /* Settings hub */
+  .settings { margin-top: 40px; }
+  .settings > summary {
+    cursor: pointer;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--ink-soft);
+    list-style: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    user-select: none;
+  }
+  .settings > summary::-webkit-details-marker { display: none; }
+  .settings > summary::before { content: "▸"; font-size: 12px; color: var(--ink-mute); }
+  .settings[open] > summary::before { content: "▾"; }
+  .s-note {
+    margin: 10px 0 0;
+    font-size: 12.5px;
+    color: var(--ink-mute);
+  }
+  .s-card {
+    margin-top: 14px;
+    padding: 16px 18px;
+    border-radius: var(--radius);
+    background: var(--canvas-alt);
+  }
+  .s-card h2 {
+    margin: 0 0 10px;
+    font-size: 14px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+  .s-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 6px 0;
+    font-size: 14px;
+  }
+  .s-row label { color: var(--ink-soft); }
+  .s-row .val { color: var(--ink-mute); font-size: 13px; }
+  .s-card input[type="number"], .s-card select {
+    font: inherit;
+    font-size: 14px;
+    color: var(--ink);
+    background: var(--canvas);
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    padding: 5px 8px;
+    width: 90px;
+  }
+  .s-card select { width: auto; }
+  .s-card input[type="checkbox"] { width: 17px; height: 17px; accent-color: var(--ink); }
+  .s-btn {
+    appearance: none;
+    font: inherit;
+    font-size: 13px;
+    padding: 6px 12px;
+    border-radius: 9px;
+    border: 1px solid var(--line);
+    background: var(--canvas);
+    color: var(--ink);
+    cursor: pointer;
+  }
+  .s-btn:hover { background: var(--canvas-alt); }
+  .s-btn:disabled { opacity: 0.4; cursor: default; }
+  .s-status { font-size: 12.5px; color: var(--ink-mute); }
+  .s-link { font-size: 13px; color: var(--ink-mute); text-decoration: underline; }
+  .s-link:hover { color: var(--ink); }
 </style>
 </head>
 <body>
 <div class="shell">
   <header>
-    <h1>Music apps</h1>
-    <p class="lede">Practice tools for guitar players. Tap one to open.</p>
+    <div>
+      <h1>Music apps</h1>
+      <p class="lede">Practice tools for guitar players. Tap one to open.</p>
+    </div>
+    <div class="seg" id="theme-seg" role="group" aria-label="Theme">
+      <button type="button" data-mode="light">Light</button>
+      <button type="button" data-mode="system">System</button>
+      <button type="button" data-mode="dark">Dark</button>
+    </div>
   </header>
 
   <div class="grid">
@@ -221,6 +331,273 @@
     </a>
 
   </div>
+
+  <details class="settings" id="settings">
+    <summary>Settings</summary>
+    <p class="s-note">
+      Theme applies everywhere; other preferences apply to apps opened through this hub.
+    </p>
+
+    <section class="s-card" id="s-shreddy">
+      <h2>Shreddy</h2>
+      <div id="shreddy-body"><span class="s-status">Open to load…</span></div>
+    </section>
+
+    <section class="s-card" id="s-metronome">
+      <h2>Metronome</h2>
+      <div class="s-row">
+        <label for="met-bpm">Tempo (BPM)</label>
+        <input type="number" id="met-bpm" min="40" max="320" step="1" />
+      </div>
+      <div class="s-row">
+        <label for="met-sig">Time signature</label>
+        <select id="met-sig">
+          <option value="0">4/4</option>
+          <option value="1">3/4</option>
+          <option value="2">6/8</option>
+        </select>
+      </div>
+      <div class="s-row">
+        <label for="met-pattern">Pattern</label>
+        <select id="met-pattern">
+          <option value="straight">Straight</option>
+          <option value="dotted-fwd">Dotted (forward)</option>
+          <option value="dotted-rev">Dotted (reverse)</option>
+          <option value="triplet">Triplet</option>
+        </select>
+      </div>
+      <div class="s-row">
+        <label for="met-timer">Timer (seconds, 0 = off)</label>
+        <input type="number" id="met-timer" min="0" step="30" />
+      </div>
+      <div class="s-row"><span></span><span class="s-status" id="met-status"></span></div>
+    </section>
+
+    <section class="s-card" id="s-chordcraft">
+      <h2>ChordCraft</h2>
+      <div class="s-row">
+        <label>Practice sessions</label>
+        <span>
+          <span class="val" id="cc-sessions">–</span>
+          <button type="button" class="s-btn" id="cc-clear-sessions">Clear…</button>
+        </span>
+      </div>
+      <div class="s-row">
+        <label>Custom progressions</label>
+        <span>
+          <span class="val" id="cc-progressions">–</span>
+          <button type="button" class="s-btn" id="cc-clear-progressions">Clear…</button>
+        </span>
+      </div>
+    </section>
+
+    <section class="s-card" id="s-soundpath">
+      <h2>SoundPath</h2>
+      <div class="s-row">
+        <label>Gain targets — preset A</label>
+        <span>
+          <span class="val" id="sp-a">–</span>
+          <button type="button" class="s-btn" id="sp-clear-a">Clear</button>
+        </span>
+      </div>
+      <div class="s-row">
+        <label>Gain targets — preset B</label>
+        <span>
+          <span class="val" id="sp-b">–</span>
+          <button type="button" class="s-btn" id="sp-clear-b">Clear</button>
+        </span>
+      </div>
+      <p class="s-note">Preset folder is set server-side via the <code>SOUNDPATH_PRESET_DIR</code> env var.</p>
+    </section>
+  </details>
 </div>
+
+<script>
+// All hub state is same-origin: localStorage writes here are the same storage
+// the apps read when opened through this proxy (:8080). Apps opened standalone
+// on :3000-3005 are different origins and won't see these preferences.
+(function () {
+  // ---------------------------------------------------------------------
+  // Theme switch — Light / System / Dark
+  // ---------------------------------------------------------------------
+  var mq = matchMedia("(prefers-color-scheme: dark)");
+  var seg = document.getElementById("theme-seg");
+  var metas = document.querySelectorAll('meta[name="theme-color"]');
+
+  function storedTheme() {
+    try { return localStorage.getItem("theme"); } catch { return null; }
+  }
+  function applyTheme() {
+    var t = storedTheme(); // "dark" | "light" | null
+    var dark = t === "dark" || (!t && mq.matches);
+    document.documentElement.classList.toggle("dark", dark);
+    // When a theme is forced, pin both theme-color metas so iOS chrome follows
+    // the page, not the OS. When back on System, media attributes take over.
+    metas.forEach(function (m) {
+      if (t) m.setAttribute("content", dark ? "#0b0b0e" : "#ffffff");
+      else m.setAttribute("content", m.media.indexOf("dark") >= 0 ? "#0b0b0e" : "#ffffff");
+    });
+    seg.querySelectorAll("button").forEach(function (b) {
+      b.classList.toggle("active", b.dataset.mode === (t || "system"));
+    });
+  }
+  seg.addEventListener("click", function (e) {
+    var mode = e.target && e.target.dataset && e.target.dataset.mode;
+    if (!mode) return;
+    try {
+      if (mode === "system") localStorage.removeItem("theme");
+      else localStorage.setItem("theme", mode);
+    } catch {}
+    applyTheme();
+  });
+  mq.addEventListener("change", function () { if (!storedTheme()) applyTheme(); });
+  applyTheme();
+
+  // ---------------------------------------------------------------------
+  // Small helpers
+  // ---------------------------------------------------------------------
+  function lsJson(key, fallback) {
+    try { return JSON.parse(localStorage.getItem(key)) ?? fallback; } catch { return fallback; }
+  }
+  function flash(el, text) {
+    el.textContent = text;
+    setTimeout(function () { el.textContent = ""; }, 2000);
+  }
+
+  // ---------------------------------------------------------------------
+  // Metronome — localStorage "metronome-settings"
+  // ---------------------------------------------------------------------
+  var MET_KEY = "metronome-settings";
+  var metDefaults = { bpm: 120, timeSigIndex: 0, pattern: "straight", timerSeconds: 0 };
+  var metBpm = document.getElementById("met-bpm");
+  var metSig = document.getElementById("met-sig");
+  var metPattern = document.getElementById("met-pattern");
+  var metTimer = document.getElementById("met-timer");
+  var metStatus = document.getElementById("met-status");
+
+  function metLoad() {
+    var s = Object.assign({}, metDefaults, lsJson(MET_KEY, {}));
+    metBpm.value = s.bpm;
+    metSig.value = String(s.timeSigIndex);
+    metPattern.value = s.pattern;
+    metTimer.value = s.timerSeconds;
+  }
+  function metSave() {
+    var bpm = Math.max(40, Math.min(320, Number(metBpm.value) || metDefaults.bpm));
+    metBpm.value = bpm;
+    var next = Object.assign({}, lsJson(MET_KEY, {}), {
+      bpm: bpm,
+      timeSigIndex: Number(metSig.value),
+      pattern: metPattern.value,
+      timerSeconds: Math.max(0, Number(metTimer.value) || 0),
+    });
+    try { localStorage.setItem(MET_KEY, JSON.stringify(next)); flash(metStatus, "Saved"); } catch {}
+  }
+  [metBpm, metSig, metPattern, metTimer].forEach(function (el) {
+    el.addEventListener("change", metSave);
+  });
+  metLoad();
+
+  // ---------------------------------------------------------------------
+  // ChordCraft — session/progression data with clear buttons
+  // ---------------------------------------------------------------------
+  var CC_SESSIONS = "chordcraft-practice-sessions";
+  var CC_PROGRESSIONS = "chordcraft-custom-progressions";
+  function ccRender() {
+    var s = lsJson(CC_SESSIONS, []);
+    var p = lsJson(CC_PROGRESSIONS, []);
+    document.getElementById("cc-sessions").textContent = (Array.isArray(s) ? s.length : 0) + " saved";
+    document.getElementById("cc-progressions").textContent = (Array.isArray(p) ? p.length : 0) + " saved";
+  }
+  document.getElementById("cc-clear-sessions").addEventListener("click", function () {
+    if (confirm("Delete all ChordCraft practice session history?")) {
+      try { localStorage.removeItem(CC_SESSIONS); } catch {}
+      ccRender();
+    }
+  });
+  document.getElementById("cc-clear-progressions").addEventListener("click", function () {
+    if (confirm("Delete all ChordCraft custom progressions?")) {
+      try { localStorage.removeItem(CC_PROGRESSIONS); } catch {}
+      ccRender();
+    }
+  });
+  ccRender();
+
+  // ---------------------------------------------------------------------
+  // SoundPath — gain-target prefs per slot
+  // ---------------------------------------------------------------------
+  function spKey(slot) { return "soundpath:gainTargets:" + slot; }
+  function spRender() {
+    ["a", "b"].forEach(function (slot) {
+      var set = null;
+      try { set = localStorage.getItem(spKey(slot)); } catch {}
+      document.getElementById("sp-" + slot).textContent = set ? "set" : "not set";
+      document.getElementById("sp-clear-" + slot).disabled = !set;
+    });
+  }
+  ["a", "b"].forEach(function (slot) {
+    document.getElementById("sp-clear-" + slot).addEventListener("click", function () {
+      try { localStorage.removeItem(spKey(slot)); } catch {}
+      spRender();
+    });
+  });
+  spRender();
+
+  // ---------------------------------------------------------------------
+  // Shreddy — DB-backed settings via same-origin API; loaded lazily on the
+  // first open of the settings section so the hub renders with Shreddy down.
+  // ---------------------------------------------------------------------
+  var shreddyLoaded = false;
+  document.getElementById("settings").addEventListener("toggle", function (e) {
+    if (!e.target.open || shreddyLoaded) return;
+    shreddyLoaded = true;
+    loadShreddy();
+  });
+
+  function loadShreddy() {
+    var body = document.getElementById("shreddy-body");
+    fetch("/shreddy/api/settings")
+      .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+      .then(function (s) { renderShreddy(body, s); })
+      .catch(function () {
+        body.innerHTML = '<span class="s-status">Shreddy isn’t running — start it to edit these settings.</span>';
+        shreddyLoaded = false; // retry on next open
+      });
+  }
+
+  function renderShreddy(body, s) {
+    body.innerHTML =
+      '<div class="s-row"><label for="sh-max">YouTube import limit (minutes)</label>' +
+      '<input type="number" id="sh-max" min="1" step="1" /></div>' +
+      '<div class="s-row"><label for="sh-analyze">Analyze structure on import</label>' +
+      '<input type="checkbox" id="sh-analyze" /></div>' +
+      '<div class="s-row"><label for="sh-combine">Combine subsections</label>' +
+      '<input type="checkbox" id="sh-combine" /></div>' +
+      '<div class="s-row"><a class="s-link" href="/shreddy/settings">Full settings (API key, tools) →</a>' +
+      '<span><span class="s-status" id="sh-status"></span> ' +
+      '<button type="button" class="s-btn" id="sh-save">Save</button></span></div>';
+    document.getElementById("sh-max").value = Math.round((s.youtubeMaxDuration || 600) / 60);
+    document.getElementById("sh-analyze").checked = Boolean(s.analyzeOnImport);
+    document.getElementById("sh-combine").checked = Boolean(s.combineSubsections);
+    document.getElementById("sh-save").addEventListener("click", function () {
+      var btn = this;
+      btn.disabled = true;
+      fetch("/shreddy/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          youtubeMaxDuration: Math.max(1, Number(document.getElementById("sh-max").value) || 10) * 60,
+          analyzeOnImport: document.getElementById("sh-analyze").checked,
+          combineSubsections: document.getElementById("sh-combine").checked,
+        }),
+      })
+        .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+        .then(function () { flash(document.getElementById("sh-status"), "Saved"); })
+        .catch(function (err) { flash(document.getElementById("sh-status"), "Failed: " + err.message); })
+        .finally(function () { btn.disabled = false; });
+    });
+  }
+})();
+</script>
 </body>
 </html>

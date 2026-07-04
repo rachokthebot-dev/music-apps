@@ -23,3 +23,5 @@ export { BackToHome } from "./back-to-home";
 export { corsHeaders } from "./cors";
 
 export { basepathShimSource } from "./basepath-shim";
+
+export { themeInitSource } from "./theme-init";
