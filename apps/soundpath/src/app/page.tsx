@@ -1,145 +1,143 @@
 "use client";
 
 /**
- * Landing page — two entry points to the app.
+ * SoundPath — gain alignment between Helix presets.
  *
- *   Upload existing preset → /edit/   (signal-flow editor + Match Song + …)
- *   Design new preset      → /design/ (3 tone fields → Gemini designs chain + snapshots)
+ * Two preset slots:
+ *   A — baseline preset: pick a baseline snapshot, align the other snapshots
+ *       to it with per-snapshot dB targets.
+ *   B — preset to align: same within-preset flow, plus "Align B to A" which
+ *       shifts B's Output Block so B's baseline snapshot matches A's.
  *
- * No master is auto-loaded here. The editor route guards itself: if no master
- * has been uploaded, it shows the same chooser embedded.
+ * Cross-preset math: the estimator never sees the Output Block, so each
+ * pane's effective baseline loudness is rawLoudnessDb + outputGain. Aligning
+ * stages a new Output Block gain on B (uniform shift — B's internal
+ * snapshot-to-snapshot alignment is preserved) and Export writes it out.
  */
 
-import { useCallback, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useCallback, useState } from "react";
+import Link from "next/link";
 import { AppSwitcher } from "@music-apps/shared/app-switcher";
+import PresetPane, { type PaneStatus } from "@/components/PresetPane";
 
-export default function Landing() {
-  const router = useRouter();
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
+const GAIN_MIN = -30;
+const GAIN_MAX = 12;
 
-  const handleUpload = useCallback(
-    async (file: File) => {
-      setBusy(true);
-      setErr(null);
-      try {
-        const form = new FormData();
-        form.append("file", file);
-        const r = await fetch("/soundpath/api/master", { method: "POST", body: form });
-        const j = (await r.json()) as { ok: boolean; error?: string };
-        if (!j.ok) throw new Error(j.error ?? "upload failed");
-        router.push("/edit");
-      } catch (e) {
-        setErr(e instanceof Error ? e.message : String(e));
-        setBusy(false);
-      }
-    },
-    [router]
-  );
+export default function Home() {
+  const [statusA, setStatusA] = useState<PaneStatus | null>(null);
+  const [statusB, setStatusB] = useState<PaneStatus | null>(null);
+  const [pendingGainA, setPendingGainA] = useState<number | null>(null);
+  const [pendingGainB, setPendingGainB] = useState<number | null>(null);
+  const [clampNote, setClampNote] = useState<string | null>(null);
 
-  const onPickFile = () => fileInputRef.current?.click();
-  const onFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0];
-    if (f) handleUpload(f);
-    e.target.value = "";
-  };
+  const onStatusA = useCallback((s: PaneStatus) => setStatusA(s), []);
+  const onStatusB = useCallback((s: PaneStatus) => setStatusB(s), []);
+
+  const bothLoaded = Boolean(statusA?.loaded && statusB?.loaded);
+
+  // Effective baseline loudness per pane = raw estimate of the baseline
+  // snapshot + Output Block gain (staged value wins over the loaded one).
+  const effectiveDb = (status: PaneStatus, pendingGain: number | null): number =>
+    (status.rawLoudness[status.baselineIndex] ?? 0) + (pendingGain ?? status.outputGain);
+
+  const effA = statusA?.loaded ? effectiveDb(statusA, pendingGainA) : null;
+  const effB = statusB?.loaded ? effectiveDb(statusB, pendingGainB) : null;
+  const delta = effA !== null && effB !== null ? effA - effB : null;
+
+  const handleAlignBtoA = useCallback(() => {
+    if (!statusA?.loaded || !statusB?.loaded) return;
+    const targetGain =
+      effectiveDb(statusA, pendingGainA) - (statusB.rawLoudness[statusB.baselineIndex] ?? 0);
+    const clamped = Math.max(GAIN_MIN, Math.min(GAIN_MAX, Number(targetGain.toFixed(1))));
+    setPendingGainB(clamped);
+    setClampNote(
+      clamped !== Number(targetGain.toFixed(1))
+        ? `Wanted ${targetGain.toFixed(1)} dB but the Output Block range is ${GAIN_MIN}…+${GAIN_MAX} dB — staged ${clamped.toFixed(1)} dB.`
+        : null
+    );
+  }, [statusA, statusB, pendingGainA]);
 
   return (
-    <main className="min-h-screen flex items-center justify-center p-8">
-      <div className="absolute top-4 right-4">
-        <AppSwitcher currentAppId="soundpath" />
-      </div>
-      <div className="w-full max-w-3xl">
-        <div className="text-center mb-10">
-          <h1 className="text-3xl font-semibold mb-2">soundpath</h1>
-          <p className="text-sm text-zinc-400">
-            Analyze and design Helix LT presets holistically.
-          </p>
+    <main className="p-6 max-w-7xl mx-auto min-h-screen">
+      <header className="mb-6 flex items-baseline justify-between gap-4 flex-wrap">
+        <div>
+          <h1 className="text-2xl font-semibold">soundpath</h1>
+          <p className="text-sm text-muted-foreground">Align gain between Helix presets.</p>
         </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <button
-            onClick={onPickFile}
-            disabled={busy}
-            className="text-left rounded-xl border border-zinc-800 hover:border-zinc-700 bg-zinc-900/50 hover:bg-zinc-900 p-6 transition disabled:opacity-50"
-          >
-            <div className="flex items-center gap-3 mb-3">
-              <div className="rounded-md bg-blue-900/40 text-blue-200 p-2">
-                <UploadIcon />
-              </div>
-              <h2 className="text-lg font-medium">Upload existing preset</h2>
-            </div>
-            <p className="text-sm text-zinc-400 mb-3">
-              Load a <code className="text-zinc-300">.hlx</code> you've exported from HX Edit and
-              run analysis, Match Song, Tone Discovery, or Align Gain on it.
-            </p>
-            <div className="text-xs text-blue-300">
-              {busy ? "Uploading…" : "Drop or pick a .hlx file →"}
-            </div>
-          </button>
-
-          <button
-            onClick={() => router.push("/design")}
-            disabled={busy}
-            className="text-left rounded-xl border border-zinc-800 hover:border-purple-700/50 bg-zinc-900/50 hover:bg-purple-950/20 p-6 transition disabled:opacity-50"
-          >
-            <div className="flex items-center gap-3 mb-3">
-              <div className="rounded-md bg-purple-900/40 text-purple-200 p-2">
-                <SparkIcon />
-              </div>
-              <h2 className="text-lg font-medium">Design new preset</h2>
-            </div>
-            <p className="text-sm text-zinc-400 mb-3">
-              Describe 3 tones in plain English. Gemini designs the entire preset — chain,
-              parallel paths, 8 snapshots, and solo variants.
-            </p>
-            <div className="text-xs text-purple-300">Start from blank →</div>
-          </button>
+        <div className="flex items-center gap-4">
+          <Link href="/help" className="text-xs text-muted-foreground hover:text-foreground underline">
+            Recording guide
+          </Link>
+          <AppSwitcher currentAppId="soundpath" />
         </div>
+      </header>
 
-        <div className="mt-4 text-center">
-          <button
-            onClick={() => router.push("/library")}
-            className="text-xs text-zinc-400 hover:text-zinc-200 transition"
-          >
-            Browse saved presets in the Library →
-          </button>
-        </div>
-
-        {err && (
-          <div className="mt-6 rounded-md border border-red-900/50 bg-red-950/30 p-4 text-sm text-red-200">
-            {err}
+      {/* Cross-preset alignment strip */}
+      {bothLoaded && statusA && statusB && (
+        <section className="mb-6 rounded-lg border border-violet-200 dark:border-violet-700/40 bg-violet-50/60 dark:bg-violet-950/15 p-4">
+          <div className="flex items-center justify-between gap-4 flex-wrap">
+            <div className="flex items-baseline gap-6 flex-wrap text-sm">
+              <span className="text-xs uppercase tracking-wider text-violet-700/80 dark:text-violet-300/80">
+                Cross-preset alignment
+              </span>
+              <span className="text-muted-foreground">
+                A baseline{" "}
+                <span className="text-foreground tabular-nums">{effA!.toFixed(1)} dB</span>
+              </span>
+              <span className="text-muted-foreground">
+                B baseline{" "}
+                <span className="text-foreground tabular-nums">{effB!.toFixed(1)} dB</span>
+              </span>
+              <span className="text-muted-foreground">
+                Δ{" "}
+                <span
+                  className={`tabular-nums font-medium ${
+                    Math.abs(delta!) <= 0.5 ? "text-emerald-700 dark:text-emerald-300" : "text-amber-700 dark:text-amber-300"
+                  }`}
+                >
+                  {delta! >= 0 ? "+" : ""}
+                  {delta!.toFixed(1)} dB
+                </span>
+              </span>
+            </div>
+            <button
+              onClick={handleAlignBtoA}
+              disabled={Math.abs(delta!) <= 0.05}
+              className="px-3 py-1.5 text-sm rounded-md border border-violet-300 dark:border-violet-700/50 bg-violet-100 dark:bg-violet-900/40 text-violet-800 dark:text-violet-100 hover:bg-violet-200 dark:hover:bg-violet-900/60 disabled:opacity-40"
+            >
+              Align B to A
+            </button>
           </div>
-        )}
+          <p className="mt-2 text-xs text-muted-foreground">
+            Shifts B&apos;s Output Block uniformly — B&apos;s internal snapshot alignment is
+            preserved. Estimates don&apos;t model cab/IR differences, so treat the staged value
+            as a starting point and fine-tune by ear.
+          </p>
+          {clampNote && <p className="mt-1 text-xs text-amber-700/90 dark:text-amber-300/90">{clampNote}</p>}
+        </section>
+      )}
 
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept=".hlx,application/json"
-          className="hidden"
-          onChange={onFileChange}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
+        <PresetPane
+          slot="a"
+          label="Baseline preset (A)"
+          pendingOutputGain={pendingGainA}
+          onPendingOutputGainChange={setPendingGainA}
+          onStatus={onStatusA}
+        />
+        <PresetPane
+          slot="b"
+          label="Preset to align (B)"
+          pendingOutputGain={pendingGainB}
+          onPendingOutputGainChange={setPendingGainB}
+          onStatus={onStatusB}
         />
       </div>
+
+      <footer className="mt-8 pt-4 border-t border-border text-xs text-muted-foreground/70">
+        v0.5 · Within-preset snapshot alignment + cross-preset baseline alignment · Export writes
+        the .hlx
+      </footer>
     </main>
-  );
-}
-
-function UploadIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-5 w-5">
-      <path d="M12 16V4M12 4l-5 5M12 4l5 5" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M4 20h16" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-function SparkIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-5 w-5">
-      <path d="M12 2v6M12 16v6M2 12h6M16 12h6" strokeLinecap="round" />
-      <path d="M5.6 5.6l4 4M18.4 5.6l-4 4M5.6 18.4l4-4M18.4 18.4l-4-4" strokeLinecap="round" opacity="0.6" />
-    </svg>
   );
 }

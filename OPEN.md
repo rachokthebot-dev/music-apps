@@ -59,15 +59,15 @@ Last reviewed: 2026-07-02
 
 ## SoundPath
 
-**Recently landed:**
-- Gain Targets feature — user-set baseline + per-snapshot dB targets, with structural Boost insertion when the chain doesn't have one. Smoke tests: `packages/gain-estimator/src/smoke-align*.ts`.
-- All three primary flows (Match Song, Tone Discovery, Design Preset) wired across Claude / Gemini Flash / local Ollama.
-- Output Block "absolute baseline" knob for cross-preset loudness alignment.
+**Recently landed (2026-07-04):**
+- Reworked into a single-purpose gain-alignment tool. Two preset slots (A baseline / B to align) at `/`, within-preset snapshot alignment via GainTargetsPanel, cross-preset baseline alignment via an Output Block shift. Removed: Design Preset, Match Song, Tone Discovery, all LLM code, library UI. Presets DB stays read-only + `POST /api/presets/ingest` untouched (HelAIx still feeds it). API moved `/api/master/*` → `/api/preset/[slot]/*`.
+- Measure (ground-truth BS.1770 LUFS vs. estimator) was removed in the rework, then restored same day as a per-pane panel: `GET/POST /api/preset/[slot]/measure`, per-slot `measurements-{a,b}.json`, cleared on preset import.
+- Slot files live in `SOUNDPATH_PRESET_DIR` as `slot-a.hlx` / `slot-b.hlx`; slot A bootstraps once from the legacy `active-master.hlx` (file left in place — gain-estimator smoke scripts still fall back to it).
 
 **Known gaps:**
 - Hardcoded Helix LT topology (5 slots per DSP). Helix Floor / Stadium have more slots; some heuristics would need to widen.
-- `GET /api/master` still returns a `alignmentProposals` field computed with DEFAULT_CONFIG that is no longer consumed by the UI — dead payload, harmless but worth dropping.
-- `gemma-hermes:latest` for Design Preset exhibited template-token leakage. Currently locked to Gemini/Claude for that flow; a smaller local model retry would be welcome.
+- Cross-preset delta uses raw estimates + Output Block gain; doesn't model cab/IR differences between presets (by design — UI says to fine-tune by ear).
+- Removed flows (LLM design flows, library UI) live in git history if ever wanted back.
 
 ---
 
@@ -76,6 +76,7 @@ Last reviewed: 2026-07-02
 **Recently landed:**
 - Path-based routing for all 5 apps at `:8080`.
 - Landing page at `/` listing each app.
+- Settings hub on the landing page (2026-07-04): Light/System/Dark theme switch (shared localStorage `"theme"` key, all apps same-origin through the proxy honor it — SoundPath converted from hardcoded dark to semantic tokens for this), plus editable cards for Shreddy (via its settings API), Metronome (localStorage), and data-clear buttons for ChordCraft/SoundPath. Shared boot script exported as `themeInitSource` from packages/shared.
 
 **Known gaps:**
 - ngrok support is documented but not scripted. Was previously load-bearing in the README; now demoted to optional.

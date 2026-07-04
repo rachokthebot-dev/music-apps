@@ -3,20 +3,23 @@
  *
  * The gain estimator *predicts* per-snapshot loudness from the preset JSON.
  * This stores the *measured* integrated LUFS for each snapshot (from a real
- * capture uploaded to /api/measure), so the UI can show the residual — how far
- * the estimator is off — and, later, feed corrections back into the per-block
- * gain models.
+ * capture uploaded to /api/preset/[slot]/measure), so the UI can show the
+ * residual — how far the estimator is off.
  *
- * One JSON file next to the active master in SOUNDPATH_PRESET_DIR. Keyed by
- * snapshot index; re-measuring a snapshot overwrites it.
+ * One JSON file per slot next to the slot files in SOUNDPATH_PRESET_DIR.
+ * Keyed by snapshot index; re-measuring a snapshot overwrites it. Importing a
+ * new preset into a slot clears that slot's measurements — they belong to the
+ * preset that was measured, not the slot.
  */
 
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 
-import { PRESET_DIR } from "./masterStore";
+import { PRESET_DIR, type Slot } from "./masterStore";
 
-export const MEASUREMENTS_PATH = join(PRESET_DIR, "measurements.json");
+export function measurementsPath(slot: Slot): string {
+  return join(PRESET_DIR, `measurements-${slot}.json`);
+}
 
 export type SnapshotMeasurement = {
   /** Integrated loudness, LUFS. */
@@ -29,25 +32,34 @@ type MeasurementFile = {
   snapshots: { [index: string]: SnapshotMeasurement };
 };
 
-function read(): MeasurementFile {
-  if (!existsSync(MEASUREMENTS_PATH)) return { snapshots: {} };
+function read(slot: Slot): MeasurementFile {
+  const path = measurementsPath(slot);
+  if (!existsSync(path)) return { snapshots: {} };
   try {
-    return JSON.parse(readFileSync(MEASUREMENTS_PATH, "utf-8")) as MeasurementFile;
+    return JSON.parse(readFileSync(path, "utf-8")) as MeasurementFile;
   } catch {
     return { snapshots: {} };
   }
 }
 
-export function readMeasurements(): { [index: number]: SnapshotMeasurement } {
+export function readMeasurements(slot: Slot): { [index: number]: SnapshotMeasurement } {
   const out: { [index: number]: SnapshotMeasurement } = {};
-  for (const [k, v] of Object.entries(read().snapshots)) out[Number(k)] = v;
+  for (const [k, v] of Object.entries(read(slot).snapshots)) out[Number(k)] = v;
   return out;
 }
 
-export function writeMeasurement(snapshotIndex: number, lufs: number): SnapshotMeasurement {
-  const file = read();
+export function writeMeasurement(
+  slot: Slot,
+  snapshotIndex: number,
+  lufs: number
+): SnapshotMeasurement {
+  const file = read(slot);
   const m: SnapshotMeasurement = { lufs, at: new Date().toISOString() };
   file.snapshots[String(snapshotIndex)] = m;
-  writeFileSync(MEASUREMENTS_PATH, JSON.stringify(file, null, 2), "utf-8");
+  writeFileSync(measurementsPath(slot), JSON.stringify(file, null, 2), "utf-8");
   return m;
+}
+
+export function clearMeasurements(slot: Slot): void {
+  rmSync(measurementsPath(slot), { force: true });
 }

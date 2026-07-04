@@ -1,5 +1,5 @@
 /**
- * POST /api/master/align
+ * POST /api/preset/[slot]/align
  *
  * Run gain alignment with a user-supplied baseline + per-snapshot targets.
  * Returns proposals (param + structural changes) and the measured offsets the
@@ -20,7 +20,7 @@ import {
   type AlignmentConfig,
 } from "@music-apps/gain-estimator";
 
-import { readActiveMaster } from "@/lib/masterStore";
+import { isSlot, readSlot } from "@/lib/masterStore";
 
 export const dynamic = "force-dynamic";
 
@@ -50,7 +50,14 @@ function coerceTargets(raw: unknown): Record<number, number> {
   return out;
 }
 
-export async function POST(req: Request) {
+export async function POST(
+  req: Request,
+  { params }: { params: Promise<{ slot: string }> }
+) {
+  const { slot } = await params;
+  if (!isSlot(slot)) {
+    return Response.json({ ok: false, error: "slot must be 'a' or 'b'" }, { status: 400 });
+  }
   try {
     const body = (await req.json().catch(() => ({}))) as Body;
     const baselineIndex = clampSnapshotIndex(body.baselineIndex ?? 0);
@@ -59,7 +66,7 @@ export async function POST(req: Request) {
     const toleranceDb =
       typeof body.toleranceDb === "number" && body.toleranceDb > 0 ? body.toleranceDb : 0.5;
 
-    const preset = readActiveMaster();
+    const preset = readSlot(slot);
     const config: AlignmentConfig = {
       baselineIndex,
       soloLiftMode: "strict_3db", // not used when targets are explicit

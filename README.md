@@ -160,34 +160,19 @@ Web-Audio scheduled (not `setInterval`), so it stays in time even on iPad Safari
 
 ---
 
-### SoundPath — Helix LT preset editor with AI patch designer
+### SoundPath — gain alignment between Helix presets
 
-For anyone running a Line 6 Helix LT. Drop in a `.hlx` exported from HX Edit and SoundPath visualizes the entire signal chain, measures each snapshot's loudness, and gives you tools HX Edit doesn't have.
+For anyone running a Line 6 Helix LT. Two preset slots side by side: import a baseline preset (`.hlx` upload or from the shared presets library), pick a baseline snapshot, and align every other snapshot to it with per-snapshot dB targets. Load a second preset and **Align B to A** shifts its Output Block so both presets' baselines match. Fully deterministic — the aligner only touches ChVol, a Boost block, and the Output Block; never Drive or tone knobs.
 
 ![SoundPath](apps/landing/assets/screenshots/soundpath.png)
 
 **Supported features**
 
-*Inspection*
-- Import any `.hlx` exported from HX Edit
-- React-Flow signal-chain visualization across both DSP paths (split + join + parallel)
-- Per-block parameter inspector (every knob from the master is rendered)
-- Per-snapshot loudness landscape (8 snapshots, dB relative to CLEAN)
-
-*Deterministic editing*
-- **Align Gain** — pick any snapshot as baseline, set dB targets for every other snapshot. The aligner computes the smallest ChVol + Boost change to hit the targets without touching Drive or tone knobs. Auto-inserts a Boost block into a free slot if the chain doesn't have one.
-- **Output Block baseline knob** — a preset-wide absolute dB shift, written to all four output slots, for aligning loudness between different presets
-
-*LLM-assisted editing* (three providers: Claude / Gemini Flash / local Ollama)
-- **Match Song** — supply an artist + song; the LLM proposes per-block param edits to match that recorded tone on a single snapshot
-- **Tone Discovery** — describe a vibe ("warm jazz like Wes Montgomery"); the LLM picks an exemplar song first, then patches toward it
-- **Design Preset** — supply 3 tone descriptions; the LLM generates a complete 8-snapshot preset from scratch using the HelAIx catalog of 367 blocks
-
-*Staging + export*
-- Live loudness preview as you stage edits — see the predicted dB landscape before applying
-- Pending-change panel (across all three LLM flows + Align Gain) with reset
+- Per-snapshot loudness landscape (8 snapshots) with live predicted values as changes are staged
+- **Align Gain** — baseline snapshot + dB targets; smallest ChVol + Boost change that hits them. Auto-inserts a Boost block into a free slot if the chain doesn't have one.
+- **Cross-preset alignment** — align preset B's baseline snapshot to preset A's via a uniform Output Block shift (B's internal snapshot alignment is preserved)
+- Presets library (read-only import picker) fed by HelAIx via `POST /api/presets/ingest`
 - Export back to a `.hlx` HX Edit imports directly
-- "Open in HX Edit" one-click for local sessions
 
 [→ SoundPath README](apps/soundpath/README.md)
 
@@ -253,7 +238,7 @@ If you want them reachable off your LAN — e.g. an iPad over cellular — point
 - Python (librosa + SongFormer) for Shreddy's section detection — local, free, ~30 s/song
 - ffmpeg for audio normalization, pitch shifting, slicing
 - yt-dlp for YouTube ingestion
-- Claude / Gemini / Ollama for the optional LLM flows in Shreddy + SoundPath
+- Claude / Gemini / Ollama for the optional LLM flows in Shreddy
 
 ## License
 

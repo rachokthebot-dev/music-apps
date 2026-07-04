@@ -5,14 +5,16 @@
  *
  * The gain estimator predicts per-snapshot loudness from preset JSON; it never
  * hears the patch. This panel captures the real thing two ways, both feeding
- * the same POST /api/measure (WAV in → integrated LUFS out, stored per snapshot):
+ * the same POST /api/preset/[slot]/measure (WAV in → integrated LUFS out,
+ * stored per snapshot):
  *
  *   1. Live: record off the Helix (USB / line in) via getUserMedia + an
  *      AudioWorklet, encode to WAV in-browser, upload.
  *   2. Upload: pick a WAV recorded in a DAW.
  *
  * It then shows estimated vs. measured loudness (both relative to snapshot 0)
- * and the residual — how far the estimator is off.
+ * and the residual — how far the estimator is off. Slot-scoped: each pane
+ * (A/B) has its own measurements file, cleared when a new preset is imported.
  *
  * Critical: getUserMedia's default echoCancellation / noiseSuppression /
  * autoGainControl all corrupt a loudness reading (AGC literally changes gain).
@@ -21,9 +23,10 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { encodeWavFloat32 } from "@/lib/wavEncode";
 
-const API = "/soundpath/api/measure";
+const apiUrl = (slot: "a" | "b") => `/soundpath/api/preset/${slot}/measure`;
 
 // Inline AudioWorklet: copies each input render quantum back to the main thread.
 // Delivered as a Blob URL so there's no public/ file or basePath coupling.
@@ -58,9 +61,11 @@ type MeasureResponse = {
 };
 
 export default function MeasurePanel({
+  slot,
   open,
   onClose,
 }: {
+  slot: "a" | "b";
   open: boolean;
   onClose: () => void;
 }) {
@@ -84,14 +89,14 @@ export default function MeasurePanel({
   const loadLandscape = useCallback(async () => {
     setError(null);
     try {
-      const r = await fetch(API);
+      const r = await fetch(apiUrl(slot));
       const j = (await r.json()) as MeasureResponse;
       if (!j.ok) throw new Error(j.error ?? "Failed to load measurements");
       setRows(j.snapshots ?? []);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
-  }, []);
+  }, [slot]);
 
   useEffect(() => {
     if (!open) return;
@@ -110,7 +115,7 @@ export default function MeasurePanel({
         const form = new FormData();
         form.append("wav", wav, "capture.wav");
         form.append("snapshotIndex", String(snapshotIndex));
-        const r = await fetch(API, { method: "POST", body: form });
+        const r = await fetch(apiUrl(slot), { method: "POST", body: form });
         const j = (await r.json()) as MeasureResponse;
         if (!j.ok) throw new Error(j.error ?? "Measurement failed");
         setRows(j.snapshots ?? []);
@@ -120,7 +125,7 @@ export default function MeasurePanel({
         setBusy(null);
       }
     },
-    []
+    [slot]
   );
 
   const startRecording = useCallback(
@@ -202,36 +207,39 @@ export default function MeasurePanel({
 
   const residualClass = (r: number | null) =>
     r === null
-      ? "text-zinc-600"
+      ? "text-muted-foreground/70"
       : Math.abs(r) < 1
-        ? "text-emerald-400"
+        ? "text-emerald-600 dark:text-emerald-400"
         : Math.abs(r) < 3
-          ? "text-amber-400"
-          : "text-red-400";
+          ? "text-amber-600 dark:text-amber-400"
+          : "text-red-600 dark:text-red-400";
 
   return (
-    <section className="mb-6 rounded-lg border border-zinc-800 bg-zinc-950/60 p-4">
+    <section className="mb-6 rounded-lg border border-border bg-card/60 p-4">
       <header className="mb-3 flex items-center justify-between gap-4">
         <div>
-          <h2 className="text-sm font-semibold text-zinc-200">Measure loudness</h2>
-          <p className="text-xs text-zinc-500">
-            Ground-truth LUFS per snapshot vs. the estimator. Record off the Helix or upload a WAV.
+          <h2 className="text-sm font-semibold text-foreground">Measure loudness</h2>
+          <p className="text-xs text-muted-foreground">
+            Ground-truth LUFS per snapshot vs. the estimator. Record off the Helix or upload a WAV.{" "}
+            <Link href="/help" className="text-muted-foreground hover:text-foreground underline">
+              Recording guide
+            </Link>
           </p>
         </div>
         <button
           onClick={onClose}
-          className="px-3 py-1.5 text-sm rounded-md border border-zinc-700 bg-zinc-900 hover:bg-zinc-800"
+          className="px-3 py-1.5 text-sm rounded-md border border-input bg-secondary hover:bg-accent"
         >
           Close
         </button>
       </header>
 
       <div className="mb-3 flex items-center gap-2 text-xs">
-        <label className="text-zinc-500">Input</label>
+        <label className="text-muted-foreground">Input</label>
         <select
           value={deviceId}
           onChange={(e) => setDeviceId(e.target.value)}
-          className="rounded-md border border-zinc-700 bg-zinc-900 px-2 py-1 text-zinc-200"
+          className="rounded-md border border-input bg-secondary px-2 py-1 text-foreground"
         >
           <option value="">System default</option>
           {devices.map((d) => (
@@ -240,18 +248,18 @@ export default function MeasurePanel({
             </option>
           ))}
         </select>
-        <span className="text-zinc-600">AGC / noise-suppression disabled for accuracy.</span>
+        <span className="text-muted-foreground/70">AGC / noise-suppression disabled for accuracy.</span>
       </div>
 
       {error && (
-        <div className="mb-3 rounded-md border border-red-900/50 bg-red-950/30 px-3 py-2 text-xs text-red-200">
+        <div className="mb-3 rounded-md border border-red-300 dark:border-red-900/50 bg-red-100 dark:bg-red-950/30 px-3 py-2 text-xs text-red-800 dark:text-red-200">
           {error}
         </div>
       )}
 
       <table className="w-full text-sm">
         <thead>
-          <tr className="text-left text-xs text-zinc-500">
+          <tr className="text-left text-xs text-muted-foreground">
             <th className="py-1 font-medium">Snapshot</th>
             <th className="py-1 font-medium text-right">Est. (dB)</th>
             <th className="py-1 font-medium text-right">Measured (LUFS)</th>
@@ -265,18 +273,18 @@ export default function MeasurePanel({
             const isRec = recording === row.index;
             const isBusy = busy === row.index;
             return (
-              <tr key={row.index} className="border-t border-zinc-900">
-                <td className="py-1.5 text-zinc-300">
+              <tr key={row.index} className="border-t border-border">
+                <td className="py-1.5 text-foreground/80">
                   {row.index}. {row.name}
                 </td>
-                <td className="py-1.5 text-right tabular-nums text-zinc-400">
+                <td className="py-1.5 text-right tabular-nums text-muted-foreground">
                   {row.estimatedRelDb > 0 ? "+" : ""}
                   {row.estimatedRelDb.toFixed(1)}
                 </td>
-                <td className="py-1.5 text-right tabular-nums text-zinc-400">
+                <td className="py-1.5 text-right tabular-nums text-muted-foreground">
                   {row.measuredLufs === null ? "—" : row.measuredLufs.toFixed(1)}
                 </td>
-                <td className="py-1.5 text-right tabular-nums text-zinc-400">
+                <td className="py-1.5 text-right tabular-nums text-muted-foreground">
                   {row.measuredRelDb === null
                     ? "—"
                     : `${row.measuredRelDb > 0 ? "+" : ""}${row.measuredRelDb.toFixed(1)}`}
@@ -291,7 +299,7 @@ export default function MeasurePanel({
                     {isRec ? (
                       <button
                         onClick={() => stopRecording(row.index)}
-                        className="px-2 py-1 text-xs rounded-md border border-red-700/60 bg-red-900/40 text-red-100 hover:bg-red-900/60"
+                        className="px-2 py-1 text-xs rounded-md border border-red-400 dark:border-red-700/60 bg-red-100 dark:bg-red-900/40 text-red-800 dark:text-red-100 hover:bg-red-200 dark:hover:bg-red-900/60"
                       >
                         ■ Stop
                       </button>
@@ -299,13 +307,13 @@ export default function MeasurePanel({
                       <button
                         onClick={() => startRecording(row.index)}
                         disabled={recording !== null || isBusy}
-                        className="px-2 py-1 text-xs rounded-md border border-zinc-700 bg-zinc-900 hover:bg-zinc-800 disabled:opacity-40"
+                        className="px-2 py-1 text-xs rounded-md border border-input bg-secondary hover:bg-accent disabled:opacity-40"
                       >
                         ● Rec
                       </button>
                     )}
                     <label
-                      className={`px-2 py-1 text-xs rounded-md border border-zinc-700 bg-zinc-900 hover:bg-zinc-800 cursor-pointer ${
+                      className={`px-2 py-1 text-xs rounded-md border border-input bg-secondary hover:bg-accent cursor-pointer ${
                         recording !== null || isBusy ? "opacity-40 pointer-events-none" : ""
                       }`}
                     >
@@ -329,11 +337,11 @@ export default function MeasurePanel({
         </tbody>
       </table>
 
-      <p className="mt-3 text-xs text-zinc-600">
+      <p className="mt-3 text-xs text-muted-foreground/70">
         Residual = measured − estimated, both relative to snapshot 0.{" "}
-        <span className="text-emerald-400">green</span> &lt;1 dB,{" "}
-        <span className="text-amber-400">amber</span> &lt;3 dB,{" "}
-        <span className="text-red-400">red</span> ≥3 dB off. Play a few seconds of full chords per
+        <span className="text-emerald-600 dark:text-emerald-400">green</span> &lt;1 dB,{" "}
+        <span className="text-amber-600 dark:text-amber-400">amber</span> &lt;3 dB,{" "}
+        <span className="text-red-600 dark:text-red-400">red</span> ≥3 dB off. Play a few seconds of full chords per
         snapshot.
       </p>
     </section>

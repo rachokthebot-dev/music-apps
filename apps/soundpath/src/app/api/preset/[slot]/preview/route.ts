@@ -1,13 +1,13 @@
 /**
- * POST /api/master/preview
+ * POST /api/preset/[slot]/preview
  *
- * Same input shape as /api/master/export, but does NOT write a file.
+ * Same input shape as /api/preset/[slot]/export, but does NOT write a file.
  * Applies pending changes in-memory, runs the gain estimator, and returns
  * the updated loudness landscape + per-snapshot deltas.
  *
- * Used by the editor to live-preview what Align Gain / Match Song / Tone
- * Discovery's staged changes would do to the loudness numbers, without
- * the user having to Export + re-import to see them.
+ * Used by the editor to live-preview what Align Gain's staged changes would
+ * do to the loudness numbers, without the user having to Export + re-import
+ * to see them.
  */
 
 import {
@@ -18,7 +18,7 @@ import {
   type HelixPreset,
 } from "@music-apps/gain-estimator";
 
-import { readActiveMaster } from "@/lib/masterStore";
+import { isSlot, readSlot } from "@/lib/masterStore";
 
 export const dynamic = "force-dynamic";
 
@@ -51,13 +51,20 @@ function applyInsertion(preset: HelixPreset, ins: PendingInsertion): void {
   dspMap[ins.slot] = newBlock;
 }
 
-export async function POST(req: Request) {
+export async function POST(
+  req: Request,
+  { params }: { params: Promise<{ slot: string }> }
+) {
+  const { slot } = await params;
+  if (!isSlot(slot)) {
+    return Response.json({ ok: false, error: "slot must be 'a' or 'b'" }, { status: 400 });
+  }
   try {
     const body = (await req.json()) as { pending?: Pending; insertion?: PendingInsertion };
     const pending = body.pending ?? {};
 
-    // Start from the active master, layer pending changes on top in-memory.
-    let preset = readActiveMaster();
+    // Start from the slot's preset, layer pending changes on top in-memory.
+    let preset = readSlot(slot);
 
     // Apply structural insertion first so per-snapshot patches can resolve the
     // inserted block's friendly name.
@@ -93,6 +100,7 @@ export async function POST(req: Request) {
       index: s.snapshotIndex,
       name: s.snapshotName,
       loudnessDb: Number((s.loudnessDb - baselineRaw).toFixed(2)),
+      rawLoudnessDb: Number(s.loudnessDb.toFixed(2)),
     }));
 
     return Response.json({ ok: true, loudness });

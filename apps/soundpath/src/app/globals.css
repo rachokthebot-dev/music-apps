@@ -1,29 +1,76 @@
 @import "tailwindcss";
 
-@theme {
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
   --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue",
     Arial, sans-serif;
 
-  /* Tokens consumed by the shared AppSwitcher / BackToHome components.
-     Mapped to soundpath's dark + violet palette. */
-  --color-foreground: #e6e6e8;
-  --color-border: #2a2a2e;
-  --color-card: #161618;
-  --color-secondary: #1e1e22;
-  --color-secondary-foreground: #e6e6e8;
-  --color-accent: #2a2a2e;
-  --color-muted: #1e1e22;
-  --color-muted-foreground: #9a9aa0;
-  --color-primary: #a855f7;
-  --color-primary-foreground: #ffffff;
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-destructive: var(--destructive);
+}
+
+/* Light palette (neutral grays; violet primary shared with dark). */
+:root {
+  --background: #ffffff;
+  --foreground: #18181b;
+  --card: #f6f6f8;
+  --card-foreground: #18181b;
+  --secondary: #f0f0f2;
+  --secondary-foreground: #18181b;
+  --muted: #f0f0f2;
+  --muted-foreground: #6b6b72;
+  --accent: #e6e6ea;
+  --accent-foreground: #18181b;
+  --border: #dcdce0;
+  --input: #cfcfd6;
+  --ring: #a855f7;
+  --primary: #a855f7;
+  --primary-foreground: #ffffff;
+  --destructive: #dc2626;
+}
+
+/* Dark palette — soundpath's original hexes, so dark mode is pixel-identical
+   to the pre-theming app. */
+.dark {
+  --background: #0c0c0e;
+  --foreground: #e6e6e8;
+  --card: #161618;
+  --card-foreground: #e6e6e8;
+  --secondary: #1e1e22;
+  --secondary-foreground: #e6e6e8;
+  --muted: #1e1e22;
+  --muted-foreground: #9a9aa0;
+  --accent: #2a2a2e;
+  --accent-foreground: #e6e6e8;
+  --border: #2a2a2e;
+  --input: #2a2a2e;
+  --ring: #a855f7;
+  --primary: #a855f7;
+  --primary-foreground: #ffffff;
+  --destructive: #ef4444;
 }
 
 @layer base {
   html,
   body {
     height: 100%;
-    background: #0c0c0e;
-    color: #e6e6e8;
+    background: var(--background);
+    color: var(--foreground);
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
   }

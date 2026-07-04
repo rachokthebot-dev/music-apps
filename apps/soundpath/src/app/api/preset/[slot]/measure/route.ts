@@ -1,6 +1,6 @@
 /**
- * GET  /api/measure  — measured loudness per snapshot + residual vs. estimator.
- * POST /api/measure  — upload a WAV capture of one snapshot, store its LUFS.
+ * GET  /api/preset/[slot]/measure — measured loudness per snapshot + residual vs. estimator.
+ * POST /api/preset/[slot]/measure — upload a WAV capture of one snapshot, store its LUFS.
  *
  * This closes the loop the static estimator can't on its own: it predicts
  * loudness from preset JSON but never hears the patch. The user records each
@@ -8,23 +8,23 @@
  * we measure integrated LUFS (ITU-R BS.1770) and compare.
  *
  * Both estimated and measured loudness are reported *relative to snapshot 0*,
- * matching how /api/master/preview already presents the loudness landscape.
+ * matching how the loudness landscape is presented.
  * residual = measuredRel - estimatedRel  → how far the estimator is off.
  */
 
 import { decodeWav, estimateAllSnapshots, integratedLufs } from "@music-apps/gain-estimator";
 
-import { readActiveMaster } from "@/lib/masterStore";
+import { isSlot, readSlot, type Slot } from "@/lib/masterStore";
 import { readMeasurements, writeMeasurement } from "@/lib/measurementStore";
 
 export const dynamic = "force-dynamic";
 
 const BASELINE = 0;
 
-function buildLandscape() {
-  const preset = readActiveMaster();
+function buildLandscape(slot: Slot) {
+  const preset = readSlot(slot);
   const est = estimateAllSnapshots(preset);
-  const measured = readMeasurements();
+  const measured = readMeasurements(slot);
 
   const estBase = est[BASELINE].loudnessDb;
   const measBase = measured[BASELINE]?.lufs;
@@ -48,9 +48,16 @@ function buildLandscape() {
   });
 }
 
-export async function GET() {
+export async function GET(
+  _req: Request,
+  { params }: { params: Promise<{ slot: string }> }
+) {
+  const { slot } = await params;
+  if (!isSlot(slot)) {
+    return Response.json({ ok: false, error: "slot must be 'a' or 'b'" }, { status: 400 });
+  }
   try {
-    return Response.json({ ok: true, baseline: BASELINE, snapshots: buildLandscape() });
+    return Response.json({ ok: true, baseline: BASELINE, snapshots: buildLandscape(slot) });
   } catch (err) {
     return Response.json(
       { ok: false, error: err instanceof Error ? err.message : String(err) },
@@ -59,7 +66,14 @@ export async function GET() {
   }
 }
 
-export async function POST(req: Request) {
+export async function POST(
+  req: Request,
+  { params }: { params: Promise<{ slot: string }> }
+) {
+  const { slot } = await params;
+  if (!isSlot(slot)) {
+    return Response.json({ ok: false, error: "slot must be 'a' or 'b'" }, { status: 400 });
+  }
   try {
     const form = await req.formData();
     const file = form.get("wav");
@@ -90,7 +104,7 @@ export async function POST(req: Request) {
       );
     }
 
-    writeMeasurement(snapshotIndex, lufs);
+    writeMeasurement(slot, snapshotIndex, lufs);
     return Response.json({
       ok: true,
       snapshotIndex,
@@ -98,7 +112,7 @@ export async function POST(req: Request) {
       sampleRate,
       channels: channels.length,
       gatedBlocks,
-      snapshots: buildLandscape(),
+      snapshots: buildLandscape(slot),
     });
   } catch (err) {
     return Response.json(

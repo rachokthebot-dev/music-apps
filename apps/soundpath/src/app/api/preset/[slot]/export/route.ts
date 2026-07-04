@@ -1,10 +1,10 @@
 /**
- * POST /api/master/export
+ * POST /api/preset/[slot]/export
  *
- * Takes accumulated pending changes (from Align Gain + Match Song) and
- * produces a single patched .hlx as a download. This is the only endpoint
- * that writes a downloadable file — both "Apply" actions in the UI just
- * stage changes; only Export materializes them.
+ * Takes accumulated pending changes (from Align Gain and the cross-preset
+ * output-gain shift) and produces a single patched .hlx as a download. This
+ * is the only endpoint that writes a downloadable file — staging never
+ * touches disk; only Export materializes changes.
  *
  * Body shape:
  *   {
@@ -15,7 +15,9 @@
  *           params?: { <paramName>: number }
  *         }
  *       }
- *     }
+ *     },
+ *     outputGain?: number,     // absolute Output Block baseline, all 4 slots
+ *     insertion?: {...}        // Boost block insertion from the aligner
  *   }
  */
 
@@ -30,7 +32,7 @@ import {
   type BlockNode,
 } from "@music-apps/gain-estimator";
 
-import { PRESET_DIR, readActiveMaster } from "@/lib/masterStore";
+import { PRESET_DIR, isSlot, readSlot } from "@/lib/masterStore";
 
 export const dynamic = "force-dynamic";
 
@@ -39,7 +41,7 @@ type PendingPerSnapshot = { [blockName: string]: PendingBlock };
 type Pending = { [snapshotIndex: string]: PendingPerSnapshot };
 
 /**
- * A preset-level block insertion staged by the new gain-targets flow. When
+ * A preset-level block insertion staged by the gain-targets flow. When
  * present, a fresh block is written to tone[dsp][slot] before the per-snapshot
  * patches run, so the patches can reference it by its friendly name.
  */
@@ -97,7 +99,14 @@ function dispositionHeader(fileName: string): string {
   return `attachment; filename="${ascii}"; filename*=UTF-8''${utf8}`;
 }
 
-export async function POST(req: Request) {
+export async function POST(
+  req: Request,
+  { params }: { params: Promise<{ slot: string }> }
+) {
+  const { slot } = await params;
+  if (!isSlot(slot)) {
+    return Response.json({ ok: false, error: "slot must be 'a' or 'b'" }, { status: 400 });
+  }
   try {
     const body = (await req.json()) as {
       pending?: Pending;
@@ -106,7 +115,7 @@ export async function POST(req: Request) {
     };
     const pending = body.pending ?? {};
 
-    let preset = readActiveMaster();
+    let preset = readSlot(slot);
     let totalEnabled = 0;
     let totalBypassed = 0;
     let totalParams = 0;
@@ -154,13 +163,12 @@ export async function POST(req: Request) {
 
     const body_str = stringifyHelixPreset(preset);
 
-    // Also save a copy alongside the master in PRESET_DIR — handy when the
+    // Also save a copy alongside the slots in PRESET_DIR — handy when the
     // dir is sync'd (iCloud Drive, Dropbox, etc) so a second Mac can grab the
-    // edited file from Finder without going through the browser download.
-    const outPath = join(PRESET_DIR, `active-master — edited.hlx`);
-    writeFileSync(outPath, body_str, "utf-8");
+    // aligned file from Finder without going through the browser download.
+    const fileName = `${preset.data.meta.name || `slot-${slot}`} — aligned.hlx`;
+    writeFileSync(join(PRESET_DIR, fileName), body_str, "utf-8");
 
-    const fileName = `${preset.data.meta.name || "preset"} — edited.hlx`;
     return new Response(body_str, {
       status: 200,
       headers: {

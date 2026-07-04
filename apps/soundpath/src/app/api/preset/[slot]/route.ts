@@ -1,13 +1,15 @@
 /**
- * GET  /api/master   — read active master + run estimator + aligner +
- *                       ship chain + per-snapshot state for the grid view
- * POST /api/master   — replace active master from a multipart upload
+ * GET  /api/preset/[slot]  — read the slot's preset + run estimator +
+ *                            ship chain + per-snapshot state for the grid view
+ * POST /api/preset/[slot]  — load a preset into the slot, either from a
+ *                            multipart .hlx upload or JSON { presetId } that
+ *                            pulls the hlx payload from the presets library
+ * DELETE /api/preset/[slot] — clear the slot (removes the slot file and its
+ *                            measurements; the pane returns to its empty state)
  */
 
 import {
   estimateAllSnapshots,
-  alignGain,
-  DEFAULT_CONFIG,
   friendlyBlock,
   realWorldName,
   friendlyCategory,
@@ -15,15 +17,13 @@ import {
   type BlockNode,
 } from "@music-apps/gain-estimator";
 
-import {
-  readActiveMaster,
-  writeActiveMaster,
-  ACTIVE_MASTER_PATH,
-} from "@/lib/masterStore";
+import { isSlot, slotExists, readSlot, writeSlot, deleteSlot, slotPath } from "@/lib/masterStore";
+import { clearMeasurements } from "@/lib/measurementStore";
+import { getPreset } from "@/lib/presetStore";
 
 export const dynamic = "force-dynamic";
 
-/** Per-block info shipped to the client for grid/flow rendering. */
+/** Per-block info shipped to the client for grid rendering. */
 type ChainBlock = {
   dsp: string;
   slot: string;
@@ -31,14 +31,14 @@ type ChainBlock = {
   friendly: string;            // "Amp (JCM800)"
   category: string | null;     // "Amp"
   basedOn: string | undefined; // "Marshall JTM-45"
-  /** Raw @path / @position from the master, for topology rendering. */
+  /** Raw @path / @position from the preset, for topology rendering. */
   path: number;
   position: number;
-  /** Default param values from the master's block definition (numeric only). */
+  /** Default param values from the preset's block definition (numeric only). */
   defaults: { [param: string]: number };
 };
 
-/** Per-snapshot state derived from the master. */
+/** Per-snapshot state derived from the preset. */
 type SnapshotState = {
   index: number;
   name: string;
@@ -138,19 +138,32 @@ function buildSnapshots(preset: HelixPreset): SnapshotState[] {
   return out;
 }
 
-export async function GET() {
+export async function GET(
+  _req: Request,
+  { params }: { params: Promise<{ slot: string }> }
+) {
+  const { slot } = await params;
+  if (!isSlot(slot)) {
+    return Response.json({ ok: false, error: "slot must be 'a' or 'b'" }, { status: 400 });
+  }
   try {
-    const preset = readActiveMaster();
+    if (!slotExists(slot)) {
+      return Response.json({ ok: false, empty: true });
+    }
+    const preset = readSlot(slot);
     const all = estimateAllSnapshots(preset);
     const baselineRaw = all[0].loudnessDb;
 
+    // loudnessDb is normalized to snapshot 0 for the landscape cards;
+    // rawLoudnessDb is the unnormalized estimate — the cross-preset delta is
+    // computed from rawLoudnessDb + outputGain (the estimator does not see
+    // the Output Block).
     const loudness = all.map((s) => ({
       index: s.snapshotIndex,
       name: s.snapshotName,
       loudnessDb: Number((s.loudnessDb - baselineRaw).toFixed(2)),
+      rawLoudnessDb: Number(s.loudnessDb.toFixed(2)),
     }));
-
-    const alignment = alignGain(preset, DEFAULT_CONFIG);
 
     // The Output Block's gain — this is the absolute baseline knob for the
     // whole preset. We read dsp0.outputA.gain (active output) as the
@@ -161,36 +174,73 @@ export async function GET() {
 
     return Response.json({
       ok: true,
-      masterName: preset.data.meta.name,
+      name: preset.data.meta.name,
       outputGain,
       chain: buildChain(preset),
       snapshots: buildSnapshots(preset),
       loudness,
-      alignmentProposals: alignment.proposals.map((p) => ({
-        snapshotIndex: p.snapshotIndex,
-        snapshotName: p.snapshotName,
-        currentDb: Number(p.currentDb.toFixed(2)),
-        targetDb: Number(p.targetDb.toFixed(2)),
-        deltaDb: Number(p.deltaDb.toFixed(2)),
-        status: p.status,
-        changes: p.changes, // each has block, dsp, slot, param, value, paramLabel
-        reasoning: p.reasoning,
-      })),
     });
   } catch (err) {
     return Response.json(
       {
         ok: false,
         error: err instanceof Error ? err.message : String(err),
-        masterPath: ACTIVE_MASTER_PATH,
+        slotPath: slotPath(slot),
       },
       { status: 500 }
     );
   }
 }
 
-export async function POST(req: Request) {
+function validatePresetJson(text: string): { ok: true } | { ok: false; error: string } {
+  let parsed: unknown;
   try {
+    parsed = JSON.parse(text);
+  } catch {
+    return { ok: false, error: "file is not valid JSON" };
+  }
+  if (
+    !parsed ||
+    typeof parsed !== "object" ||
+    !("data" in parsed) ||
+    typeof (parsed as { data: unknown }).data !== "object"
+  ) {
+    return { ok: false, error: "file does not look like a Helix preset" };
+  }
+  return { ok: true };
+}
+
+export async function POST(
+  req: Request,
+  { params }: { params: Promise<{ slot: string }> }
+) {
+  const { slot } = await params;
+  if (!isSlot(slot)) {
+    return Response.json({ ok: false, error: "slot must be 'a' or 'b'" }, { status: 400 });
+  }
+  try {
+    const contentType = req.headers.get("content-type") ?? "";
+
+    // JSON { presetId } — pull the hlx payload from the presets library.
+    if (contentType.includes("application/json")) {
+      const body = (await req.json()) as { presetId?: string };
+      if (!body.presetId) {
+        return Response.json({ ok: false, error: "expected presetId" }, { status: 400 });
+      }
+      const row = await getPreset(body.presetId);
+      if (!row) {
+        return Response.json({ ok: false, error: "preset not found" }, { status: 404 });
+      }
+      const check = validatePresetJson(row.hlx);
+      if (!check.ok) {
+        return Response.json({ ok: false, error: check.error }, { status: 400 });
+      }
+      writeSlot(slot, row.hlx);
+      clearMeasurements(slot); // measurements belong to the previous preset
+      return Response.json({ ok: true, name: row.name, size: row.hlx.length });
+    }
+
+    // Multipart .hlx upload.
     const form = await req.formData();
     const file = form.get("file");
     if (!(file instanceof File)) {
@@ -200,24 +250,34 @@ export async function POST(req: Request) {
       return Response.json({ ok: false, error: "must be a .hlx file" }, { status: 400 });
     }
     const buf = Buffer.from(await file.arrayBuffer());
-
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(buf.toString("utf-8"));
-    } catch {
-      return Response.json({ ok: false, error: "file is not valid JSON" }, { status: 400 });
-    }
-    if (
-      !parsed ||
-      typeof parsed !== "object" ||
-      !("data" in parsed) ||
-      typeof (parsed as { data: unknown }).data !== "object"
-    ) {
-      return Response.json({ ok: false, error: "file does not look like a Helix preset" }, { status: 400 });
+    const check = validatePresetJson(buf.toString("utf-8"));
+    if (!check.ok) {
+      return Response.json({ ok: false, error: check.error }, { status: 400 });
     }
 
-    writeActiveMaster(buf);
+    writeSlot(slot, buf);
+    clearMeasurements(slot); // measurements belong to the previous preset
     return Response.json({ ok: true, name: file.name, size: buf.byteLength });
+  } catch (err) {
+    return Response.json(
+      { ok: false, error: err instanceof Error ? err.message : String(err) },
+      { status: 500 }
+    );
+  }
+}
+
+export async function DELETE(
+  _req: Request,
+  { params }: { params: Promise<{ slot: string }> }
+) {
+  const { slot } = await params;
+  if (!isSlot(slot)) {
+    return Response.json({ ok: false, error: "slot must be 'a' or 'b'" }, { status: 400 });
+  }
+  try {
+    deleteSlot(slot);
+    clearMeasurements(slot);
+    return Response.json({ ok: true });
   } catch (err) {
     return Response.json(
       { ok: false, error: err instanceof Error ? err.message : String(err) },

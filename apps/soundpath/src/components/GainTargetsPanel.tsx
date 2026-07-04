@@ -1,20 +1,23 @@
 "use client";
 
 /**
- * GainTargetsPanel — inline editor for the new Align Gain flow.
+ * GainTargetsPanel — inline editor for the within-preset Align Gain flow.
  *
  * User picks a baseline snapshot and dials in a dB target for every other
- * snapshot. Defaults to "current measured" (so opening the panel with no edits
- * stages nothing). Hitting Compute calls /api/master/align which runs the
+ * snapshot. Defaults to "current measured" (so the initial state stages
+ * nothing). Hitting Compute calls /api/preset/[slot]/align which runs the
  * deterministic aligner with these targets and returns proposals. Stage merges
- * those proposals into the parent's pending state.
+ * those proposals into the parent pane's pending state.
  *
- * Baseline + targets persist to localStorage so a reload restores the panel.
+ * Baseline + targets persist to localStorage (per slot) so a reload restores
+ * the panel; the pane clears the key and remounts this component on import.
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-const STORAGE_KEY = "soundpath:gainTargets:v1";
+export function gainTargetsStorageKey(slot: "a" | "b"): string {
+  return `soundpath:gainTargets:${slot}`;
+}
 
 export type AlignChange = {
   block: string;
@@ -65,10 +68,10 @@ type Persisted = {
   targets: Record<number, number>;
 };
 
-function loadPersisted(): Persisted | null {
+function loadPersisted(slot: "a" | "b"): Persisted | null {
   if (typeof window === "undefined") return null;
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
+    const raw = window.localStorage.getItem(gainTargetsStorageKey(slot));
     if (!raw) return null;
     const parsed = JSON.parse(raw) as Persisted;
     if (
@@ -83,21 +86,22 @@ function loadPersisted(): Persisted | null {
   }
 }
 
-function savePersisted(p: Persisted) {
+function savePersisted(slot: "a" | "b", p: Persisted) {
   if (typeof window === "undefined") return;
   try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(p));
+    window.localStorage.setItem(gainTargetsStorageKey(slot), JSON.stringify(p));
   } catch {
     // localStorage quota etc — ignore, panel still works in-memory
   }
 }
 
 type Props = {
-  open: boolean;
+  slot: "a" | "b";
   snapshots: Array<{ index: number; name: string }>;
   /** Initial measured-loudness map keyed by snapshot index (relative to snapshot 0). */
   loadedLoudness: Record<number, number>;
-  onClose: () => void;
+  /** Reports baseline selection up so the pane can drive cross-preset alignment. */
+  onBaselineChange?: (idx: number) => void;
   onStage: (proposals: AlignProposal[], insertion: Insertion) => void;
   onError: (msg: string) => void;
 };
@@ -122,10 +126,10 @@ function offsetsFromLoaded(
 }
 
 export default function GainTargetsPanel({
-  open,
+  slot,
   snapshots,
   loadedLoudness,
-  onClose,
+  onBaselineChange,
   onStage,
   onError,
 }: Props) {
@@ -138,22 +142,19 @@ export default function GainTargetsPanel({
   const [dirty, setDirty] = useState(false);
 
   // Restore persisted state on first mount. If absent, prefill targets with
-  // the current measured offsets so opening the panel reads as "no change".
+  // the current measured offsets so the initial state reads as "no change".
+  // The pane remounts this component (key) on import, so mount = fresh preset.
   useEffect(() => {
-    if (!open) return;
-    const persisted = loadPersisted();
-    if (persisted) {
-      setBaselineIndex(persisted.baselineIndex);
-      setTargets(persisted.targets);
-    } else {
-      setBaselineIndex(0);
-      setTargets(offsetsFromLoaded(loadedLoudness, 0));
-    }
+    const persisted = loadPersisted(slot);
+    const baseline = persisted?.baselineIndex ?? 0;
+    setBaselineIndex(baseline);
+    setTargets(persisted?.targets ?? offsetsFromLoaded(loadedLoudness, baseline));
+    onBaselineChange?.(baseline);
     setPreview(null);
     setDirty(false);
-    // intentionally fire on open transition only
+    // intentionally fire on mount only
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
+  }, []);
 
   // Re-derive targets to "current measured" whenever baseline changes.
   // Keeps the panel's initial state intuitive: starting offsets always read
@@ -171,8 +172,9 @@ export default function GainTargetsPanel({
       setBaselineIndex(idx);
       resetTargetsToMeasured(idx);
       setPreview(null);
+      onBaselineChange?.(idx);
     },
-    [resetTargetsToMeasured]
+    [resetTargetsToMeasured, onBaselineChange]
   );
 
   const handleTargetChange = useCallback((idx: number, value: number) => {
@@ -183,9 +185,8 @@ export default function GainTargetsPanel({
 
   // Persist whenever baseline or targets change.
   useEffect(() => {
-    if (!open) return;
-    savePersisted({ baselineIndex, targets });
-  }, [open, baselineIndex, targets]);
+    savePersisted(slot, { baselineIndex, targets });
+  }, [slot, baselineIndex, targets]);
 
   const measuredOffsets = useMemo(
     () => offsetsFromLoaded(loadedLoudness, baselineIndex),
@@ -195,7 +196,7 @@ export default function GainTargetsPanel({
   const handleCompute = useCallback(async () => {
     setBusy("computing");
     try {
-      const r = await fetch("/soundpath/api/master/align", {
+      const r = await fetch(`/soundpath/api/preset/${slot}/align`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -213,7 +214,7 @@ export default function GainTargetsPanel({
     } finally {
       setBusy(null);
     }
-  }, [baselineIndex, targets, onError]);
+  }, [slot, baselineIndex, targets, onError]);
 
   const handleStage = useCallback(() => {
     if (!preview) return;
@@ -225,13 +226,11 @@ export default function GainTargetsPanel({
           (p.changes.length > 0 || p.structuralChanges.length > 0)
       );
       onStage(staged, preview.insertion);
-      onClose();
+      setPreview(null);
     } finally {
       setBusy(null);
     }
-  }, [preview, onStage, onClose]);
-
-  if (!open) return null;
+  }, [preview, onStage]);
 
   const conflictCount = preview?.proposals.filter((p) => p.status === "conflict").length ?? 0;
   const adjustedCount = preview?.proposals.filter((p) => p.status === "adjusted").length ?? 0;
@@ -241,28 +240,20 @@ export default function GainTargetsPanel({
   ) ?? 0;
 
   return (
-    <section className="mb-6 rounded-lg border border-blue-700/40 bg-blue-950/15 p-4">
-      <header className="flex items-baseline justify-between mb-3 flex-wrap gap-2">
-        <div>
-          <h2 className="text-sm font-medium text-blue-100">Align Gain — targets</h2>
-          <p className="text-xs text-zinc-400 mt-0.5">
-            Pick a baseline. Set a dB offset for every other snapshot. The aligner uses
-            ChVol first, then a Boost block (inserts one if needed), and never touches
-            Drive or tone knobs.
-          </p>
-        </div>
-        <button
-          onClick={onClose}
-          className="text-xs text-zinc-500 hover:text-zinc-200 underline"
-        >
-          close
-        </button>
+    <section className="mb-6 rounded-lg border border-blue-200 dark:border-blue-700/40 bg-blue-50/60 dark:bg-blue-950/15 p-4">
+      <header className="mb-3">
+        <h2 className="text-sm font-medium text-blue-800 dark:text-blue-100">Align Gain — targets</h2>
+        <p className="text-xs text-muted-foreground mt-0.5">
+          Pick a baseline. Set a dB offset for every other snapshot. The aligner uses
+          ChVol first, then a Boost block (inserts one if needed), and never touches
+          Drive or tone knobs.
+        </p>
       </header>
 
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
-            <tr className="text-[10px] uppercase tracking-wider text-zinc-500">
+            <tr className="text-[10px] uppercase tracking-wider text-muted-foreground">
               <th className="text-left pb-2 pr-3">Snapshot</th>
               <th className="text-right pb-2 px-3">Measured (dB)</th>
               <th className="text-center pb-2 px-3">Baseline</th>
@@ -279,19 +270,19 @@ export default function GainTargetsPanel({
               return (
                 <tr
                   key={s.index}
-                  className={`border-t border-zinc-800/60 ${isBaseline ? "bg-blue-900/15" : ""}`}
+                  className={`border-t border-border/60 ${isBaseline ? "bg-blue-100/50 dark:bg-blue-900/15" : ""}`}
                 >
                   <td className="py-1.5 pr-3">
-                    <span className="text-zinc-500 mr-2 tabular-nums">{s.index}</span>
-                    <span className="text-zinc-100">{s.name}</span>
+                    <span className="text-muted-foreground mr-2 tabular-nums">{s.index}</span>
+                    <span className="text-foreground">{s.name}</span>
                   </td>
-                  <td className="py-1.5 px-3 text-right tabular-nums text-zinc-400">
+                  <td className="py-1.5 px-3 text-right tabular-nums text-muted-foreground">
                     {isBaseline ? "—" : `${measured >= 0 ? "+" : ""}${measured.toFixed(2)}`}
                   </td>
                   <td className="py-1.5 px-3 text-center">
                     <input
                       type="radio"
-                      name="gain-baseline"
+                      name={`gain-baseline-${slot}`}
                       checked={isBaseline}
                       onChange={() => handleBaselineChange(s.index)}
                       className="accent-blue-500"
@@ -299,7 +290,7 @@ export default function GainTargetsPanel({
                   </td>
                   <td className="py-1.5 px-3 text-right">
                     {isBaseline ? (
-                      <span className="text-zinc-600 tabular-nums">0.00</span>
+                      <span className="text-muted-foreground/70 tabular-nums">0.00</span>
                     ) : (
                       <input
                         type="number"
@@ -309,23 +300,23 @@ export default function GainTargetsPanel({
                           const v = Number(e.target.value);
                           if (Number.isFinite(v)) handleTargetChange(s.index, v);
                         }}
-                        className="w-20 px-1.5 py-0.5 text-right text-sm tabular-nums bg-zinc-950 border border-zinc-700 rounded text-zinc-100 outline-none focus:border-blue-500/70"
+                        className="w-20 px-1.5 py-0.5 text-right text-sm tabular-nums bg-background border border-input rounded text-foreground outline-none focus:border-blue-500/70"
                       />
                     )}
                   </td>
                   <td className="py-1.5 pl-3 text-xs">
                     {isBaseline ? (
-                      <span className="text-blue-300/80">baseline · 0 dB anchor</span>
+                      <span className="text-blue-700/80 dark:text-blue-300/80">baseline · 0 dB anchor</span>
                     ) : !proposal ? (
-                      <span className="text-zinc-600">—</span>
+                      <span className="text-muted-foreground/70">—</span>
                     ) : proposal.status === "no_change" ? (
-                      <span className="text-zinc-500">within tolerance</span>
+                      <span className="text-muted-foreground">within tolerance</span>
                     ) : proposal.status === "conflict" ? (
-                      <span className="text-amber-400" title={proposal.conflict?.detail}>
+                      <span className="text-amber-600 dark:text-amber-400" title={proposal.conflict?.detail}>
                         ⚠ {proposal.conflict?.kind ?? "conflict"}
                       </span>
                     ) : (
-                      <span className="text-emerald-400" title={proposal.reasoning}>
+                      <span className="text-emerald-600 dark:text-emerald-400" title={proposal.reasoning}>
                         ✓ Δ {proposal.deltaDb >= 0 ? "+" : ""}{proposal.deltaDb.toFixed(2)} dB
                       </span>
                     )}
@@ -338,7 +329,7 @@ export default function GainTargetsPanel({
       </div>
 
       {preview?.insertion && (
-        <div className="mt-3 text-xs text-blue-300 bg-blue-950/40 border border-blue-800/40 rounded px-3 py-2">
+        <div className="mt-3 text-xs text-blue-700 dark:text-blue-300 bg-blue-100 dark:bg-blue-950/40 border border-blue-300 dark:border-blue-800/40 rounded px-3 py-2">
           Will insert a new {preview.insertion.block} block at{" "}
           <span className="font-mono">{preview.insertion.dsp}/{preview.insertion.slot}</span>{" "}
           (bypassed on snapshots that don&apos;t need it).
@@ -346,15 +337,15 @@ export default function GainTargetsPanel({
       )}
 
       <footer className="mt-4 flex items-center justify-between gap-3 flex-wrap">
-        <div className="text-xs text-zinc-500">
+        <div className="text-xs text-muted-foreground">
           {preview && !dirty ? (
             <>
-              <span className="text-emerald-400">{adjustedCount}</span> adjustment
+              <span className="text-emerald-600 dark:text-emerald-400">{adjustedCount}</span> adjustment
               {adjustedCount === 1 ? "" : "s"}
               {conflictCount > 0 && (
                 <>
                   {" · "}
-                  <span className="text-amber-400">{conflictCount}</span> conflict
+                  <span className="text-amber-600 dark:text-amber-400">{conflictCount}</span> conflict
                   {conflictCount === 1 ? "" : "s"}
                 </>
               )}
@@ -362,7 +353,7 @@ export default function GainTargetsPanel({
               {totalParamChanges} param change{totalParamChanges === 1 ? "" : "s"} total
             </>
           ) : preview && dirty ? (
-            <span className="text-amber-400/80">edits made — recompute to refresh</span>
+            <span className="text-amber-700/80 dark:text-amber-400/80">edits made — recompute to refresh</span>
           ) : (
             <span>Set targets, then compute to see the plan.</span>
           )}
@@ -371,14 +362,14 @@ export default function GainTargetsPanel({
           <button
             onClick={handleCompute}
             disabled={busy !== null}
-            className="px-3 py-1.5 text-sm rounded-md border border-blue-700/50 bg-blue-900/40 text-blue-100 hover:bg-blue-900/60 disabled:opacity-50"
+            className="px-3 py-1.5 text-sm rounded-md border border-blue-300 dark:border-blue-700/50 bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-100 hover:bg-blue-200 dark:hover:bg-blue-900/60 disabled:opacity-50"
           >
             {busy === "computing" ? "Computing…" : preview ? "Recompute" : "Compute"}
           </button>
           <button
             onClick={handleStage}
             disabled={busy !== null || !preview || adjustedCount === 0 || dirty}
-            className="px-3 py-1.5 text-sm rounded-md border border-emerald-700/50 bg-emerald-900/40 text-emerald-100 hover:bg-emerald-900/60 disabled:opacity-40"
+            className="px-3 py-1.5 text-sm rounded-md border border-emerald-400 dark:border-emerald-700/50 bg-emerald-100 dark:bg-emerald-900/40 text-emerald-800 dark:text-emerald-100 hover:bg-emerald-200 dark:hover:bg-emerald-900/60 disabled:opacity-40"
           >
             {busy === "staging" ? "Staging…" : "Stage proposals"}
           </button>
