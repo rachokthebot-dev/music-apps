@@ -198,27 +198,36 @@ Install once at the root:
 npm install
 ```
 
-Run any single app:
+### Recommended — the whole thing behind one URL
 
 ```bash
-npm run dev:shreddy        # http://localhost:3000/shreddy
+~/claude/run-all.sh hub    # all 6 apps + the reverse proxy → http://localhost:8080
+~/claude/run-all.sh stop   # stop everything
+```
+
+Then open **http://localhost:8080/** — the launcher landing, with every app at
+`/<slug>` (`/shreddy`, `/lickbank`, …). **Use this origin for normal use:** the in-app
+menu (the "All apps" launcher and app-to-app switching) links to bare paths like
+`/lickbank`, so it only resolves on the single proxy origin (8080). See
+[`proxy/README.md`](proxy/README.md).
+
+### Single-app dev (backend only)
+
+```bash
+npm run dev:shreddy        # http://localhost:3000/shreddy   (backend only)
 npm run dev:lickbank       # http://localhost:3001/lickbank
 npm run dev:chordcraft     # http://localhost:3002/chordcraft
 npm run dev:metronome      # http://localhost:3003/metronome
 npm run dev:soundpath      # http://localhost:3004/soundpath
 ```
 
-Each app is mounted at `/<slug>` so it composes cleanly behind the proxy below.
+These run one app on its own port for isolated work. Each is mounted at `/<slug>` via
+`basePath`, so **cross-app links and the "All apps" launcher 404 on these direct ports** —
+they only work through the proxy on 8080. (`run-all.sh` also starts HelAIx on `:3005` →
+`/helaix`, which the `dev:*` scripts don't cover.)
 
-### One URL for all apps (optional)
-
-The `proxy/` directory contains a small reverse proxy that fronts every app on port 8080 so a single URL reaches them all via path routing. See [`proxy/README.md`](proxy/README.md).
-
-```bash
-~/claude/run-all.sh hub    # all apps + proxy → http://localhost:8080
-```
-
-If you want them reachable off your LAN — e.g. an iPad over cellular — point [ngrok](https://ngrok.com) at the proxy: `ngrok http 8080`. Not required.
+If you want them reachable off your LAN — e.g. an iPad over cellular — point
+[ngrok](https://ngrok.com) at the proxy: `ngrok http 8080`.
 
 ---
 
