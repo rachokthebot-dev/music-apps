@@ -93,16 +93,23 @@ export function SectionStrip({
   }, [exportOpen]);
 
   const handleCopyText = async () => {
-    const { copyStructureText } = await import("@/lib/export-structure");
+    const [{ copyStructureText }, { copyText }] = await Promise.all([
+      import("@/lib/export-structure"),
+      import("@/lib/clipboard"),
+    ]);
     const text = copyStructureText({
       ...songMeta,
       timeSignature,
       sections,
       beatTimestamps,
     });
-    await navigator.clipboard.writeText(text);
-    setCopied(true);
-    setTimeout(() => { setCopied(false); setExportOpen(false); }, 1200);
+    const ok = await copyText(text);
+    if (ok) {
+      setCopied(true);
+      setTimeout(() => { setCopied(false); setExportOpen(false); }, 1200);
+    } else {
+      setExportOpen(false);
+    }
   };
 
   const handleSaveImage = async () => {
