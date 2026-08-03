@@ -1,0 +1,90 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+/// Key/value app settings, filled in from the Settings page rather than baked
+/// into the repo. Holds the ToneCloud login used to download presets.
+/// Stored as plaintext in the local SQLite file — this is a personal app on a
+/// personal machine, but it is not encrypted at rest.
+model Setting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}
+
+/// A gig's worth of songs, imported once and kept in sync.
+/// Level settings live here, not per preset — Clean is an absolute reference
+/// for the whole setlist, so a preset with no clean snapshot still sits above it.
+model Setlist {
+  id         String  @id @default(uuid())
+  name       String
+  sourceType String  @default("paste") // "apple" | "paste"
+  sourceUrl  String?
+
+  // Global level model. Clean is the origin; the rest are dB above it.
+  referenceLufs  Float  @default(-14.0)
+  rhythmOffsetDb Float  @default(1.5)
+  chorusOffsetDb Float  @default(1.5)
+  soloOffsetDb   Float  @default(3.0)
+  anchorRole     String @default("clean")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  songs SetlistSong[]
+}
+
+model SetlistSong {
+  id         String @id @default(uuid())
+  setlistId  String
+  orderIndex Int
+  title      String
+  artist     String @default("")
+
+  // Chosen videos. Two lanes: a lesson for LickBank, the track for Shreddy.
+  lickbankVideoUrl String?
+  lickbankSourceId String? // id returned by LickBank once imported
+  shreddyVideoUrl  String?
+  shreddySongId    String? // id returned by Shreddy once imported
+
+  // Helix patch. "matched" from the index, "link" pasted, "upload" a file, or "none".
+  presetChoice String  @default("none")
+  presetName   String?
+  presetUrl    String?
+  presetPath   String? // stored .hlx, relative to the data dir
+  presetTrimDb Float? // how the whole preset sits vs the setlist reference
+
+  importStatus String @default("pending") // pending | running | done | error
+  importError  String?
+
+  setlist   Setlist          @relation(fields: [setlistId], references: [id], onDelete: Cascade)
+  snapshots PresetSnapshot[]
+
+  @@index([setlistId, orderIndex])
+}
+
+/// One row per snapshot in the chosen preset. Role is the only per-preset
+/// decision — the dB values that role maps to are set on the Setlist.
+model PresetSnapshot {
+  id          String @id @default(uuid())
+  songId      String
+  index       Int
+  name        String
+  role        String @default("rhythm") // clean | rhythm | chorus | solo
+  estimatedDb Float?
+  /// Integrated LUFS from a real recording. The static estimator can't predict
+  /// a modeller's perceived loudness, so this is what alignment actually uses.
+  measuredLufs Float?
+  /// "name" when the snapshot's own name matched a role, "rank" when it was
+  /// inferred from loudness order — the UI flags guesses rather than hiding them.
+  roleSource  String @default("rank")
+
+  song SetlistSong @relation(fields: [songId], references: [id], onDelete: Cascade)
+
+  @@index([songId, index])
+}
