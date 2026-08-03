@@ -436,6 +436,23 @@ function LibraryPage() {
               </span>
             )}
             {statusBadge(song.processingStatus)}
+            {/* YouTube imports keep the source URL in originalFilename — link
+                back to it so the original is one tap away. */}
+            {/^https?:\/\//.test(song.originalFilename) && (
+              <a
+                href={song.originalFilename}
+                target="_blank"
+                rel="noreferrer"
+                onClick={(e) => e.stopPropagation()}
+                title="Open the source video on YouTube"
+                aria-label="Open the source video on YouTube"
+                className="shrink-0 text-muted-foreground/50 hover:text-red-500 transition-colors"
+              >
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M23.5 6.2a3 3 0 0 0-2.1-2.1C19.5 3.6 12 3.6 12 3.6s-7.5 0-9.4.5A3 3 0 0 0 .5 6.2 31 31 0 0 0 0 12a31 31 0 0 0 .5 5.8 3 3 0 0 0 2.1 2.1c1.9.5 9.4.5 9.4.5s7.5 0 9.4-.5a3 3 0 0 0 2.1-2.1A31 31 0 0 0 24 12a31 31 0 0 0-.5-5.8ZM9.6 15.6V8.4l6.2 3.6-6.2 3.6Z" />
+                </svg>
+              </a>
+            )}
           </div>
           <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
             {song.artist && (

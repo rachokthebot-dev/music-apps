@@ -1,10 +1,10 @@
 # music-apps
 
-> Five web apps for guitarists who like to practice slowly, listen carefully, and own their tools.
+> Six web apps for guitarists who like to practice slowly, listen carefully, and own their tools.
 
 I'm a guitar player. I built these because the off-the-shelf options either kept changing their pricing model, lost my data when the company pivoted, or just weren't quite right for how I actually practice. Everything here is **local-first, iPad-ready, free, and yours to fork.**
 
-Together they cover a real practice loop: **find something to learn → slow it down → train your ears → stay in time → dial in your sound.**
+Together they cover a real practice loop: **find something to learn → slow it down → train your ears → stay in time → dial in your sound → take it to a gig.**
 
 ```
         Find a song            Pull a lick out
@@ -17,9 +17,14 @@ Together they cover a real practice loop: **find something to learn → slow it 
                 ▼                    ▼       ▼
             Metronome ◄──── ChordCraft ────  SoundPath
         stay in time         train your ear   shape your tone
+                                                   │
+                                                   ▼
+                                              Setlists
+                                          build the gig, then
+                                          level it end to end
 ```
 
-Five apps, one monorepo, one URL behind a local proxy. Use the ones you want.
+Six apps, one monorepo, one URL behind a local proxy. Use the ones you want.
 
 ---
 
@@ -160,46 +165,46 @@ Web-Audio scheduled (not `setInterval`), so it stays in time even on iPad Safari
 
 ---
 
-### SoundPath — Helix LT preset editor with AI patch designer
+### SoundPath — level Helix presets from real recordings
 
-For anyone running a Line 6 Helix LT. Drop in a `.hlx` exported from HX Edit and SoundPath visualizes the entire signal chain, measures each snapshot's loudness, and gives you tools HX Edit doesn't have.
+For anyone running a Line 6 Helix LT. Two patches that look identical on paper can sit 30 dB apart in the room, because a modeller's loudness depends on the whole non-linear chain and its spectrum — you cannot read it off the preset. So SoundPath doesn't try. You play each snapshot once, it measures integrated loudness (ITU-R BS.1770) in the browser, and writes the correction to the path output block.
 
 ![SoundPath](apps/landing/assets/screenshots/soundpath.png)
 
 **Supported features**
 
-*Inspection*
-- Import any `.hlx` exported from HX Edit
-- React-Flow signal-chain visualization across both DSP paths (split + join + parallel)
-- Per-block parameter inspector (every knob from the master is rendered)
-- Per-snapshot loudness landscape (8 snapshots, dB relative to CLEAN)
-
-*Deterministic editing*
-- **Align Gain** — pick any snapshot as baseline, set dB targets for every other snapshot. The aligner computes the smallest ChVol + Boost change to hit the targets without touching Drive or tone knobs. Auto-inserts a Boost block into a free slot if the chain doesn't have one.
-- **Output Block baseline knob** — a preset-wide absolute dB shift, written to all four output slots, for aligning loudness between different presets
-
-*LLM-assisted editing* (three providers: Claude / Gemini Flash / local Ollama)
-- **Match Song** — supply an artist + song; the LLM proposes per-block param edits to match that recorded tone on a single snapshot
-- **Tone Discovery** — describe a vibe ("warm jazz like Wes Montgomery"); the LLM picks an exemplar song first, then patches toward it
-- **Design Preset** — supply 3 tone descriptions; the LLM generates a complete 8-snapshot preset from scratch using the HelAIx catalog of 367 blocks
-
-*Staging + export*
-- Live loudness preview as you stage edits — see the predicted dB landscape before applying
-- Pending-change panel (across all three LLM flows + Align Gain) with reset
-- Export back to a `.hlx` HX Edit imports directly
-- "Open in HX Edit" one-click for local sessions
+- **Level a whole gig.** Record every snapshot in a setlist and ship one `.hls` where every song sits at the same target.
+- **Level one preset on its own.** Same maths, one patch — for something from HelAIx or a generation, or a song that changed after the gig was recorded. Its readings can be handed back to the setlist.
+- **Every reading carries the level it was taken through**, so re-recording one changed song is safe and the other twenty stay correct.
+- **Confirmed versions.** A pass is frozen with its gains and stays rebuildable, so the file you took to a gig doesn't quietly change meaning next time you record.
+- **Role offsets** — clean / rhythm / chorus / solo sit at chosen distances from one target, and a snapshot the output block can't reach is flagged rather than silently clamped.
+- Live capture off the Helix's USB tap, or a `.wav` per preset. Clipped takes are refused: a clipped chord measures quieter than it is, so the plan would push it further into the ceiling.
 
 [→ SoundPath README](apps/soundpath/README.md)
 
 ---
 
+### Setlists — build a gig, then hand it to SoundPath
+
+Assemble a setlist from Apple Music or a pasted list, match each song to a Helix patch and a practice video, and push the lot to SoundPath for levelling. Snapshot counts come back from SoundPath rather than being counted here, so the number next to a song is the number you actually have to record.
+
+**Supported features**
+
+- Import a gig from an Apple Music playlist or plain text; reorder by dragging (pointer events, so it works on the iPad)
+- Match each song to a Helix preset from ToneCloud, a pasted link, or an upload
+- Per-song links into Shreddy and LickBank for practice
+- **Edit in SoundPath** hands the whole gig over; a single changed song can be opened there on its own
+
+---
+
 ## How they complement each other
 
-You're not meant to use all five at once. The point is they share enough scaffolding that a session flows naturally:
+You're not meant to use all six at once. The point is they share enough scaffolding that a session flows naturally:
 
 - **Learning a new song?** Shreddy slows it down, ChordCraft trains the ear for the progression, Metronome holds the click.
 - **Stuck on a riff?** LickBank clips it from the original, Shreddy lets you slow-loop it inside its parent song.
 - **Tone not right?** SoundPath dials it in for Helix users; Shreddy stays your practice surface.
+- **Playing out?** Setlists builds the gig and hands it to SoundPath, which levels every song against one target so nothing jumps between songs.
 
 Same look-and-feel across all of them. One proxy so a single URL on your LAN reaches every app from any device. Shared utilities (YouTube import, ffmpeg pitch, practice stats) so behavior is consistent.
 
@@ -213,27 +218,37 @@ Install once at the root:
 npm install
 ```
 
-Run any single app:
+### Recommended — the whole thing behind one URL
 
 ```bash
-npm run dev:shreddy        # http://localhost:3000/shreddy
+~/claude/run-all.sh hub    # all 6 apps + the reverse proxy → http://localhost:8080
+~/claude/run-all.sh stop   # stop everything
+```
+
+Then open **http://localhost:8080/** — the launcher landing, with every app at
+`/<slug>` (`/shreddy`, `/lickbank`, …). **Use this origin for normal use:** the in-app
+menu (the "All apps" launcher and app-to-app switching) links to bare paths like
+`/lickbank`, so it only resolves on the single proxy origin (8080). See
+[`proxy/README.md`](proxy/README.md).
+
+### Single-app dev (backend only)
+
+```bash
+npm run dev:shreddy        # http://localhost:3000/shreddy   (backend only)
 npm run dev:lickbank       # http://localhost:3001/lickbank
 npm run dev:chordcraft     # http://localhost:3002/chordcraft
 npm run dev:metronome      # http://localhost:3003/metronome
 npm run dev:soundpath      # http://localhost:3004/soundpath
+npm run dev:setlists       # http://localhost:3006/setlists
 ```
 
-Each app is mounted at `/<slug>` so it composes cleanly behind the proxy below.
+These run one app on its own port for isolated work. Each is mounted at `/<slug>` via
+`basePath`, so **cross-app links and the "All apps" launcher 404 on these direct ports** —
+they only work through the proxy on 8080. (`run-all.sh` also starts HelAIx on `:3005` →
+`/helaix`, which the `dev:*` scripts don't cover.)
 
-### One URL for all apps (optional)
-
-The `proxy/` directory contains a small reverse proxy that fronts every app on port 8080 so a single URL reaches them all via path routing. See [`proxy/README.md`](proxy/README.md).
-
-```bash
-~/claude/run-all.sh hub    # all apps + proxy → http://localhost:8080
-```
-
-If you want them reachable off your LAN — e.g. an iPad over cellular — point [ngrok](https://ngrok.com) at the proxy: `ngrok http 8080`. Not required.
+If you want them reachable off your LAN — e.g. an iPad over cellular — point
+[ngrok](https://ngrok.com) at the proxy: `ngrok http 8080`.
 
 ---
 
@@ -253,7 +268,7 @@ If you want them reachable off your LAN — e.g. an iPad over cellular — point
 - Python (librosa + SongFormer) for Shreddy's section detection — local, free, ~30 s/song
 - ffmpeg for audio normalization, pitch shifting, slicing
 - yt-dlp for YouTube ingestion
-- Claude / Gemini / Ollama for the optional LLM flows in Shreddy + SoundPath
+- Claude / Gemini / Ollama for the optional LLM flows in Shreddy
 
 ## License
 
@@ -261,6 +276,6 @@ If you want them reachable off your LAN — e.g. an iPad over cellular — point
 
 ## Why this repo exists
 
-I'm a guitar player who builds web apps. I started writing one for my own practice (Shreddy), then needed a place to clip licks (LickBank), then ear training (ChordCraft), then a metronome that didn't drift on iPad, then a way to wrangle my Helix LT presets (SoundPath). Now they share enough scaffolding that they belong in one repo.
+I'm a guitar player who builds web apps. I started writing one for my own practice (Shreddy), then needed a place to clip licks (LickBank), then ear training (ChordCraft), then a metronome that didn't drift on iPad, then a way to wrangle my Helix LT presets (SoundPath), then somewhere to assemble a gig out of all of it (Setlists). Now they share enough scaffolding that they belong in one repo.
 
 If any of this is useful to you, take it. Issues + PRs welcome but I run this on personal time, so responsiveness varies. Known gaps and forward-looking items live in [OPEN.md](OPEN.md).

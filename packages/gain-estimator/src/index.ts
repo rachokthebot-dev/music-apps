@@ -81,3 +81,13 @@ export {
 
 export { integratedLufs, type LoudnessResult } from "./loudness/bs1770";
 export { decodeWav, type DecodedWav } from "./loudness/wav";
+export {
+  splitAndMeasure,
+  type Segment,
+  type SegmentOptions,
+} from "./segment";
+export {
+  buildSetlistFile,
+  nameForSong,
+  type HlxLike,
+} from "./hls";

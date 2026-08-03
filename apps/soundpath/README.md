@@ -1,32 +1,61 @@
 # SoundPath
 
-Helix LT preset editor + AI-assisted patch designer. Drop in your `.hlx`, visualize the signal chain, align snapshot loudness deterministically, measure real loudness against the estimator, and use Claude / Gemini / a local LLM to design or refine snapshots without leaving the browser.
+Level Helix presets from real recordings. Play each snapshot once, and SoundPath measures its integrated loudness and writes the correction to the path output block — so a whole gig, or one patch on its own, lands at the same target.
 
 <!-- ![SoundPath](screenshots/soundpath.png) -->
 
-## What it does
+## Why measured, not predicted
 
-Open a Helix preset exported from HX Edit and use it as a master template with 8 snapshots (Clean / Jazz / Rock / Heavy + matching solos). SoundPath gives you five flows on top of that:
+An earlier version of this app predicted loudness by summing per-block dB models from the preset JSON. It was badly wrong — a modeller's chain is non-linear and its level depends on spectrum, so a preset can read as aligned and still be 20 dB out in the room. One gig looked level while a song sat 30 dB down.
 
-1. **Align Gain** — pick a baseline snapshot, set dB targets for every other snapshot, and the deterministic aligner finds the smallest ChVol + Boost change that hits those targets without touching Drive or tone knobs. Auto-enables a bypassed Boost block or inserts one into a free slot if needed.
-2. **Match Song** — give it a song reference; the LLM proposes parameter edits on a single snapshot to match that artist's recorded tone. Live loudness preview before you commit.
-3. **Tone Discovery** — give it a vibe ("warm jazz like Wes Montgomery"). It picks an exemplar song first, then patches the snapshot toward that exemplar.
-4. **Design Preset** — give it 3 tone descriptions (e.g. one each for jazz / rock / heavy). It generates a full 8-snapshot preset from scratch using the HelAIx catalog of 367 blocks.
-5. **Measure** — capture the *real* loudness of each snapshot (ITU-R BS.1770 LUFS) and compare it to what the estimator predicts. See [Measure loudness](#measure-loudness-ground-truth-vs-the-estimator) below.
+Nothing here reads a preset to decide how loud it is. Every number comes from a recording, measured with ITU-R BS.1770 integrated loudness (`packages/gain-estimator/src/loudness/`), in the browser, using the same code the server runs on uploads.
 
-Plus deterministic helpers: signal-chain visualizer (React Flow + dagre), pending-change staging with live loudness preview, an Output Block "absolute baseline" knob for cross-preset loudness alignment, and a one-click export back to a Helix-importable `.hlx`.
+## Three views
+
+**Library** — everything stored here. Setlists and presets share one row: name, where it came from, when it was last recorded, how much of it is measured. Open either to work on it.
+
+**Preset** — one patch on its own, against the same target a gig uses. For something from HelAIx, or a song that changed after the gig was recorded: load one `.hlx` on the Helix instead of the whole setlist, record it, and hand the readings back.
+
+**Setlist** — the whole gig. Record each song, confirm a pass, download one `.hls` where nothing jumps between songs.
+
+## What makes partial re-recording safe
+
+Every reading stores the output level it was taken through (`measuredBaselineDb`). A correction moves a snapshot from where it *was* to where it should be, and "where it was" is that number — not whatever happens to be loaded now.
+
+That one field is what lets you change one song, re-record only that song, and leave the other twenty untouched. Declared, never inferred: the app asks what's on the Helix rather than guessing, because a wrong baseline is invisible — the numbers stay entirely plausible and the output is confidently wrong.
+
+It also means a reading is portable. Level a preset on its own and its readings can be taken into a gig, where they're levelled against that gig's target and role offsets. Guarded on a pinned target: a gig that centres on its own recordings would be dragged by an outside reading.
+
+## The measurement window
+
+A take is measured over the *body* of the note — starting 150 ms after the onset, running 600 ms, stopping early only if the note has.
+
+Both edges keep the reading about the patch rather than the performance. The pick attack is the loudest thing in a take and it measures your right hand: swing from fingers to a hard pick and an attack-inclusive window moves 1.7 dB, while this one stays inside 0.03 dB. And songs are strummed — the chord is struck again long before it dies, so the fade is loudness nobody hears. Modelled against passages where each stroke resets the string, six patches from fast-decaying clean to compressed lead sit within about 1 dB of each other, while a 3 s window spreads them over 7 dB.
+
+Clipping is judged over the note *including* its attack, since that's what hits the converter. A clipped take is refused outright: a clipped chord measures quieter than it really is, so the plan would push it further into the ceiling.
+
+## Roles, targets and the ceiling
+
+Snapshots carry a role — clean, rhythm, chorus, solo — and each sits a chosen distance above the clean reference. Roles follow the patch, so naming one "solo" holds wherever that patch turns up.
+
+The output block stops at +12 dB, so the snapshot needing the biggest boost caps everything else. The target row reports the most a gig can take and offers a value a few dB under it; anything the block can't reach is flagged rather than silently clamped.
+
+The record offset turns the whole gig down before recording so hot presets don't clip on the way in. It costs nothing: every reading stamps the level it was taken through, so the offset is added straight back in the correction.
+
+## Confirmed versions
+
+A pass is frozen with its gains and the presets it was built from, so it keeps rebuilding after the live presets have moved on. Without that, the `.hls` was recomputed from whatever the readings happened to be, and a file you took to a gig quietly changed meaning the next time you recorded something.
+
+## Presets library
+
+The library DB (`data/soundpath.db`) is read-only in the UI. It's fed externally via `POST /api/presets/ingest` — [HelAIx](https://github.com/MrCitron/helaix) pushes its generated presets there.
 
 ## Tech stack
 
 - Next.js 16, React 19, TypeScript, Tailwind v4
-- `@xyflow/react` + `dagre` for the signal chain layout
-- `@music-apps/gain-estimator` (shared package): loudness math, preset skeleton, alignment, apply pipeline, and BS.1770 measurement (`loudness/bs1770.ts`, `loudness/wav.ts`)
-- Web Audio (`getUserMedia` + `AudioWorklet`) for in-browser live capture
-- HelAIx block catalog (367 entries) for design flows
-- LLM providers, in priority order:
-  - **Claude** via Claude Code CLI subprocess (uses OAuth, no API key)
-  - **Gemini Flash** via REST (set `GEMINI_API_KEY`)
-  - **Ollama local** — `gemma-hermes:latest` for Match Song / Tone Discovery, `qwen-coding-fast:latest` for Design Preset
+- `@music-apps/gain-estimator` — BS.1770 loudness, region detection, the apply pipeline
+- Prisma + SQLite for the presets library
+- Documents on disk under `SOUNDPATH_PRESET_DIR`: `setlists/` for gigs, `leveling/` for single presets
 
 ## Setup
 
@@ -34,7 +63,7 @@ Plus deterministic helpers: signal-chain visualizer (React Flow + dagre), pendin
 cp apps/soundpath/.env.example apps/soundpath/.env
 ```
 
-Then point `SOUNDPATH_PRESET_DIR` at the folder containing your `.hlx` files. Defaults to `~/Documents/helix-presets/` if unset. Drop any exported preset in there — SoundPath will pick the first `.hlx` it finds as the master on first run.
+Then point `SOUNDPATH_PRESET_DIR` at the folder for your `.hlx` files and stored documents. Defaults to `~/Documents/helix-presets/` if unset.
 
 ## Run
 
@@ -43,60 +72,32 @@ npm install
 npm run dev:soundpath          # → http://localhost:3004/soundpath
 ```
 
-## Measure loudness (ground truth vs. the estimator)
+Live capture needs a secure context — `localhost` directly, or HTTPS (`ngrok http 8080`) from other devices. Use the USB tap or line in, not a mic: a mic adds room coloration that has nothing to do with the patch.
 
-The gain estimator *predicts* per-snapshot loudness from the preset JSON — it sums hand-tuned per-block dB models and never hears the patch (`packages/gain-estimator/src/blockGain.ts` admits ±1–3 dB error per block). **Measure** closes that loop: it captures the real output, computes integrated loudness, and shows how far the estimator is off so you can trust (or correct) it.
+## API
 
-Open the editor, click **Measure** in the header, and each snapshot row gets a residual:
+A gig and a single preset are the same document, so the two route trees mirror each other and share their actions (`src/lib/levelActions.ts`).
 
-- **Est. (dB)** — estimator's loudness, relative to snapshot 0.
-- **Measured (LUFS)** — integrated loudness of your capture (ITU-R BS.1770).
-- **Meas. rel (dB)** — measured loudness relative to snapshot 0.
-- **Residual** — `measured − estimated`. Color-coded: green &lt;1 dB, amber &lt;3 dB, red ≥3 dB off. Positive means the snapshot is louder in reality than predicted.
+| Route | What it does |
+|---|---|
+| `GET /api/library` | Everything stored — setlists and presets, one row shape |
+| `GET/POST/DELETE /api/setlist` | Read a gig / upload an `.hls` or accept a push from Setlists / delete it |
+| `GET /api/setlist/plan` | The per-snapshot plan: target, correction, output level, what can't be reached |
+| `PATCH/POST /api/setlist/[index]/measure` | Store one live reading / measure an uploaded `.wav` |
+| `GET/POST /api/setlist/[index]/readings` | Readings this preset has from being levelled on its own, and take them |
+| `PATCH /api/setlist/[index]/roles` | What each snapshot counts as |
+| `PUT /api/setlist/loaded` | Declare which version is on the Helix right now |
+| `GET/POST /api/setlist/versions` | List confirmed passes / freeze the current plan as the next one |
+| `GET /api/setlist/export` | The levelled `.hls` — `?version=n`, or `original` for the unlevelled file |
+| `GET /api/setlist/snapshots` | Per-song snapshot counts, for the Setlists app |
+| `GET/POST/DELETE /api/level` | Preset levelling sessions — list, open one for a patch, drop it |
+| `GET /api/level/plan`, `…/measure`, `…/roles`, `…/loaded`, `…/versions`, `…/export` | The same, scoped to one preset; export is a `.hlx` |
+| `GET /api/presets`, `/api/presets/[id]`, `/api/presets/[id]/download` | Read the presets library |
+| `POST /api/presets/ingest` | External ingest (HelAIx) |
 
-Two capture paths, both feeding the same `POST /api/measure` (WAV in → LUFS out, stored per snapshot in `measurements.json` next to your preset):
+## Bench
 
-1. **Upload** (`WAV` button) — drop in a clip recorded anywhere (DAW, the Helix itself). Works over plain HTTP, so it's fine through the proxy at `192.168.1.18:8080`.
-2. **Live** (`● Rec` / `■ Stop`) — records straight off the Helix via `getUserMedia` + an `AudioWorklet`, encodes a WAV in-browser, and uploads it. Pins a 48 kHz context and **disables auto-gain / noise-suppression / echo-cancellation** (AGC would dynamically change gain and corrupt the reading).
-
-### Why USB / line-in, not a mic
-
-The estimator models the *digital* signal chain (amp + cab IR). USB or line-in captures exactly that — the deterministic patch output. A mic in front of a physical cab adds room + speaker coloration the estimator never models, so it calibrates against the wrong target. For a Helix the direct path is the normal one anyway. A mic *can* work for relative snapshot-to-snapshot comparison if mic/room/picking are held constant, but it's noisier — treat it as a fallback.
-
-### Secure-context caveat (live capture only)
-
-`getUserMedia` needs a secure context. **Upload works anywhere; live `● Rec` does not work over plain HTTP from a LAN IP.** To use live capture:
-
-- On the Mac running the Helix, open `http://localhost:3004/soundpath/edit` directly (`localhost` counts as secure), **or**
-- front the proxy with HTTPS (`ngrok http 8080`) and use the `https://` URL from any device.
-
-### How to test
-
-1. Plug the Helix into the Mac via USB. In macOS this presents as an audio **input** device.
-2. Open `http://localhost:3004/soundpath/edit` (localhost, for live capture) and click **Measure**.
-3. Pick the Helix in the **Input** selector. (First `● Rec` triggers a mic-permission prompt.)
-4. For each snapshot: select it on the Helix, hit **● Rec**, play a few seconds of full chords, hit **■ Stop**. The row fills in with measured LUFS + residual.
-5. To sanity-check without hardware: record/export a WAV in a DAW and use the **WAV** upload button instead.
-
-The measurement engine is unit-tested against BS.1770's calibration property (a 1 kHz tone reads its dBFS RMS in LUFS):
-
-```bash
-cd packages/gain-estimator
-npm test                                       # bs1770.test.ts (6 cases)
-```
-
-> Note: the residual is currently **display-only**. Feeding it back into `blockGain.ts` to auto-correct the per-block models (the `cab()` / Klon / tube-amp constants that have explicit "calibrate later" TODOs) is the planned next step.
-
-## Smoke tests
-
-A few command-line diagnostics live in `packages/gain-estimator/src/smoke-*.ts`. Each accepts an optional path to a `.hlx`, or reads `SOUNDPATH_PRESET_DIR`, or falls back to the default dir.
-
-```bash
-cd packages/gain-estimator
-npx tsx src/smoke.ts                          # raw loudness landscape
-npx tsx src/smoke-align.ts                    # default-tier alignment plan
-npx tsx src/smoke-align-user-targets.ts       # user-targets alignment plan
-```
+`/soundpath/measure` is a standalone bench: record takes, watch the proposed region, drag it, and check the input path isn't adding gain of its own. Nothing there is saved.
 
 ## License
 

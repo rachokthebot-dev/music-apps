@@ -7,6 +7,12 @@ export interface VideoMeta {
   thumbnail: string;
 }
 
+export interface VideoChapter {
+  title: string;
+  startSec: number;
+  endSec: number;
+}
+
 export async function checkYtdlp(): Promise<{ installed: boolean; version?: string }> {
   return new Promise((resolve) => {
     execFile("yt-dlp", ["--version"], (error, stdout) => {
@@ -16,6 +22,57 @@ export async function checkYtdlp(): Promise<{ installed: boolean; version?: stri
         resolve({ installed: true, version: stdout.trim() });
       }
     });
+  });
+}
+
+/**
+ * Creator-authored chapter markers, when the video has them. Most song
+ * playthroughs label their sections (Intro/Verse/Chorus/Solo/…), which is
+ * exact structure for free — no audio analysis needed.
+ *
+ * Returns [] when the video has no chapters or yt-dlp fails: callers treat
+ * "no chapters" as a normal outcome and fall back to the local model.
+ */
+export async function fetchChapters(url: string): Promise<VideoChapter[]> {
+  return new Promise((resolve) => {
+    execFile(
+      "yt-dlp",
+      ["--no-playlist", "--print", "%(chapters)j", url],
+      { timeout: 30000 },
+      (error, stdout) => {
+        if (error) {
+          resolve([]);
+          return;
+        }
+        try {
+          // yt-dlp prints the literal string "NA" for videos without chapters.
+          const raw = stdout.trim();
+          if (!raw || raw === "NA") {
+            resolve([]);
+            return;
+          }
+          const parsed = JSON.parse(raw);
+          if (!Array.isArray(parsed)) {
+            resolve([]);
+            return;
+          }
+          resolve(
+            parsed
+              .filter(
+                (c) =>
+                  typeof c?.start_time === "number" && typeof c?.end_time === "number"
+              )
+              .map((c) => ({
+                title: String(c.title || "Section").trim(),
+                startSec: c.start_time,
+                endSec: c.end_time,
+              }))
+          );
+        } catch {
+          resolve([]);
+        }
+      }
+    );
   });
 }
 

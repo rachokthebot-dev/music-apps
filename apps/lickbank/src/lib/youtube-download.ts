@@ -4,6 +4,7 @@ import { SOURCES_DIR } from "./paths";
 import { prisma } from "./prisma";
 import { mkdir } from "fs/promises";
 import { generateWaveformData } from "./waveform";
+import { startAnalysis } from "./analyze-source";
 
 export { checkYtdlp, fetchVideoMeta } from "@music-apps/shared";
 
@@ -148,6 +149,12 @@ export async function downloadAndProcess(sourceId: string, url: string) {
       where: { sourceId },
       data: { status: "completed", progressMessage: "Done" },
     });
+
+    // Structure detection runs after the source is usable, not before — the
+    // SongFormer fallback takes minutes and shouldn't block clipping. Goes
+    // through the job map so a user clicking Analyze can't stack a second
+    // model run on top of this one.
+    startAnalysis(sourceId, "auto");
   } catch (err) {
     const message = err instanceof Error ? err.message : "Download failed";
     await prisma.source.update({

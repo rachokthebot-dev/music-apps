@@ -24,6 +24,28 @@ model Source {
   licks     Lick[]
   importJob ImportJob?
   folders   SourceFolder[]
+  sections  SourceSection[]
+}
+
+// Structure of the whole video (Intro/Verse/Solo/…), used to find the solo
+// before clipping. Distinct from Section, which subdivides an individual Lick.
+model SourceSection {
+  id           String   @id @default(uuid())
+  sourceId     String
+  name         String
+  startSec     Float
+  endSec       Float
+  orderIndex   Int      @default(0)
+  autoDetected Boolean  @default(false)
+  // "chapters" (creator-authored, exact) or "songformer" (local model,
+  // good boundaries but unreliable labels). Null for hand-made sections.
+  detectedBy   String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  source Source @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+
+  @@index([sourceId, orderIndex])
 }
 
 model Lick {

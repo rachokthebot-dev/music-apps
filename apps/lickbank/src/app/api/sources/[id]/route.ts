@@ -13,7 +13,11 @@ export async function GET(
 
     const source = await prisma.source.findUnique({
       where: { id },
-      include: { licks: true, importJob: true },
+      include: {
+        licks: true,
+        importJob: true,
+        sections: { orderBy: { startSec: "asc" } },
+      },
     });
 
     if (!source) {
