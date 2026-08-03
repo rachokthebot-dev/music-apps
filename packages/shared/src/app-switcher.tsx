@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useLayoutEffect, useRef } from "react";
 import { APP_REGISTRY, getAppUrl, LAUNCHER_PATH } from "./app-registry";
 
 interface AppSwitcherProps {
@@ -8,12 +8,54 @@ interface AppSwitcherProps {
   currentAppId: string;
 }
 
+/** Keep the panel on screen even when the button is near an edge. */
+const MARGIN = 8;
+
 export function AppSwitcher({ currentAppId }: AppSwitcherProps) {
   const [open, setOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<{ top: number; right: number } | null>(null);
 
   const currentApp = APP_REGISTRY.find((a) => a.id === currentAppId);
-  const otherApps = APP_REGISTRY.filter((a) => a.id !== currentAppId);
+
+  /**
+   * Where the panel sits, in viewport coordinates.
+   *
+   * It is `fixed` so a scrolling ancestor can't clip it, which means the
+   * position has to be measured rather than inherited. This used to be read
+   * straight out of `getBoundingClientRect()` during render: impure, and
+   * measured exactly once — scroll or rotate with the menu open and the panel
+   * stayed where it was while the button moved away from it. On a page
+   * scrolled far enough that the header had left the viewport it opened above
+   * the fold, off screen entirely.
+   *
+   * Measured after layout instead, and again on scroll and resize.
+   */
+  useLayoutEffect(() => {
+    if (!open) return;
+    const place = () => {
+      const anchor = menuRef.current?.getBoundingClientRect();
+      if (!anchor) return;
+      const height = panelRef.current?.offsetHeight ?? 0;
+      const maxTop = Math.max(MARGIN, window.innerHeight - height - MARGIN);
+      setPos({
+        top: Math.min(Math.max(MARGIN, anchor.bottom + 4), maxTop),
+        right: Math.max(MARGIN, window.innerWidth - anchor.right),
+      });
+    };
+    place();
+    window.addEventListener("scroll", place, true);
+    window.addEventListener("resize", place);
+    return () => {
+      window.removeEventListener("scroll", place, true);
+      window.removeEventListener("resize", place);
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) setPos(null);
+  }, [open]);
 
   // Close on outside click
   useEffect(() => {
@@ -51,11 +93,12 @@ export function AppSwitcher({ currentAppId }: AppSwitcherProps) {
 
       {open && (
         <div
-          className="fixed mt-2 w-64 md:w-72 max-h-[calc(100dvh-5rem)] overflow-y-auto overscroll-contain rounded-xl border border-border bg-card shadow-lg shadow-black/20 z-50 animate-in fade-in slide-in-from-top-1 duration-150"
-          style={{
-            top: menuRef.current ? menuRef.current.getBoundingClientRect().bottom + 4 : 0,
-            right: menuRef.current ? window.innerWidth - menuRef.current.getBoundingClientRect().right : 8,
-          }}
+          ref={panelRef}
+          role="menu"
+          className="fixed w-64 md:w-72 max-h-[calc(100dvh-5rem)] overflow-y-auto overscroll-contain rounded-xl border border-border bg-card shadow-lg shadow-black/20 z-50 animate-in fade-in slide-in-from-top-1 duration-150"
+          // Hidden for the one frame before it has been measured, so it can't
+          // flash at the top-left corner on the way to where it belongs.
+          style={pos ? { top: pos.top, right: pos.right } : { top: 0, right: 0, visibility: "hidden" }}
         >
           <div className="px-3 py-2 border-b border-border sticky top-0 bg-card z-10">
             <span className="text-[10px] md:text-xs font-semibold text-muted-foreground uppercase tracking-wider">
