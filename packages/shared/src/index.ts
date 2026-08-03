@@ -1,5 +1,5 @@
-export { checkYtdlp, fetchVideoMeta } from "./youtube-utils";
-export type { VideoMeta } from "./youtube-utils";
+export { checkYtdlp, fetchVideoMeta, fetchChapters } from "./youtube-utils";
+export type { VideoMeta, VideoChapter } from "./youtube-utils";
 
 export { shiftPitch, pitchFilename, validateSemitones } from "./ffmpeg-pitch";
 

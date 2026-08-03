@@ -31,6 +31,7 @@ interface Source {
   waveformData: string | null;
   processingStatus: string;
   licks: SourceLick[];
+  sections: SourceSection[];
 }
 
 interface SourceLick {
@@ -40,6 +41,21 @@ interface SourceLick {
   endSec: number;
   durationSec: number;
 }
+
+interface SourceSection {
+  id: string;
+  name: string;
+  startSec: number;
+  endSec: number;
+  autoDetected: boolean;
+  detectedBy: string | null;
+}
+
+// Cycled by index so adjacent sections stay visually distinct.
+const SECTION_COLORS = [
+  "bg-violet-500", "bg-sky-500", "bg-emerald-500", "bg-amber-500", "bg-rose-500",
+  "bg-cyan-500", "bg-fuchsia-500", "bg-lime-500", "bg-orange-500", "bg-teal-500",
+];
 
 interface Folder {
   id: string;
@@ -88,10 +104,17 @@ export default function ClipperPage({
   const [adjustingLick, setAdjustingLick] = useState<{ id: string; edge: "start" | "end" } | null>(null);
   const [adjustingBoundary, setAdjustingBoundary] = useState(false);
 
+  // Structure analysis
+  const [analyzing, setAnalyzing] = useState(false);
+  const [analyzeOpen, setAnalyzeOpen] = useState(false);
+  const [analyzeMode, setAnalyzeMode] = useState<"chapters" | "model">("chapters");
+
   // Lick selection / inline edit
   const [selectedLickId, setSelectedLickId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState("");
   const [savingName, setSavingName] = useState(false);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [deletingLick, setDeletingLick] = useState(false);
   const lickSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingLickRef = useRef<{ id: string; startSec: number; endSec: number } | null>(null);
 
@@ -131,6 +154,66 @@ export default function ClipperPage({
       .then(setFolders)
       .catch(() => {});
   }, []);
+
+  // The model runs in the background, so the server tracks the job and we poll
+  // it for a real outcome — a crash reports as a crash instead of looking
+  // identical to "found nothing".
+  useEffect(() => {
+    if (!analyzing || !sourceId) return;
+
+    const timer = setInterval(async () => {
+      try {
+        const res = await fetch(`/lickbank/api/sources/${sourceId}/analyze`);
+        if (!res.ok) return;
+        const job = await res.json();
+        if (job.status === "running") return;
+
+        setAnalyzing(false);
+        if (job.status === "done" && job.count > 0) {
+          await fetchSource();
+          setSaveMessage({ type: "success", text: `Found ${job.count} sections` });
+          setTimeout(() => setSaveMessage(null), 3000);
+        } else if (job.status === "idle") {
+          // The server lost the job (restart / hot reload) but the run still
+          // writes its sections — so ask the database, not the job map.
+          const res2 = await fetch(`/lickbank/api/sources/${sourceId}`);
+          const data: Source = await res2.json();
+          setSource(data);
+          setSaveMessage(
+            data.sections.length > 0
+              ? { type: "success", text: `Found ${data.sections.length} sections` }
+              : { type: "error", text: "The server restarted — analysis result was lost" }
+          );
+          setTimeout(() => setSaveMessage(null), 5000);
+        } else {
+          setSaveMessage({
+            type: "error",
+            text: job.message || "No structure detected",
+          });
+          setTimeout(() => setSaveMessage(null), 8000);
+        }
+      } catch {
+        // Transient — keep polling.
+      }
+    }, 3000);
+
+    return () => clearInterval(timer);
+  }, [analyzing, sourceId, fetchSource]);
+
+  // A model run outlives the page, so pick the spinner back up after a reload
+  // instead of showing an idle button while the machine is busy.
+  useEffect(() => {
+    if (!sourceId) return;
+    fetch(`/lickbank/api/sources/${sourceId}/analyze`)
+      .then((r) => r.json())
+      .then((job) => {
+        if (job?.status === "running") {
+          setAnalyzeMode(job.mode === "model" ? "model" : "chapters");
+          setAnalyzing(true);
+        }
+      })
+      .catch(() => {});
+  }, [sourceId]);
 
   // Draw waveform on canvas
   useEffect(() => {
@@ -387,12 +470,73 @@ export default function ClipperPage({
   const handleSelectLick = (lick: SourceLick) => {
     setSelectedLickId(lick.id);
     setEditingName(lick.name);
+    setConfirmDeleteId(null);
     seekTo(lick.startSec);
   };
 
   const handleDeselectLick = () => {
     setSelectedLickId(null);
     setEditingName("");
+    setConfirmDeleteId(null);
+  };
+
+  const handleDeleteLick = async (id: string) => {
+    setDeletingLick(true);
+    try {
+      const res = await fetch(`/lickbank/api/licks/${id}`, { method: "DELETE" });
+      if (res.ok) {
+        handleDeselectLick();
+        await fetchSource();
+        setSaveMessage({ type: "success", text: "Lick deleted" });
+        setTimeout(() => setSaveMessage(null), 2000);
+      } else {
+        setSaveMessage({ type: "error", text: "Failed to delete lick" });
+        setTimeout(() => setSaveMessage(null), 3000);
+      }
+    } catch {
+      setSaveMessage({ type: "error", text: "Network error — lick not deleted" });
+      setTimeout(() => setSaveMessage(null), 3000);
+    } finally {
+      setDeletingLick(false);
+    }
+  };
+
+  const runAnalyze = async () => {
+    if (!sourceId || analyzing) return;
+    setAnalyzeOpen(false);
+    setAnalyzing(true);
+    try {
+      const res = await fetch(`/lickbank/api/sources/${sourceId}/analyze`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: analyzeMode }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+
+      // The model runs in the background; the polling effect takes it from here.
+      if (data.pending) return;
+
+      setAnalyzing(false);
+      if (data.count > 0) {
+        await fetchSource();
+        setSaveMessage({ type: "success", text: `Found ${data.count} sections` });
+        setTimeout(() => setSaveMessage(null), 3000);
+      } else {
+        setSaveMessage({
+          type: "error",
+          text: "This video has no chapters — try the local model",
+        });
+        setTimeout(() => setSaveMessage(null), 5000);
+      }
+    } catch (err) {
+      setAnalyzing(false);
+      setSaveMessage({
+        type: "error",
+        text: err instanceof Error && err.message ? err.message : "Failed to start analysis",
+      });
+      setTimeout(() => setSaveMessage(null), 5000);
+    }
   };
 
   const handleSaveLickName = async () => {
@@ -609,6 +753,87 @@ export default function ClipperPage({
             </div>
           )}
 
+          {/* Structure strip — sits between the video and the timeline so the
+              solo can be found before clipping. Tapping a block sets the clip
+              range; the amber handles stay the way to fine-tune it. */}
+          <div className="shrink-0">
+            <div className="flex items-center gap-2 mb-1.5">
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                Structure
+              </span>
+              <span className="text-[10px] text-muted-foreground/70 flex-1 truncate">
+                {analyzing
+                  ? analyzeMode === "model"
+                    ? "running the local model — this takes minutes"
+                    : "fetching chapters..."
+                  : source.sections.length === 0
+                    ? "not analyzed yet"
+                    : source.sections[0].detectedBy === "chapters"
+                      ? "from YouTube chapters"
+                      : "detected locally — labels approximate"}
+              </span>
+              <button
+                type="button"
+                onClick={() => setAnalyzeOpen(true)}
+                disabled={analyzing}
+                className="flex items-center gap-1.5 h-8 px-3 rounded-lg text-xs font-semibold bg-card border border-border hover:border-violet-500/50 hover:bg-violet-500/10 active:scale-95 transition-all disabled:opacity-60 disabled:active:scale-100 shrink-0"
+              >
+                <svg
+                  width="13"
+                  height="13"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  className={`text-violet-500 ${analyzing ? "animate-spin" : ""}`}
+                >
+                  <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+                </svg>
+                {analyzing
+                  ? "Analyzing..."
+                  : source.sections.length > 0
+                    ? "Re-analyze"
+                    : "Analyze structure"}
+              </button>
+            </div>
+            {source.sections.length > 0 && (
+              <div className="relative w-full h-6 md:h-7 bg-muted rounded-lg overflow-hidden select-none">
+                {source.sections.map((section, i) => {
+                  const left = duration > 0 ? (section.startSec / duration) * 100 : 0;
+                  const width =
+                    duration > 0 ? ((section.endSec - section.startSec) / duration) * 100 : 0;
+                  // Derived from the clip range rather than tracked separately, so
+                  // dragging the handles clears the selection on its own.
+                  const isActive =
+                    Math.abs(clipStart - section.startSec) < 0.5 &&
+                    Math.abs(clipEnd - section.endSec) < 0.5;
+                  return (
+                    <button
+                      key={section.id}
+                      className={`absolute top-0 bottom-0 border-r border-background/50 transition-all hover:brightness-125 ${
+                        SECTION_COLORS[i % SECTION_COLORS.length]
+                      } ${section.detectedBy === "songformer" ? "opacity-60" : ""} ${
+                        isActive ? "ring-2 ring-inset ring-foreground brightness-125" : ""
+                      }`}
+                      style={{ left: `${left}%`, width: `${width}%` }}
+                      title={`${section.name} — ${formatTime(section.startSec)} to ${formatTime(section.endSec)}`}
+                      onClick={() => {
+                        setClipStart(section.startSec);
+                        setClipEnd(Math.min(section.endSec, duration));
+                      }}
+                    >
+                      <span className="absolute left-1 top-1/2 -translate-y-1/2 text-[10px] font-semibold text-white whitespace-nowrap pointer-events-none drop-shadow-[0_1px_1px_rgba(0,0,0,0.85)]">
+                        {section.name}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
           {/* Timeline */}
           <div
             ref={timelineRef}
@@ -792,9 +1017,9 @@ export default function ClipperPage({
         </div>
 
         {/* Right: Controls + Licks */}
-        <aside className="md:w-80 lg:w-96 border-t md:border-t-0 md:border-l border-border overflow-y-auto p-3 md:p-4 space-y-3 shrink-0">
+        <aside className="md:w-80 lg:w-96 border-t md:border-t-0 md:border-l border-border overflow-y-auto md:overflow-hidden md:flex md:flex-col p-3 md:p-4 space-y-3 shrink-0">
           {/* Clip Range Card */}
-          <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-3 space-y-3">
+          <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-3 space-y-3 shrink-0">
             <div className="flex items-center gap-2">
               <div className="w-6 h-6 rounded-md bg-amber-500/20 flex items-center justify-center">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-amber-500">
@@ -878,9 +1103,10 @@ export default function ClipperPage({
             </Button>
           </div>
 
-          {/* Clipped Licks */}
-          <div>
-            <div className="flex items-center gap-2 mb-2">
+          {/* Clipped Licks — scrolls on its own so the Clip Range controls
+              above stay put no matter how many licks are saved. */}
+          <div className="md:flex-1 md:min-h-0 md:flex md:flex-col">
+            <div className="flex items-center gap-2 mb-2 shrink-0">
               <h3 className="text-sm font-semibold flex-1">
                 Clipped Licks
                 {source.licks.length > 0 && (
@@ -895,7 +1121,7 @@ export default function ClipperPage({
             </div>
 
             {source.licks.length > 0 ? (
-              <div className="space-y-1.5">
+              <div className="space-y-1.5 md:flex-1 md:min-h-0 md:overflow-y-auto md:-mr-1 md:pr-1">
                 {source.licks.map((lick) => {
                   const isSelected = selectedLickId === lick.id;
                   if (isSelected) {
@@ -1015,10 +1241,33 @@ export default function ClipperPage({
                           </button>
                         </div>
 
+                        <p className="text-xs text-muted-foreground">
+                          Drag the green handles on the waveform too.
+                        </p>
+
                         <div className="flex items-center justify-between">
-                          <p className="text-xs text-muted-foreground">
-                            Drag the green handles on the waveform too.
-                          </p>
+                          {/* Two-tap confirm — deleting also removes the clip
+                              files, and this list gets tapped on an iPad. */}
+                          <button
+                            type="button"
+                            onClick={() =>
+                              confirmDeleteId === lick.id
+                                ? handleDeleteLick(lick.id)
+                                : setConfirmDeleteId(lick.id)
+                            }
+                            disabled={deletingLick}
+                            className={`text-sm font-medium px-3 py-2 rounded-lg transition-colors disabled:opacity-50 ${
+                              confirmDeleteId === lick.id
+                                ? "text-destructive bg-destructive/10 hover:bg-destructive/20"
+                                : "text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                            }`}
+                          >
+                            {deletingLick
+                              ? "Deleting..."
+                              : confirmDeleteId === lick.id
+                                ? "Tap again to delete"
+                                : "Delete"}
+                          </button>
                           <button
                             type="button"
                             onClick={() => router.push(`/licks/${lick.id}`)}
@@ -1070,6 +1319,68 @@ export default function ClipperPage({
           </div>
         </aside>
       </div>
+
+      {/* Analyze Structure Dialog */}
+      <Dialog open={analyzeOpen} onOpenChange={setAnalyzeOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Analyze structure</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2">
+            {[
+              {
+                mode: "chapters" as const,
+                title: "YouTube chapters",
+                detail:
+                  "Re-downloads the creator's chapter markers. Exact labels, a few seconds. Does nothing if the video has none.",
+              },
+              {
+                mode: "model" as const,
+                title: "Local model",
+                detail:
+                  "Runs SongFormer on the audio — minutes of CPU. Boundaries are reliable, but labels are approximate and it tends to over-call solos on instrumentals.",
+              },
+            ].map((opt) => (
+              <button
+                key={opt.mode}
+                type="button"
+                onClick={() => setAnalyzeMode(opt.mode)}
+                className={`w-full text-left p-3 rounded-xl border transition-colors ${
+                  analyzeMode === opt.mode
+                    ? "border-violet-500 bg-violet-500/10"
+                    : "border-border hover:bg-muted"
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <span
+                    className={`w-4 h-4 rounded-full border-2 shrink-0 ${
+                      analyzeMode === opt.mode
+                        ? "border-violet-500 bg-violet-500 ring-2 ring-inset ring-background"
+                        : "border-muted-foreground/40"
+                    }`}
+                  />
+                  <span className="text-sm font-semibold">{opt.title}</span>
+                  {opt.mode === "chapters" && (
+                    <span className="text-[10px] text-muted-foreground">Default</span>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground mt-1.5 ml-6">{opt.detail}</p>
+              </button>
+            ))}
+            {source.sections.length > 0 && (
+              <p className="text-xs text-muted-foreground pt-1">
+                Replaces the {source.sections.length} sections currently on the strip.
+              </p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setAnalyzeOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={runAnalyze}>Analyze</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Save Lick Dialog */}
       <Dialog open={saveOpen} onOpenChange={setSaveOpen}>

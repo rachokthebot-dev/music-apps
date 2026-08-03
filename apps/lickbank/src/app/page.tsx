@@ -550,7 +550,13 @@ function LibraryPage() {
                 {activeTab === "licks" ? licks.length : sources.length}
               </span>
             </button>
-            {folders.map((folder) => {
+            {folders
+              // In the Songs tab, only show folders that actually contain songs —
+              // lick-only folders (0 songs) just duplicate song names and clutter.
+              .filter((folder) =>
+                activeTab === "licks" ? true : folder._count.sourceFolders > 0
+              )
+              .map((folder) => {
               const fColor = folderColorMap.get(folder.id);
               const count = activeTab === "licks"
                 ? folder._count.lickFolders

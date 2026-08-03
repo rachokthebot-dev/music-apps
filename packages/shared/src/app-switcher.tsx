@@ -51,13 +51,13 @@ export function AppSwitcher({ currentAppId }: AppSwitcherProps) {
 
       {open && (
         <div
-          className="fixed mt-2 w-64 md:w-72 rounded-xl border border-border bg-card shadow-lg shadow-black/20 z-50 animate-in fade-in slide-in-from-top-1 duration-150"
+          className="fixed mt-2 w-64 md:w-72 max-h-[calc(100dvh-5rem)] overflow-y-auto overscroll-contain rounded-xl border border-border bg-card shadow-lg shadow-black/20 z-50 animate-in fade-in slide-in-from-top-1 duration-150"
           style={{
             top: menuRef.current ? menuRef.current.getBoundingClientRect().bottom + 4 : 0,
             right: menuRef.current ? window.innerWidth - menuRef.current.getBoundingClientRect().right : 8,
           }}
         >
-          <div className="px-3 py-2 border-b border-border">
+          <div className="px-3 py-2 border-b border-border sticky top-0 bg-card z-10">
             <span className="text-[10px] md:text-xs font-semibold text-muted-foreground uppercase tracking-wider">
               Music Apps
             </span>
@@ -67,9 +67,9 @@ export function AppSwitcher({ currentAppId }: AppSwitcherProps) {
                 app's basePath is NOT prepended — this must hit the proxy root. */}
             <a
               href={LAUNCHER_PATH}
-              className="flex items-center gap-3 px-3 py-2.5 md:py-3 rounded-lg transition-colors hover:bg-secondary text-foreground cursor-pointer"
+              className="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors hover:bg-secondary text-foreground cursor-pointer"
             >
-              <div className="w-8 h-8 md:w-9 md:h-9 rounded-lg flex items-center justify-center bg-secondary text-muted-foreground">
+              <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-secondary text-muted-foreground shrink-0">
                 <HomeIcon />
               </div>
               <div className="flex-1 min-w-0">
@@ -85,7 +85,7 @@ export function AppSwitcher({ currentAppId }: AppSwitcherProps) {
                   key={app.id}
                   href={isCurrent ? undefined : getAppUrl(app)}
                   onClick={isCurrent ? () => setOpen(false) : undefined}
-                  className={`flex items-center gap-3 px-3 py-2.5 md:py-3 rounded-lg transition-colors ${
+                  className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors ${
                     isCurrent
                       ? "bg-primary/10 text-primary cursor-default"
                       : "hover:bg-secondary text-foreground cursor-pointer"
@@ -139,7 +139,7 @@ function HomeIcon() {
 }
 
 function AppIcon({ appId }: { appId: string }) {
-  const iconClass = "w-8 h-8 md:w-9 md:h-9 rounded-lg flex items-center justify-center text-sm font-bold";
+  const iconClass = "w-8 h-8 rounded-lg flex items-center justify-center text-sm font-bold shrink-0";
 
   switch (appId) {
     case "shreddy":
@@ -154,6 +154,11 @@ function AppIcon({ appId }: { appId: string }) {
       return <div className={`${iconClass} bg-violet-500/15 text-violet-400`}>P</div>;
     case "helaix":
       return <div className={`${iconClass} bg-amber-500/15 text-amber-400`}>H</div>;
+    // Emerald, since violet is already SoundPath's.
+    case "setlists":
+      return <div className={`${iconClass} bg-emerald-500/15 text-emerald-500`}>G</div>;
+    case "tones":
+      return <div className={`${iconClass} bg-cyan-500/15 text-cyan-500`}>T</div>;
     default:
       return <div className={`${iconClass} bg-secondary text-muted-foreground`}>{appId[0]?.toUpperCase()}</div>;
   }

@@ -23,6 +23,8 @@ export const APP_REGISTRY: AppEntry[] = [
   { id: "metronome",  name: "Metronome",  description: "Tempo & timer",        basePath: "/metronome" },
   { id: "soundpath",  name: "SoundPath",  description: "Tone & signal paths",  basePath: "/soundpath" },
   { id: "helaix",     name: "HelAIx",     description: "AI Helix presets",     basePath: "/helaix" },
+  { id: "setlists",   name: "Setlists",   description: "Gig prep & patches",   basePath: "/setlists" },
+  { id: "tones",      name: "Tone Search", description: "Find a Helix preset", basePath: "/tones" },
 ];
 
 /** Build the URL for an app. Proxy-relative, so it works on localhost, the

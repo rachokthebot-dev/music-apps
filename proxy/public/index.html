@@ -168,6 +168,8 @@ try{const t=localStorage.getItem('theme');if(t==='dark'||(!t&&matchMedia('(prefe
   .dark .a-metronome .icon { color: #0b0b0e; }
   .a-soundpath  { --accent: #a855f7; }
   .a-helaix     { --accent: #fb923c; }
+  .a-setlists   { --accent: #8b5cf6; }
+  .a-tones      { --accent: #22d3ee; }
 
   /* Settings hub */
   .settings { margin-top: 40px; }
@@ -326,6 +328,30 @@ try{const t=localStorage.getItem('theme');if(t==='dark'||(!t&&matchMedia('(prefe
       <span class="body">
         <span class="name">HelAIx</span>
         <span class="desc">AI preset engineer for Line 6 Helix.</span>
+      </span>
+      <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+    </a>
+
+    <a class="card a-setlists" href="/setlists">
+      <span class="icon" aria-hidden="true">
+        <!-- list / setlist -->
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><circle cx="3.5" cy="6" r="1.5"/><circle cx="3.5" cy="12" r="1.5"/><circle cx="3.5" cy="18" r="1.5"/></svg>
+      </span>
+      <span class="body">
+        <span class="name">Setlists</span>
+        <span class="desc">Paste a playlist. Get practice tracks, licks and patches.</span>
+      </span>
+      <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+    </a>
+
+    <a class="card a-tones" href="/tones/">
+      <span class="icon" aria-hidden="true">
+        <!-- magnifier -->
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="21" y2="21"/></svg>
+      </span>
+      <span class="body">
+        <span class="name">Tone Search</span>
+        <span class="desc">Semantic search over 8,917 indexed CustomTone presets.</span>
       </span>
       <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
     </a>

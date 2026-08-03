@@ -165,6 +165,21 @@ const APPS = {
   metronome:  { port: 3003, name: "Metronome",  tag: "Time",     desc: "A focused metronome that gets out of the way.",                     accent: "#f5f5f7", stripPrefix: false },
   soundpath:  { port: 3004, name: "SoundPath",  tag: "Tone",     desc: "Explore signal paths and gain staging.",                            accent: "#a855f7", stripPrefix: false },
   helaix:     { port: 3005, name: "HelAIx",     tag: "Presets",  desc: "AI preset engineer for Line 6 Helix. Describe a tone, get a .hlx.", accent: "#fb923c", stripPrefix: true  },
+  setlists:   { port: 3006, name: "Setlists",   tag: "Gigs",     desc: "Paste a playlist. Get practice tracks, licks and Helix patches.",   accent: "#8b5cf6", stripPrefix: false },
+  // No port: a static bundle served straight off disk, so there's no extra
+  // process to start and nothing in run-all.sh to keep in sync.
+  tones:      { name: "Tone Search", tag: "Presets", desc: "Semantic search over 8,917 indexed CustomTone Helix presets.",             accent: "#22d3ee", static: path.resolve(__dirname, "../../helix-tone-search/web") },
+};
+
+const STATIC_TYPES = {
+  ".html": "text/html; charset=utf-8",
+  ".js":   "text/javascript; charset=utf-8",
+  ".css":  "text/css; charset=utf-8",
+  ".json": "application/json; charset=utf-8",
+  ".bin":  "application/octet-stream",
+  ".svg":  "image/svg+xml",
+  ".png":  "image/png",
+  ".woff2": "font/woff2",
 };
 
 const PROXY_PORT = parseInt(process.env.PORT || "8080", 10);
@@ -203,6 +218,46 @@ function serveLanding(req, res) {
     res.writeHead(200, {
       "content-type": "text/html; charset=utf-8",
       "cache-control": "no-store",
+    });
+    res.end(buf);
+  });
+}
+
+/**
+ * Serve a static app off disk. The bundle fetches its data with relative URLs,
+ * so /tones has to redirect to /tones/ or those fetches resolve one level up.
+ */
+function serveStatic(req, res, slug) {
+  const root = APPS[slug].static;
+  const qIdx = req.url.indexOf("?");
+  const pathname = qIdx === -1 ? req.url : req.url.slice(0, qIdx);
+
+  if (pathname === "/" + slug) {
+    res.writeHead(302, { location: "/" + slug + "/" + (qIdx === -1 ? "" : req.url.slice(qIdx)) });
+    res.end();
+    return;
+  }
+
+  let rel = pathname.slice(("/" + slug).length) || "/";
+  if (rel.endsWith("/")) rel += "index.html";
+
+  const file = path.join(root, path.normalize(rel));
+  // path.normalize resolves "..", so a traversal attempt lands outside root.
+  if (!file.startsWith(root)) {
+    res.writeHead(403, { "content-type": "text/plain" });
+    res.end("Forbidden");
+    return;
+  }
+
+  fs.readFile(file, (err, buf) => {
+    if (err) {
+      res.writeHead(404, { "content-type": "text/plain" });
+      res.end(`Not found: ${pathname}`);
+      return;
+    }
+    res.writeHead(200, {
+      "content-type": STATIC_TYPES[path.extname(file)] || "application/octet-stream",
+      "cache-control": "no-cache",
     });
     res.end(buf);
   });
@@ -298,7 +353,8 @@ const server = http.createServer((req, res) => {
 
   const slug = matchApp(url);
   if (slug) {
-    proxyHttp(req, res, slug);
+    if (APPS[slug].static) serveStatic(req, res, slug);
+    else proxyHttp(req, res, slug);
     return;
   }
 
