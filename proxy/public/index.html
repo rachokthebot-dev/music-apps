@@ -419,21 +419,19 @@ try{const t=localStorage.getItem('theme');if(t==='dark'||(!t&&matchMedia('(prefe
 
     <section class="s-card" id="s-soundpath">
       <h2>SoundPath</h2>
+      <div id="soundpath-body"><span class="s-status">Open to load…</span></div>
+    </section>
+
+    <section class="s-card" id="s-setlists">
+      <h2>Setlists</h2>
       <div class="s-row">
-        <label>Gain targets — preset A</label>
-        <span>
-          <span class="val" id="sp-a">–</span>
-          <button type="button" class="s-btn" id="sp-clear-a">Clear</button>
-        </span>
+        <label>ToneCloud sign-in</label>
+        <a class="s-link" href="/setlists/settings">Manage in Setlists →</a>
       </div>
-      <div class="s-row">
-        <label>Gain targets — preset B</label>
-        <span>
-          <span class="val" id="sp-b">–</span>
-          <button type="button" class="s-btn" id="sp-clear-b">Clear</button>
-        </span>
-      </div>
-      <p class="s-note">Preset folder is set server-side via the <code>SOUNDPATH_PRESET_DIR</code> env var.</p>
+      <p class="s-note">
+        Kept there rather than here: it is the only credential in the suite, and it lives in that
+        app's own database rather than anywhere this page can reach.
+      </p>
     </section>
   </details>
 </div>
@@ -550,35 +548,84 @@ try{const t=localStorage.getItem('theme');if(t==='dark'||(!t&&matchMedia('(prefe
   ccRender();
 
   // ---------------------------------------------------------------------
-  // SoundPath — gain-target prefs per slot
-  // ---------------------------------------------------------------------
-  function spKey(slot) { return "soundpath:gainTargets:" + slot; }
-  function spRender() {
-    ["a", "b"].forEach(function (slot) {
-      var set = null;
-      try { set = localStorage.getItem(spKey(slot)); } catch {}
-      document.getElementById("sp-" + slot).textContent = set ? "set" : "not set";
-      document.getElementById("sp-clear-" + slot).disabled = !set;
-    });
-  }
-  ["a", "b"].forEach(function (slot) {
-    document.getElementById("sp-clear-" + slot).addEventListener("click", function () {
-      try { localStorage.removeItem(spKey(slot)); } catch {}
-      spRender();
-    });
-  });
-  spRender();
-
-  // ---------------------------------------------------------------------
   // Shreddy — DB-backed settings via same-origin API; loaded lazily on the
   // first open of the settings section so the hub renders with Shreddy down.
   // ---------------------------------------------------------------------
   var shreddyLoaded = false;
+  var soundpathLoaded = false;
   document.getElementById("settings").addEventListener("toggle", function (e) {
-    if (!e.target.open || shreddyLoaded) return;
-    shreddyLoaded = true;
-    loadShreddy();
+    if (!e.target.open) return;
+    if (!shreddyLoaded) { shreddyLoaded = true; loadShreddy(); }
+    if (!soundpathLoaded) { soundpathLoaded = true; loadSoundPath(); }
   });
+
+  // ---------------------------------------------------------------------
+  // SoundPath — the target every gig is levelled to, server-side in the
+  // preset dir. This used to show two localStorage keys written by the A/B
+  // gain-targets panel; that panel is gone, so both rows always read "not
+  // set" and their Clear buttons did nothing.
+  // ---------------------------------------------------------------------
+  function loadSoundPath() {
+    var body = document.getElementById("soundpath-body");
+    fetch("/soundpath/api/settings")
+      .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+      .then(function (d) { renderSoundPath(body, d.settings || {}); })
+      .catch(function () {
+        body.innerHTML = '<span class="s-status">SoundPath isn\u2019t running \u2014 start it to edit these settings.</span>';
+        soundpathLoaded = false; // retry on next open
+      });
+  }
+
+  function renderSoundPath(body, s) {
+    body.innerHTML =
+      '<div class="s-row"><label for="sp-target">Target level</label>' +
+      '<span><select id="sp-pin">' +
+      '<option value="fixed">the same for every gig</option>' +
+      '<option value="auto">each gig\u2019s own centre</option>' +
+      '</select> <input type="number" id="sp-target" step="0.5" min="-60" max="0" style="width:5.5rem" /> LUFS</span></div>' +
+      '<div class="s-row"><label for="sp-headroom">Headroom under the +12 dB ceiling</label>' +
+      '<span><input type="number" id="sp-headroom" step="0.5" min="0" max="24" style="width:5.5rem" /> dB</span></div>' +
+      '<div class="s-row"><label for="sp-offset">Record offset</label>' +
+      '<span><input type="number" id="sp-offset" step="1" min="-40" max="0" style="width:5.5rem" /> dB</span></div>' +
+      '<p class="s-note">The target is what makes two gigs levelled months apart land in the same ' +
+      'place. The offset only turns the file you record through down, so hot presets don\u2019t clip ' +
+      'on the way in \u2014 it is added straight back in the correction.</p>' +
+      '<div class="s-row"><a class="s-link" href="/soundpath/">Open SoundPath \u2192</a>' +
+      '<span><span class="s-status" id="sp-status"></span> ' +
+      '<button type="button" class="s-btn" id="sp-save">Save</button></span></div>';
+
+    var pin = document.getElementById("sp-pin");
+    var target = document.getElementById("sp-target");
+    pin.value = s.targetLufs === null || s.targetLufs === undefined ? "auto" : "fixed";
+    target.value = s.targetLufs === null || s.targetLufs === undefined ? -18 : s.targetLufs;
+    target.disabled = pin.value === "auto";
+    document.getElementById("sp-headroom").value = s.headroomDb;
+    document.getElementById("sp-offset").value = s.recordOffsetDb;
+    pin.addEventListener("change", function () { target.disabled = pin.value === "auto"; });
+
+    document.getElementById("sp-save").addEventListener("click", function () {
+      var btn = this;
+      btn.disabled = true;
+      fetch("/soundpath/api/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          targetLufs: pin.value === "auto" ? null : Number(target.value),
+          headroomDb: Number(document.getElementById("sp-headroom").value),
+          recordOffsetDb: Number(document.getElementById("sp-offset").value),
+        }),
+      })
+        .then(function (r) {
+          return r.json().then(function (d) {
+            if (!r.ok || d.ok === false) throw new Error(d.error || "HTTP " + r.status);
+            return d;
+          });
+        })
+        .then(function () { flash(document.getElementById("sp-status"), "Saved"); })
+        .catch(function (err) { flash(document.getElementById("sp-status"), err.message); })
+        .finally(function () { btn.disabled = false; });
+    });
+  }
 
   function loadShreddy() {
     var body = document.getElementById("shreddy-body");
