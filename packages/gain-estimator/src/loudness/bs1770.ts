@@ -87,6 +87,52 @@ function kWeight(channel: Float32Array, fs: number): Float32Array {
   return out;
 }
 
+/** G_c is 1.0 for every channel in mono/stereo; surround would lift the rears. */
+function blockLoudness(z: number[]): number {
+  let s = 0;
+  for (const v of z) s += v;
+  return s > 0 ? ABSOLUTE_OFFSET + 10 * Math.log10(s) : -Infinity;
+}
+
+/** Mean square per channel for each 400 ms K-weighted block, 100 ms hop. */
+function kWeightedBlocks(channels: Float32Array[], sampleRate: number): number[][] {
+  const weighted = channels.map((c) => kWeight(c, sampleRate));
+  const blockLen = Math.round(0.4 * sampleRate);
+  const hop = Math.round(0.1 * sampleRate);
+  const n = weighted[0].length;
+  if (n < blockLen) return [];
+
+  const blocks: number[][] = [];
+  for (let start = 0; start + blockLen <= n; start += hop) {
+    const z: number[] = [];
+    for (let c = 0; c < weighted.length; c++) {
+      let sum = 0;
+      const ch = weighted[c];
+      for (let i = start; i < start + blockLen; i++) sum += ch[i] * ch[i];
+      z.push(sum / blockLen);
+    }
+    blocks.push(z);
+  }
+  return blocks;
+}
+
+/** Seconds between consecutive momentaryTrace values. */
+export const MOMENTARY_HOP_SEC = 0.1;
+
+/**
+ * Momentary loudness — one 400 ms block every 100 ms, ungated.
+ *
+ * The integrated figure deliberately throws shape away; this keeps it. Two
+ * takes can share a LUFS number and be completely different events, and the
+ * difference is diagnostic: a guitar chord decays smoothly into a flat noise
+ * floor, so a floor that *climbs* after the note dies is an input path adding
+ * gain of its own. That's the only way to catch automatic gain control on a
+ * browser that won't admit to applying it.
+ */
+export function momentaryTrace(channels: Float32Array[], sampleRate: number): Float32Array {
+  return Float32Array.from(kWeightedBlocks(channels, sampleRate).map(blockLoudness));
+}
+
 export type LoudnessResult = {
   /** Integrated loudness in LUFS, or -Infinity if the signal is too short/quiet. */
   lufs: number;
@@ -105,34 +151,8 @@ export type LoudnessResult = {
 export function integratedLufs(channels: Float32Array[], sampleRate: number): LoudnessResult {
   if (channels.length === 0) return { lufs: -Infinity, channels: 0, gatedBlocks: 0 };
 
-  // Channel weights G_c. Stereo/mono are all 1.0; surround would lift rears,
-  // but a Helix capture is mono or stereo, so we keep it simple.
-  const weights = channels.map(() => 1.0);
-  const weighted = channels.map((c) => kWeight(c, sampleRate));
-
-  const blockLen = Math.round(0.4 * sampleRate);
-  const hop = Math.round(0.1 * sampleRate);
-  const n = weighted[0].length;
-  if (n < blockLen) return { lufs: -Infinity, channels: channels.length, gatedBlocks: 0 };
-
-  // Mean square per channel for each 400 ms block.
-  const blocks: number[][] = [];
-  for (let start = 0; start + blockLen <= n; start += hop) {
-    const z: number[] = [];
-    for (let c = 0; c < weighted.length; c++) {
-      let sum = 0;
-      const ch = weighted[c];
-      for (let i = start; i < start + blockLen; i++) sum += ch[i] * ch[i];
-      z.push(sum / blockLen);
-    }
-    blocks.push(z);
-  }
-
-  const blockLoudness = (z: number[]): number => {
-    let s = 0;
-    for (let c = 0; c < z.length; c++) s += weights[c] * z[c];
-    return s > 0 ? ABSOLUTE_OFFSET + 10 * Math.log10(s) : -Infinity;
-  };
+  const blocks = kWeightedBlocks(channels, sampleRate);
+  if (blocks.length === 0) return { lufs: -Infinity, channels: channels.length, gatedBlocks: 0 };
 
   // Stage 1: absolute gate at -70 LUFS.
   const absKept = blocks.filter((z) => blockLoudness(z) > ABSOLUTE_GATE);
@@ -141,7 +161,7 @@ export function integratedLufs(channels: Float32Array[], sampleRate: number): Lo
 
   // Mean square per channel over absolute-gated blocks → reference loudness.
   const meanZ = (set: number[][]): number[] => {
-    const m = new Array(weighted.length).fill(0);
+    const m = new Array(channels.length).fill(0);
     for (const z of set) for (let c = 0; c < z.length; c++) m[c] += z[c];
     return m.map((v) => v / set.length);
   };

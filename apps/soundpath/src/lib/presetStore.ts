@@ -97,3 +97,7 @@ export async function listPresets(filter: ListPresetFilter = {}) {
 export function getPreset(id: string) {
   return prisma.generatedPreset.findUnique({ where: { id } });
 }
+
+export function deletePreset(id: string) {
+  return prisma.generatedPreset.delete({ where: { id } });
+}

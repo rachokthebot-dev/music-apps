@@ -132,6 +132,33 @@ export function estimateSnapshotLoudness(preset: HelixPreset, snapIdx: number): 
     totalDb += db;
   }
 
+  // Path outputs aren't "blockN" slots, so the chain walk misses them — but
+  // they're the last gain stage before the jacks and preset authors use them as
+  // the master level. MAN IN A BOX ships +8.2 dB on path 1 and +2.7 on path 2;
+  // ignoring that under-reported the preset by nearly 11 dB.
+  // Path 1's output says where it goes: 2 = "Path 2A" (into path 2), anything
+  // else = straight to the jacks. When it goes straight out, path 2 carries no
+  // signal and its output level is inert — counting it would credit a preset
+  // for gain nothing passes through.
+  const path1Out = (preset.data.tone.dsp0 as { outputA?: BlockNode } | undefined)?.outputA;
+  const feedsPath2 = path1Out?.["@output"] === 2;
+  const livePaths = feedsPath2 ? (["dsp0", "dsp1"] as const) : (["dsp0"] as const);
+
+  for (const dsp of livePaths) {
+    const out = (preset.data.tone[dsp] as { outputA?: BlockNode } | undefined)?.outputA;
+    if (!out) continue;
+    const db = readParamValue(out, snap, dsp, "outputA", "gain") ?? 0;
+    if (db === 0) continue;
+    contributions.push({
+      dsp,
+      slot: "outputA",
+      model: String(out["@model"] ?? "HD2_AppDSPFlowOutput"),
+      enabled: true,
+      db,
+    });
+    totalDb += db;
+  }
+
   return {
     snapshotIndex: snapIdx,
     snapshotName: snap["@name"] ?? `snapshot${snapIdx}`,

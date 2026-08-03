@@ -1,4 +1,10 @@
 @import "tailwindcss";
+@import "tw-animate-css";
+
+/* Scan shared workspace components (AppSwitcher, BackToHome) so their
+   utility classes are generated into this app's CSS. */
+@source "../../../../packages/ui/src";
+@source "../../../../packages/shared/src";
 
 @custom-variant dark (&:is(.dark *));
 
