@@ -323,15 +323,17 @@ function LibraryRow({
           <span className="text-[13px] font-medium block truncate">{title}</span>
           <span className="text-[11px] text-muted-foreground block truncate">{subtitle}</span>
         </span>
+        {/* Hidden on a phone. The name is the thing you are scanning for, and
+            a fixed date column plus the badge left it squeezed to nothing. */}
         <span
-          className="text-[11px] text-muted-foreground tabular-nums shrink-0"
+          className="hidden sm:block text-[11px] text-muted-foreground tabular-nums shrink-0"
           title={updatedAt ? new Date(updatedAt).toLocaleString() : undefined}
         >
           {busy ? "opening…" : `${updatedLabel ? updatedLabel + " " : ""}${when(updatedAt)}`}
         </span>
-        {/* Reserved either way, so the two lists line up even when a patch has
-            nothing to report yet. */}
-        <span className="w-28 shrink-0 text-right">
+        {/* Reserved at width from sm up, so the two lists line up even when a
+            patch has nothing to report yet. */}
+        <span className="sm:w-28 shrink-0 text-right">
           {known && (
             <span
               className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${

@@ -38,10 +38,16 @@ export function AppSwitcher({ currentAppId }: AppSwitcherProps) {
       const anchor = menuRef.current?.getBoundingClientRect();
       if (!anchor) return;
       const height = panelRef.current?.offsetHeight ?? 0;
+      const width = panelRef.current?.offsetWidth ?? 0;
       const maxTop = Math.max(MARGIN, window.innerHeight - height - MARGIN);
+      // Clamped on both axes. Anchored under the button where there is room,
+      // pulled back on screen where there isn't — on a narrow screen the page
+      // can be wider than the viewport, which puts the button far enough right
+      // that anchoring to it hangs the panel off the left edge entirely.
+      const maxRight = Math.max(MARGIN, window.innerWidth - width - MARGIN);
       setPos({
         top: Math.min(Math.max(MARGIN, anchor.bottom + 4), maxTop),
-        right: Math.max(MARGIN, window.innerWidth - anchor.right),
+        right: Math.min(Math.max(MARGIN, window.innerWidth - anchor.right), maxRight),
       });
     };
     place();
