@@ -5,18 +5,19 @@
  * rules: ?version=n rebuilds a confirmed pass from its frozen preset, no
  * version gives you the latest confirmed one (or the live plan, which is a
  * preview and says so by carrying no version number), and ?version=original
- * gives the preset exactly as stored, shifted by the record offset.
+ * gives the preset exactly as stored — shifted by the record offset only when
+ * the plan says that offset is in the loaded file.
  *
  * The version goes in the preset's own name as well as the filename, because
  * the name is the only thing the Helix shows you. Sixteen characters is all
  * there is, so the tag wins and the name is trimmed to fit.
  */
 
-import { nameForSong, type HlxLike } from "@music-apps/gain-estimator";
+import { nameForSong, nameSnapshots, type HlxLike } from "@music-apps/gain-estimator";
 
 import { applyGainsToPresets, applyPlanToPresets, offsetPresets, type GainRow } from "@/lib/applyLevels";
+import type { SnapshotState } from "@/lib/levelDoc";
 import { readPresetLevel, readVersionPayload } from "@/lib/presetLevelStore";
-import { readSettings } from "@/lib/settingsStore";
 
 export const dynamic = "force-dynamic";
 
@@ -34,15 +35,17 @@ export async function GET(req: Request) {
 
   const versions = doc.versions ?? [];
   const asked = url.searchParams.get("version");
+  const snapshots = doc.presets[0]?.snapshots;
 
   if (asked === "original") {
-    // The record offset rides on this file: it is the one you load to record
-    // through, so turning the preset down to keep takes out of the converter's
-    // ceiling belongs here and nowhere else. At 0 it is a no-op.
-    const offset = readSettings().recordOffsetDb;
+    // Only "in the loaded file" bakes the record offset in. Unticked — the
+    // default — this is the preset exactly as stored, which is what the link
+    // says it is. Ticked, the file matches what the plan already believes is
+    // on the pedal, so the download and the corrections can't disagree.
+    const offset = doc.loadedOffsetDb ?? 0;
     const untouched = offsetPresets(doc, offset);
     const suffix = offset === 0 ? "_original" : `_original_${offset}dB`;
-    return hlxResponse(doc.name, null, suffix, untouched[0]?.hlx);
+    return hlxResponse(doc.name, null, suffix, untouched[0]?.hlx, snapshots);
   }
 
   const wanted =
@@ -59,18 +62,36 @@ export async function GET(req: Request) {
     if (frozen?.[0]) return hlxResponse(doc.name, wanted.n, `_v${wanted.n}`, frozen[0].hlx);
 
     const gains = new Map<string, GainRow[]>(wanted.presets.map((p) => [p.hash, p.gains]));
-    return hlxResponse(doc.name, wanted.n, `_v${wanted.n}`, applyGainsToPresets(doc, gains)[0]?.hlx);
+    return hlxResponse(
+      doc.name,
+      wanted.n,
+      `_v${wanted.n}`,
+      applyGainsToPresets(doc, gains)[0]?.hlx,
+      snapshots
+    );
   }
 
-  return hlxResponse(doc.name, null, "_preview", applyPlanToPresets(doc)[0]?.hlx);
+  return hlxResponse(doc.name, null, "_preview", applyPlanToPresets(doc)[0]?.hlx, snapshots);
 }
 
-function hlxResponse(name: string, n: number | null, suffix: string, hlx: string | undefined): Response {
+function hlxResponse(
+  name: string,
+  n: number | null,
+  suffix: string,
+  hlx: string | undefined,
+  /**
+   * Hand-typed snapshot names to stamp in. Omitted for a frozen version: those
+   * were written when it was confirmed, and restamping from a document that
+   * has been renamed since would change a file already taken to a gig.
+   */
+  snapshots?: SnapshotState[]
+): Response {
   if (!hlx) return Response.json({ ok: false, error: "Nothing to export" }, { status: 404 });
 
   let file = hlx;
   try {
-    file = JSON.stringify(nameForSong(JSON.parse(hlx) as HlxLike, titleFor(name, n)));
+    const named = nameForSong(JSON.parse(hlx) as HlxLike, titleFor(name, n));
+    file = JSON.stringify(snapshots ? nameSnapshots(named, snapshots) : named);
   } catch {
     // An unparseable payload is still the file we were asked for; it just
     // keeps whatever name it already had.

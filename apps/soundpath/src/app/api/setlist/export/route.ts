@@ -13,7 +13,9 @@
  * it keeps rebuilding after the live presets have been replaced.
  *
  * ?version=original emits the presets exactly as uploaded, with no correction
- * at all. That is how you get back to a known baseline: load it, tell the
+ * at all — the record offset rides along only when the setlist says that
+ * offset is in the loaded file. That is how you get back to a known baseline:
+ * load it, tell the
  * setlist that's what's on the pedal, and every reading afterwards is measured
  * from a level this app can actually see.
  *
@@ -22,10 +24,9 @@
  * check.
  */
 
-import { buildSetlistFile, nameForSong, type HlxLike } from "@music-apps/gain-estimator";
+import { buildSetlistFile, nameForSong, nameSnapshots, type HlxLike } from "@music-apps/gain-estimator";
 
 import { offsetPresets, applyGainsToPresets, applyPlanToPresets, type GainRow } from "@/lib/applyLevels";
-import { readSettings } from "@/lib/settingsStore";
 import { readSetlist, readVersionPayload } from "@/lib/setlistStore";
 
 export const dynamic = "force-dynamic";
@@ -46,11 +47,11 @@ export async function GET(req: Request) {
   const asked = url.searchParams.get("version");
 
   if (asked === "original") {
-    // The record offset rides on this file: it is the one you load to record
-    // through, so turning the gig down to keep takes out of the converter's
-    // ceiling belongs here and nowhere else. At 0 it is a no-op and this is
-    // the presets exactly as stored.
-    const offset = readSettings().recordOffsetDb;
+    // Only "in the loaded file" bakes the record offset in. Unticked — the
+    // default — this is the presets exactly as stored, which is what the link
+    // says it is. Ticked, the file matches what the plan already believes is
+    // on the pedal, so the download and the corrections can't disagree.
+    const offset = setlist.loadedOffsetDb ?? 0;
     const untouched = offsetPresets(setlist, offset);
     const suffix = offset === 0 ? "_original" : `_original_${offset}dB`;
     return hlsResponse(setlist.name, null, suffix, untouched);
@@ -133,8 +134,13 @@ function hlsResponse(
     // Slot position follows setlist position, so a gap stays a gap.
     while (slots.length < a.preset.index) slots.push({});
     try {
-      // Name the slot after the song, not whoever uploaded the preset.
-      slots.push(nameForSong(JSON.parse(a.hlx) as HlxLike, a.preset.name));
+      // Name the slot after the song, not whoever uploaded the preset, and
+      // carry any hand-typed snapshot names down with it. A frozen version
+      // has no snapshots on its stub preset — its names were written into the
+      // payload when it was confirmed, and must not be restamped from a
+      // document that has moved on since.
+      const named = nameForSong(JSON.parse(a.hlx) as HlxLike, a.preset.name);
+      slots.push(a.preset.snapshots ? nameSnapshots(named, a.preset.snapshots) : named);
     } catch {
       slots.push({});
     }
