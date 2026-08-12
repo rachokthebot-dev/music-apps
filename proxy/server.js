@@ -9,6 +9,7 @@
 // No npm deps. Vanilla Node only.
 
 const http = require("http");
+const https = require("https");
 const net = require("net");
 const fs = require("fs");
 const os = require("os");
@@ -185,6 +186,16 @@ const STATIC_TYPES = {
 const PROXY_PORT = parseInt(process.env.PORT || "8080", 10);
 const HOST = process.env.HOST || "0.0.0.0";
 
+// TLS for LAN recording. getUserMedia only runs in a secure context, so
+// http://<lan-ip>:8080 can't record — the browser refuses before we ever
+// reach the mic. Serving the same proxy over https with an mkcert-signed
+// cert makes the LAN a secure context, no tunnel involved.
+// Generate with:
+//   mkcert -cert-file lan.pem -key-file lan-key.pem <lan-ip> localhost 127.0.0.1
+// Skipped silently when the cert files aren't there.
+const TLS_PORT = parseInt(process.env.TLS_PORT || "8443", 10);
+const TLS_DIR = process.env.TLS_DIR || path.join(os.homedir(), ".config", "music-apps", "certs");
+
 const LANDING_PATH = path.join(__dirname, "public", "index.html");
 
 function matchApp(url) {
@@ -321,7 +332,7 @@ function injectSessionCookieIfNeeded(res) {
   };
 }
 
-const server = http.createServer((req, res) => {
+function handleRequest(req, res) {
   const url = req.url || "/";
   // Match on pathname so /?foo=bar still routes to /.
   const qIdx = url.indexOf("?");
@@ -361,10 +372,10 @@ const server = http.createServer((req, res) => {
   // Fallback: 404 with a small hint.
   res.writeHead(404, { "content-type": "text/plain" });
   res.end(`Not found: ${url}\nTry / or one of: ${Object.keys(APPS).map((s) => "/" + s).join(", ")}\n`);
-});
+}
 
 // WebSocket upgrade handling — needed for Next dev HMR.
-server.on("upgrade", (req, clientSocket, head) => {
+function handleUpgrade(req, clientSocket, head) {
   // Apply the same auth gate to WS upgrades from public traffic.
   if (isPublicRequest(req) && !isAuthorized(req)) {
     clientSocket.write(
@@ -399,7 +410,35 @@ server.on("upgrade", (req, clientSocket, head) => {
   });
   upstream.on("error", () => clientSocket.destroy());
   clientSocket.on("error", () => upstream.destroy());
-});
+}
+
+const server = http.createServer(handleRequest);
+server.on("upgrade", handleUpgrade);
+
+// Same handlers, TLS in front. Started only when both cert files exist.
+function startTls() {
+  const certPath = path.join(TLS_DIR, "lan.pem");
+  const keyPath = path.join(TLS_DIR, "lan-key.pem");
+  let cert, key;
+  try {
+    cert = fs.readFileSync(certPath);
+    key = fs.readFileSync(keyPath);
+  } catch {
+    return null;
+  }
+  const tls = https.createServer({ cert, key }, handleRequest);
+  tls.on("upgrade", handleUpgrade);
+  // TLS is the extra, not the point. An unhandled 'error' here is fatal to the
+  // process, so a port already taken — usually a proxy from an earlier session
+  // still running — would take plain http on 8080 down with it.
+  tls.on("error", (err) => {
+    console.warn(`  TLS off — :${TLS_PORT} unavailable (${err.code || err.message})`);
+  });
+  tls.listen(TLS_PORT, HOST);
+  return tls;
+}
+
+const tlsServer = startTls();
 
 server.listen(PROXY_PORT, HOST, () => {
   const authNote = AUTH.generated
@@ -409,8 +448,18 @@ server.listen(PROXY_PORT, HOST, () => {
       `    (LAN hits skip this; only ngrok / forwarded traffic gets challenged.)\n`
     : `  PUBLIC AUTH from ${AUTH.source}: user=${AUTH.user} (password hidden — see ${AUTH.source})\n`;
 
+  // `listening`, not just the object: a server whose listen failed is still an
+  // object, and a banner promising https on a port nothing is bound to sends
+  // you debugging the certificate instead of the port collision.
+  const tlsNote = tlsServer?.listening
+    ? `  TLS → https://${HOST}:${TLS_PORT}  (secure context: recording works over LAN)\n`
+    : tlsServer
+      ? `  TLS off — :${TLS_PORT} unavailable; recording over LAN needs https\n`
+      : `  TLS off — no cert in ${TLS_DIR}; recording over LAN needs https (see the mkcert note in this file)\n`;
+
   const banner =
     `\n  music-apps proxy → http://${HOST}:${PROXY_PORT}\n` +
+    tlsNote +
     Object.entries(APPS)
       .map(([s, a]) => `    /${s.padEnd(11)} → 127.0.0.1:${a.port}  (${a.name})`)
       .join("\n") +
