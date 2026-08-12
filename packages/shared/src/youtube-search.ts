@@ -11,6 +11,8 @@ export interface Candidate {
   /** Only fetched for the lesson lane, and only for the few worth checking. */
   chapterCount?: number;
   hasSolo?: boolean;
+  /** Longer than the importing app allows — shown, but not importable. */
+  tooLong?: boolean;
   score: number;
   reasons: string[];
 }
@@ -202,36 +204,43 @@ function scoreCandidate(
     }
   }
 
-  // Duration sanity. Without an expected length, just reject the absurd —
-  // hour-long compilations and looped uploads.
-  if (dur !== null) {
-    if (dur < 45) {
-      score -= 5;
-      reasons.push("too short");
-    } else if (dur > 3600) {
-      return null;
-    } else if (expectedSec) {
-      // Graded, not a single window: the album cut and a shortened video edit
-      // both land inside a loose window, and for stems the full-length one is
-      // the right answer.
-      const off = Math.abs(dur - expectedSec) / expectedSec;
-      if (off <= 0.03) {
-        score += 4;
-        reasons.push("length matches the album cut");
-      } else if (off <= 0.1) {
-        score += 2;
-        reasons.push("length close");
-      } else if (off <= 0.25) {
-        score += 1;
-        reasons.push("length roughly right");
-      } else if (off >= 0.6) {
-        score -= 3;
-        reasons.push("length far off");
-      }
-    }
-  }
+  scoreDuration(dur, expectedSec, reasons, (d) => (score += d));
+  if (dur !== null && dur > 3600) return null;
 
   return { score, reasons };
+}
+
+/** Shared by both scorers so a 10-second clip loses the same way everywhere. */
+function scoreDuration(
+  dur: number | null,
+  expectedSec: number | null,
+  reasons: string[],
+  add: (delta: number) => void
+): void {
+  if (dur === null) return;
+  if (dur < 45) {
+    add(-5);
+    reasons.push("too short");
+    return;
+  }
+  if (dur > 3600) return; // callers reject these outright
+  if (!expectedSec) return;
+  // Graded, not a single window: the album cut and a shortened video edit both
+  // land inside a loose window, and for stems the full-length one is right.
+  const off = Math.abs(dur - expectedSec) / expectedSec;
+  if (off <= 0.03) {
+    add(4);
+    reasons.push("length matches the album cut");
+  } else if (off <= 0.1) {
+    add(2);
+    reasons.push("length close");
+  } else if (off <= 0.25) {
+    add(1);
+    reasons.push("length roughly right");
+  } else if (off >= 0.6) {
+    add(-3);
+    reasons.push("length far off");
+  }
 }
 
 export interface SearchOptions {
@@ -250,6 +259,41 @@ export interface SearchOptions {
 // harmless — the worst case is re-running a 1.2 s search.
 const cache = new Map<string, { at: number; results: Candidate[] }>();
 const CACHE_TTL_MS = 30 * 60 * 1000;
+
+function toCandidate(e: FlatEntry, s: { score: number; reasons: string[] }): Candidate {
+  return {
+    id: String(e.id),
+    url: `https://youtu.be/${e.id}`,
+    title: String(e.title ?? ""),
+    channel: String(e.channel ?? e.uploader ?? ""),
+    durationSec: typeof e.duration === "number" ? e.duration : null,
+    score: s.score,
+    reasons: s.reasons,
+  };
+}
+
+/**
+ * Lesson candidates are only useful if the creator chaptered them, so spend
+ * the per-video fetches on the best few — in parallel — and re-sort.
+ */
+async function applyChapters(ranked: Candidate[], chapterChecks: number): Promise<void> {
+  if (ranked.length === 0) return;
+  const checkable = ranked.slice(0, chapterChecks);
+  const infos = await Promise.all(checkable.map((c) => fetchChapterInfo(c.id)));
+  checkable.forEach((c, i) => {
+    c.chapterCount = infos[i].chapterCount;
+    c.hasSolo = infos[i].hasSolo;
+    if (c.chapterCount > 0) {
+      c.score += 10;
+      c.reasons.push(`${c.chapterCount} chapters`);
+    }
+    if (c.hasSolo) {
+      c.score += 4;
+      c.reasons.push("has a Solo chapter");
+    }
+  });
+  ranked.sort((a, b) => b.score - a.score);
+}
 
 export async function searchCandidates(opts: SearchOptions): Promise<Candidate[]> {
   const {
@@ -273,37 +317,150 @@ export async function searchCandidates(opts: SearchOptions): Promise<Candidate[]
     if (!e.id) continue;
     const s = scoreCandidate(e, lane, title, artist, expectedSec);
     if (!s) continue;
-    ranked.push({
-      id: e.id,
-      url: `https://youtu.be/${e.id}`,
-      title: String(e.title ?? ""),
-      channel: String(e.channel ?? e.uploader ?? ""),
-      durationSec: typeof e.duration === "number" ? e.duration : null,
-      score: s.score,
-      reasons: s.reasons,
-    });
+    ranked.push(toCandidate(e, s));
   }
   ranked.sort((a, b) => b.score - a.score);
 
-  // Chapters are what make a lesson video useful, so spend the fetches here —
-  // on the best few only, in parallel.
-  if (lane === "lesson" && ranked.length > 0) {
-    const checkable = ranked.slice(0, chapterChecks);
-    const infos = await Promise.all(checkable.map((c) => fetchChapterInfo(c.id)));
-    checkable.forEach((c, i) => {
-      c.chapterCount = infos[i].chapterCount;
-      c.hasSolo = infos[i].hasSolo;
-      if (c.chapterCount > 0) {
-        c.score += 10;
-        c.reasons.push(`${c.chapterCount} chapters`);
-      }
-      if (c.hasSolo) {
-        c.score += 4;
-        c.reasons.push("has a Solo chapter");
-      }
-    });
-    ranked.sort((a, b) => b.score - a.score);
+  if (lane === "lesson") await applyChapters(ranked, chapterChecks);
+
+  cache.set(key, { at: Date.now(), results: ranked });
+  return ranked;
+}
+
+// ---------------------------------------------------------------------------
+// Free-text mode: the user types the search themselves, so there is no title /
+// artist split to score against — only how well a result covers what they
+// asked for, plus the same lane-shape rules.
+// ---------------------------------------------------------------------------
+
+/** Words that carry no signal about which video is right. */
+const NOISE = /^(the|and|for|with|from|feat|ft|official|guitar|song|video)$/;
+
+function queryTokens(query: string): string[] {
+  return norm(query)
+    .split(" ")
+    .filter((t) => t.length > 2 && !NOISE.test(t));
+}
+
+/**
+ * Reject rules exist to filter out the wrong *kind* of video — but when the
+ * user typed "live" or "cover" themselves, that kind is exactly what they
+ * want, so the rule stops applying.
+ */
+function rejectedKind(vTitle: string, lane: Lane, normalizedQuery: string): boolean {
+  const m = vTitle.match(lane === "track" ? TRACK_REJECT : LESSON_REJECT);
+  return Boolean(m) && !normalizedQuery.includes(norm(m![0]));
+}
+
+function scoreFreeText(
+  e: FlatEntry,
+  lane: Lane,
+  query: string,
+  tokens: string[]
+): { score: number; reasons: string[] } | null {
+  const vTitle = String(e.title ?? "");
+  const channel = String(e.channel ?? e.uploader ?? "");
+  const dur = typeof e.duration === "number" ? e.duration : null;
+  if (dur !== null && dur > 3600) return null;
+
+  const reasons: string[] = [];
+  let score = 0;
+
+  if (rejectedKind(vTitle, lane, norm(query))) return null;
+
+  // How much of what you asked for actually shows up in the result.
+  const haystack = `${norm(vTitle)} ${norm(channel)}`;
+  const hits = tokens.filter((t) => haystack.includes(t)).length;
+  const coverage = tokens.length > 0 ? hits / tokens.length : 1;
+  if (coverage === 1) {
+    score += 4;
+    reasons.push("matches your search");
+  } else if (coverage >= 0.6) {
+    score += 2;
+    reasons.push("mostly matches your search");
+  } else if (coverage < 0.34) {
+    score -= 4;
+    reasons.push("weak match");
   }
+
+  if (lane === "track") {
+    if (/official\s+audio/i.test(vTitle)) {
+      score += 3;
+      reasons.push("official audio");
+    } else if (/official\s+(music\s+)?video/i.test(vTitle)) {
+      score += 1;
+      reasons.push("official video (may be an edit)");
+    }
+    if (/- topic$/i.test(channel)) {
+      score += 4;
+      reasons.push("Topic channel (auto-generated master)");
+    }
+  } else {
+    if (CHAPTER_PRIOR.test(vTitle)) {
+      score += 3;
+      reasons.push("title pattern that usually has chapters");
+    }
+    if (/\btabs?\b/i.test(vTitle)) {
+      score += 1;
+      reasons.push("mentions tabs");
+    }
+  }
+
+  scoreDuration(dur, null, reasons, (d) => (score += d));
+  return { score, reasons };
+}
+
+/** Lesson terms are only appended when the user did not ask for a lesson. */
+const ASKED_FOR_LESSON = /lesson|tutorial|\btabs?\b|разбор|урок|שיעור/i;
+
+export function buildFreeTextQuery(query: string, lane: Lane): string {
+  const q = query.trim();
+  if (lane !== "lesson" || ASKED_FOR_LESSON.test(q)) return q;
+  return `${q} ${LESSON_TERMS[scriptOf(q)]}`;
+}
+
+export interface FreeTextSearchOptions {
+  /** What the user typed. */
+  query: string;
+  lane: Lane;
+  /** Longer results are flagged tooLong rather than dropped, so the cap is visible. */
+  maxDurationSec?: number | null;
+  poolSize?: number;
+  chapterChecks?: number;
+}
+
+export async function searchByQuery(opts: FreeTextSearchOptions): Promise<Candidate[]> {
+  const { query, lane, maxDurationSec = null, poolSize = 8, chapterChecks = 3 } = opts;
+
+  const searchQuery = buildFreeTextQuery(query, lane);
+  if (!searchQuery) return [];
+
+  const key = `q|${lane}|${searchQuery}|${maxDurationSec ?? ""}`;
+  const hit = cache.get(key);
+  if (hit && Date.now() - hit.at < CACHE_TTL_MS) return hit.results;
+
+  const entries = await flatSearch(searchQuery, poolSize);
+  const tokens = queryTokens(query);
+
+  const ranked: Candidate[] = [];
+  for (const e of entries) {
+    if (!e.id) continue;
+    const s = scoreFreeText(e, lane, query, tokens);
+    if (!s) continue;
+    const c = toCandidate(e, s);
+    if (maxDurationSec && c.durationSec !== null && c.durationSec > maxDurationSec) {
+      c.tooLong = true;
+      // Kept for honesty about why a likely-looking result is missing, but it
+      // can never be imported, so it never outranks something that can.
+      c.score -= 100;
+    }
+    ranked.push(c);
+  }
+  ranked.sort((a, b) => b.score - a.score);
+
+  // Only the importable ones are worth a chapter fetch.
+  if (lane === "lesson") await applyChapters(ranked.filter((c) => !c.tooLong), chapterChecks);
+  ranked.sort((a, b) => b.score - a.score);
 
   cache.set(key, { at: Date.now(), results: ranked });
   return ranked;

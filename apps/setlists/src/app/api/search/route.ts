@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { searchCandidates, type Lane } from "@/lib/youtube-search";
+import { searchCandidates, type Lane } from "@music-apps/shared/youtube-search";
 import { findExisting } from "@/lib/existing-library";
 
 export async function POST(request: Request) {

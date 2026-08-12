@@ -1,4 +1,4 @@
-import type { Lane } from "./youtube-search";
+import type { Lane } from "@music-apps/shared/youtube-search";
 
 /**
  * The sibling apps own their own databases, so we ask them over HTTP rather

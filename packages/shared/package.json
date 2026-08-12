@@ -7,10 +7,13 @@
   "exports": {
     ".": "./src/index.ts",
     "./youtube-utils": "./src/youtube-utils.ts",
+    "./youtube-search": "./src/youtube-search.ts",
+    "./youtube-search-panel": "./src/youtube-search-panel.tsx",
     "./ffmpeg-pitch": "./src/ffmpeg-pitch.ts",
     "./practice-stats": "./src/practice-stats.ts",
     "./app-registry": "./src/app-registry.ts",
     "./app-switcher": "./src/app-switcher.tsx",
-    "./back-to-home": "./src/back-to-home.tsx"
+    "./back-to-home": "./src/back-to-home.tsx",
+    "./editable-name": "./src/editable-name.tsx"
   }
 }

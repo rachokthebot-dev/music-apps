@@ -15,6 +15,7 @@ import {
   DialogTrigger,
 } from "@music-apps/ui";
 import { AppSwitcher } from "@music-apps/shared/app-switcher";
+import { YouTubeSearchPanel } from "@music-apps/shared/youtube-search-panel";
 import { LickCard } from "@/components/LickCard";
 import { SourceCard } from "@/components/SourceCard";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
@@ -437,27 +438,33 @@ function LibraryPage() {
             )}
           </Button>
 
-          <Dialog open={importOpen} onOpenChange={setImportOpen}>
+          <Dialog
+            open={importOpen}
+            onOpenChange={(open: boolean) => {
+              setImportOpen(open);
+              // The picker resets when it unmounts; drop the selection with it,
+              // or reopening would import whatever was chosen last time.
+              if (!open) { setYoutubeUrl(""); setImportError(null); setImportStatus(null); }
+            }}
+          >
             <DialogTrigger render={<Button variant="default" />}>
               <span className="sm:hidden">Import</span>
               <span className="hidden sm:inline">Import from YouTube</span>
             </DialogTrigger>
-            <DialogContent>
+            <DialogContent className="sm:max-w-xl">
               <DialogHeader>
                 <DialogTitle>Import from YouTube</DialogTitle>
                 <DialogDescription>
-                  Paste a YouTube URL to download and import the video.
+                  Search for a lesson video, or paste a YouTube URL directly.
                 </DialogDescription>
               </DialogHeader>
-              <div className="flex flex-col gap-3">
-                <Input
-                  placeholder="https://youtube.com/watch?v=..."
-                  value={youtubeUrl}
-                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setYoutubeUrl(e.target.value)}
+              <div className="flex flex-col gap-3 min-w-0">
+                <YouTubeSearchPanel
+                  endpoint="/lickbank/api/youtube-search"
+                  selectedUrl={youtubeUrl}
+                  onSelect={setYoutubeUrl}
+                  onSubmit={handleImport}
                   disabled={importing}
-                  onKeyDown={(e: React.KeyboardEvent) => {
-                    if (e.key === "Enter") handleImport();
-                  }}
                 />
                 {importStatus && (
                   <p className="text-sm text-muted-foreground">{importStatus}</p>

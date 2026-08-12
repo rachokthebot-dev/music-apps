@@ -36,6 +36,7 @@ import {
   Check,
 } from "lucide-react";
 import { AppSwitcher } from "@music-apps/shared/app-switcher";
+import { YouTubeSearchPanel } from "@music-apps/shared/youtube-search-panel";
 
 interface Folder {
   id: string;
@@ -197,6 +198,8 @@ function LibraryPage() {
   // Uploads (which have no per-import modal) read the same default directly.
   const [analyzeSections, setAnalyzeSections] = useState(false);
   const [analyzeDefault, setAnalyzeDefault] = useState(false);
+  // Search results longer than this can't be imported, so the picker greys them out.
+  const [maxDuration, setMaxDuration] = useState(600);
 
   useEffect(() => {
     fetch("/shreddy/api/settings")
@@ -205,6 +208,7 @@ function LibraryPage() {
         const def = !!data.analyzeOnImport;
         setAnalyzeDefault(def);
         setAnalyzeSections(def);
+        if (typeof data.youtubeMaxDuration === "number") setMaxDuration(data.youtubeMaxDuration);
       })
       .catch(() => {});
   }, []);
@@ -918,23 +922,31 @@ function LibraryPage() {
       </Dialog>
 
       {/* YouTube import dialog */}
-      <Dialog open={youtubeDialogOpen} onOpenChange={setYoutubeDialogOpen}>
-        <DialogContent className="max-w-sm">
+      <Dialog
+        open={youtubeDialogOpen}
+        onOpenChange={(open) => {
+          setYoutubeDialogOpen(open);
+          // The picker resets when it unmounts; drop the selection with it, or
+          // reopening would import whatever was chosen last time.
+          if (!open) { setYoutubeUrl(""); setYoutubeError(null); }
+        }}
+      >
+        <DialogContent className="sm:max-w-xl">
           <DialogHeader>
             <DialogTitle>Import from YouTube</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4 pt-2">
+          <div className="space-y-4 pt-2 min-w-0">
             <div>
-              <Input
-                value={youtubeUrl}
-                onChange={(e) => { setYoutubeUrl(e.target.value); setYoutubeError(null); }}
-                placeholder="Paste YouTube URL..."
-                onKeyDown={(e) => e.key === "Enter" && handleYoutubeImport()}
-                autoFocus
-                className="h-10"
+              <YouTubeSearchPanel
+                endpoint="/shreddy/api/youtube-search"
+                selectedUrl={youtubeUrl}
+                onSelect={(url) => { setYoutubeUrl(url); setYoutubeError(null); }}
+                onSubmit={handleYoutubeImport}
+                disabled={youtubeImporting}
+                limitLabel={`over ${Math.floor(maxDuration / 60)} min`}
               />
               <p className="text-[11px] text-muted-foreground mt-1.5">
-                For personal practice use only. Max 10 min.
+                For personal practice use only. Max {Math.floor(maxDuration / 60)} min.
               </p>
             </div>
             <label className="flex items-center gap-2 cursor-pointer">
