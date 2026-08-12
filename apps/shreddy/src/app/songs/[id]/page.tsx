@@ -25,6 +25,7 @@ import {
   Loader2,
   Clock,
   RefreshCw,
+  Search,
   Share2,
 } from "lucide-react";
 import { useMetronome } from "@/hooks/useMetronome";
@@ -1190,6 +1191,18 @@ export default function PracticePage({
                   {sharing ? "Sharing..." : "Share"}
                 </button>
               )}
+              {/* Deep link into the Tone Search app, same query shape the
+                  Setlists wizard uses: "<title> <artist>". */}
+              <a
+                href={`/tones/?q=${encodeURIComponent([song.title, song.artist].filter(Boolean).join(" "))}`}
+                target="_blank"
+                rel="noreferrer"
+                className="text-[11px] bg-muted text-muted-foreground px-2 py-0.5 rounded-full hover:bg-accent transition-colors flex items-center gap-1"
+                title="Search the indexed Helix preset catalog for this song"
+              >
+                <Search className="size-3" />
+                Find tone
+              </a>
               <SilentToggle silent={silent} onToggle={() => setSilent((s) => !s)} />
               <button
                 onClick={() => setDistractionOpen((d) => !d)}
