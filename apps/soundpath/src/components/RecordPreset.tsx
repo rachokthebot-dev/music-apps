@@ -9,12 +9,22 @@
  * snapshot is its own take, measured as you go, and a bad one costs one retake.
  *
  * Measuring happens here, in the browser, with the same BS.1770 code the
- * server runs on uploads — so only the number is sent.
+ * server runs on uploads — the reading is a number by the time it's stored.
+ * The audio goes up separately, to the take archive, which nothing in the app
+ * reads back: it exists so the measurement window can be tuned against real
+ * takes rather than remembered ones. See takeUpload.
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { makeTake, readingOf, TakeView, type Take } from "@/components/TakeView";
+import {
+  DEFAULT_MEASURE_SEC,
+  makeTake,
+  readingOf,
+  TakeView,
+  type Take,
+} from "@/components/TakeView";
 import { proposeChordRegion } from "@music-apps/gain-estimator/src/loudness/analyze";
+import { archiveTake, type ArchivedTake } from "@/lib/takeUpload";
 import { MAX_TAKE_SEC, type useHelixCapture } from "@/lib/useHelixCapture";
 
 type Capture = ReturnType<typeof useHelixCapture>;
@@ -41,6 +51,7 @@ export interface SnapshotRow {
 export default function RecordPreset({
   cap,
   measureUrl,
+  source,
   title,
   subtitle,
   snapshots,
@@ -54,6 +65,8 @@ export default function RecordPreset({
    * included. Both accept the same PATCH, because both run the same action.
    */
   measureUrl: string;
+  /** Which flow this is, so an archived take says where it came from. */
+  source: "setlist" | "preset";
   title: string;
   subtitle: string;
   snapshots: SnapshotRow[];
@@ -65,6 +78,8 @@ export default function RecordPreset({
   const [saving, setSaving] = useState<number | null>(null);
   const [saved, setSaved] = useState<Record<number, number>>({});
   const debounce = useRef<Record<number, ReturnType<typeof setTimeout>>>({});
+  /** The archived copy of each snapshot's current take, for window tuning. */
+  const archived = useRef<Record<number, ArchivedTake>>({});
 
   const save = useCallback(
     async (snapshotIndex: number, take: Take) => {
@@ -101,8 +116,36 @@ export default function RecordPreset({
       const take = makeTake(got.channels, got.sampleRate);
       setTakes((prev) => ({ ...prev, [snapshotIndex]: take }));
       save(snapshotIndex, take);
+
+      // Keep the audio. The reading is one number out of a take the tab is
+      // about to forget, and the window that produced it can only be judged
+      // against the recording it was drawn on.
+      const row = snapshots.find((s) => s.index === snapshotIndex);
+      archived.current[snapshotIndex] = archiveTake(
+        {
+          source,
+          context: {
+            presetName: title,
+            snapshotIndex,
+            snapshotName: row?.name,
+            role: row?.role,
+          },
+          audio: {
+            sampleRate: got.sampleRate,
+            channels: got.channels.length,
+            durationSec: Number(take.durationSec.toFixed(3)),
+          },
+          input: cap.applied ? { ...cap.applied } : undefined,
+          measureSec: DEFAULT_MEASURE_SEC,
+          proposed: { startSec: take.startSec, endSec: take.endSec, auto: true },
+          region: { startSec: take.startSec, endSec: take.endSec, auto: true },
+          reading: readingOf(take),
+        },
+        got.channels,
+        got.sampleRate
+      );
     },
-    [cap, save]
+    [cap, save, snapshots, source, title]
   );
 
   /**
@@ -118,6 +161,12 @@ export default function RecordPreset({
         const next = { ...t, startSec, endSec, auto };
         clearTimeout(debounce.current[snapshotIndex]);
         debounce.current[snapshotIndex] = setTimeout(() => save(snapshotIndex, next), 700);
+        // Where you put the window is the ground truth the proposal is tuned
+        // against, so a correction is worth more to the archive than the take.
+        archived.current[snapshotIndex]?.update(
+          { startSec, endSec, auto },
+          readingOf(next)
+        );
         return { ...prev, [snapshotIndex]: next };
       });
     },

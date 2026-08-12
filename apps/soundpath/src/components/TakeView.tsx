@@ -24,6 +24,9 @@ import { momentaryTrace, MOMENTARY_HOP_SEC } from "@music-apps/gain-estimator/sr
 const WAVE_BUCKETS = 900;
 const WAVE_H = 96;
 
+/** The cap a proposed window is made under — it bounds how much of the note is measured. */
+export const DEFAULT_MEASURE_SEC = 3;
+
 export interface Take {
   channels: Float32Array[];
   sampleRate: number;
@@ -40,7 +43,7 @@ export interface Take {
 export function makeTake(
   channels: Float32Array[],
   sampleRate: number,
-  measureSec = 3
+  measureSec = DEFAULT_MEASURE_SEC
 ): Take {
   const total = channels[0]?.length ?? 0;
   const mono =

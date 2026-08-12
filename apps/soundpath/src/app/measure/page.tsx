@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * /measure — standalone LUFS bench. Nothing here is saved.
+ * /measure — standalone LUFS bench. No reading here changes a preset.
  *
  * A place to answer the questions that decide whether live capture off the
  * Helix is trustworthy, before any of it is wired into a setlist:
@@ -12,7 +12,9 @@
  *      winds gain up during quiet, so it leaves the floor higher after the
  *      note than before it. A passive path can't do that.
  *   2. Does the auto-region land where a human would put it? Each take shows
- *      the proposal, and the handles let you disagree with it.
+ *      the proposal, and the handles let you disagree with it. Every take is
+ *      archived with both windows — see takeUpload — so disagreeing here is
+ *      how the proposal gets tuned rather than just overruled.
  *
  * One recording per snapshot — play the chord, stop, read the number.
  *
@@ -33,6 +35,7 @@ import {
   momentaryTrace,
   MOMENTARY_HOP_SEC,
 } from "@music-apps/gain-estimator/src/loudness/bs1770";
+import { archiveTake, type ArchivedTake } from "@/lib/takeUpload";
 
 /** Stop runaway takes from eating the tab's memory: 30 s at 48k stereo ≈ 11 MB. */
 const MAX_SEC = 30;
@@ -154,6 +157,8 @@ export default function MeasureBench() {
   } | null>(null);
   const chunks = useRef<Float32Array[][]>([]);
   const recordingRef = useRef<number | null>(null);
+  /** The archived copy of each row's take, kept in step with its window. */
+  const archived = useRef<Record<number, ArchivedTake>>({});
 
   const teardown = useCallback(() => {
     const a = audio.current;
@@ -279,13 +284,14 @@ export default function MeasureBench() {
       numChannels === 1 ? channels[0] : channels[0].map((v, i) => (v + channels[1][i]) / 2);
     const { peaks, peakAbs } = summarise(mono);
     const region = proposeChordRegion(channels, sampleRate, measureSec);
+    const durationSec = total / sampleRate;
 
     setTakes((prev) => ({
       ...prev,
       [idx]: {
         channels,
         sampleRate,
-        durationSec: total / sampleRate,
+        durationSec,
         peaks,
         peakAbs,
         trace: momentaryTrace(channels, sampleRate),
@@ -294,7 +300,25 @@ export default function MeasureBench() {
         auto: true,
       },
     }));
-  }, [measureSec]);
+
+    // Keep the audio, with the proposal recorded against it. This bench exists
+    // to judge the window, and a take you can't replay is a verdict you can't
+    // check — the tab drops the samples the moment the row is re-recorded.
+    archived.current[idx] = archiveTake(
+      {
+        source: "bench",
+        context: { snapshotIndex: idx },
+        audio: { sampleRate, channels: numChannels, durationSec: Number(durationSec.toFixed(3)) },
+        input: applied ? { ...applied } : undefined,
+        measureSec,
+        proposed: { ...region, auto: true },
+        region: { ...region, auto: true },
+        reading: measureRegion(channels, sampleRate, region.startSec, region.endSec),
+      },
+      channels,
+      sampleRate
+    );
+  }, [applied, measureSec]);
 
   const start = useCallback((idx: number) => {
     if (!audio.current) return;
@@ -318,13 +342,31 @@ export default function MeasureBench() {
     return () => clearInterval(t);
   }, [recording, stop]);
 
-  const setRegion = useCallback((idx: number, startSec: number, endSec: number) => {
-    setTakes((prev) => {
-      const t = prev[idx];
-      if (!t) return prev;
-      return { ...prev, [idx]: { ...t, startSec, endSec, auto: false } };
-    });
-  }, []);
+  /** Where the window ends up, on the take and in the archive — the correction is the data. */
+  const recordRegion = useCallback(
+    (idx: number, t: Take, startSec: number, endSec: number, auto: boolean) => {
+      archived.current[idx]?.update(
+        { startSec, endSec, auto },
+        measureRegion(t.channels, t.sampleRate, startSec, endSec),
+        // The bench's window cap is adjustable, and re-proposing under a new
+        // one has to be stored under that one or the take can't be replayed.
+        measureSec
+      );
+      return { ...t, startSec, endSec, auto };
+    },
+    [measureSec]
+  );
+
+  const setRegion = useCallback(
+    (idx: number, startSec: number, endSec: number) => {
+      setTakes((prev) => {
+        const t = prev[idx];
+        if (!t) return prev;
+        return { ...prev, [idx]: recordRegion(idx, t, startSec, endSec, false) };
+      });
+    },
+    [recordRegion]
+  );
 
   const reAuto = useCallback(
     (idx: number) => {
@@ -332,10 +374,10 @@ export default function MeasureBench() {
         const t = prev[idx];
         if (!t) return prev;
         const r = proposeChordRegion(t.channels, t.sampleRate, measureSec);
-        return { ...prev, [idx]: { ...t, startSec: r.startSec, endSec: r.endSec, auto: true } };
+        return { ...prev, [idx]: recordRegion(idx, t, r.startSec, r.endSec, true) };
       });
     },
-    [measureSec]
+    [measureSec, recordRegion]
   );
 
   const rows = Array.from({ length: count }, (_, i) => i);
@@ -394,8 +436,10 @@ export default function MeasureBench() {
       <header className="mb-4">
         <h1 className="text-2xl font-semibold">Measure bench</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          One recording per snapshot, straight off the Helix. Nothing is saved — this is here to
-          find out whether the capture path is honest.{" "}
+          One recording per snapshot, straight off the Helix. Nothing here changes a preset — this
+          is to find out whether the capture path is honest. Takes are archived to{" "}
+          <code className="font-mono">takes/</code> in your presets folder, so the window can be
+          tuned against them.{" "}
           <Link href="/" className="underline hover:text-foreground">
             Back to library
           </Link>
