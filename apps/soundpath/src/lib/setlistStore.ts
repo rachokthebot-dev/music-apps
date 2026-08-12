@@ -29,6 +29,7 @@ import {
   DEFAULT_LEVELS,
   docStore,
   safeId,
+  userNamesByHash,
   userRolesByHash,
   type LevelDoc,
   type LevelPreset,
@@ -263,6 +264,10 @@ export function mergeMeasurements(next: SetlistPreset[], prev: StoredSetlist | n
   // wherever the patch turns up.
   allStored(); // migrate any legacy file before the role scan reads the folder
   const rolesByHash = userRolesByHash();
+  // Hand-typed names carry the same way, and for the same reason. Without
+  // this, fixing a name while recording would last until the Setlists app
+  // next touched the gig — which is the moment you're least watching for it.
+  const namesByHash = userNamesByHash();
 
   // Readings do not. Levelling a gig means recording every snapshot in one
   // sitting on unchanged hardware, so a number from another setlist — taken on
@@ -275,19 +280,25 @@ export function mergeMeasurements(next: SetlistPreset[], prev: StoredSetlist | n
 
   return next.map((p) => {
     const roles = rolesByHash.get(p.hash);
+    const names = namesByHash.get(p.hash);
     const readSrc = readingsByHash.get(p.hash);
-    if (!roles && !readSrc) return p;
+    if (!roles && !names && !readSrc) return p;
     return {
       ...p,
+      name: names?.preset ?? p.name,
+      nameSource: names?.preset ? ("user" as const) : p.nameSource,
       snapshots: p.snapshots.map((s) => {
         const m = readSrc?.snapshots?.find((x) => x.index === s.index);
         const known = roles?.get(s.index);
+        const typed = names?.snapshots.get(s.index);
         return {
           ...s,
           measuredLufs: m?.measuredLufs ?? null,
           measuredTrimDb: m?.measuredTrimDb ?? null,
           measuredBaselineDb: m?.measuredBaselineDb ?? null,
           measuredAt: m?.measuredAt ?? null,
+          name: typed ?? s.name,
+          nameSource: typed ? ("user" as const) : s.nameSource,
           role: known ?? s.role,
           roleSource: known ? "user" : s.roleSource,
         };

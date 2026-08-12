@@ -2,6 +2,17 @@
 
 import { useRef, useState } from "react";
 
+// Its own subpath, not the package barrel: the barrel pulls in the ffmpeg and
+// yt-dlp helpers, which import child_process and can't be bundled for a client.
+import { EditableName } from "@music-apps/shared/editable-name";
+
+/**
+ * Longer than the Helix's 16, because this label is not written into a preset
+ * file — it says which patch the song uses, and "Archon Heavy AC (clean)" is a
+ * more useful thing to read here than a truncation of it.
+ */
+const PRESET_NAME_MAX = 40;
+
 /**
  * The setlist, reorderable by dragging.
  *
@@ -74,6 +85,22 @@ export function SongOrderTable({
       return next;
     });
     dirty.current = true;
+  };
+
+  /**
+   * Rename the patch this song uses.
+   *
+   * Optimistic: the row is the only place this name appears, and a rename that
+   * waits on the network reads as a dropped keystroke. A failed write leaves
+   * the old name on the next load, which is the honest outcome.
+   */
+  const renamePreset = async (id: string, presetName: string) => {
+    setSongs((prev) => prev.map((s) => (s.id === id ? { ...s, presetName } : s)));
+    await fetch(`/setlists/api/songs/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ presetName }),
+    }).catch(() => {});
   };
 
   const onPointerUp = async () => {
@@ -158,7 +185,19 @@ export function SongOrderTable({
                         exactly as it came from Line 6, with none of the
                         levelling that makes it usable — everything for the
                         pedal comes from SoundPath now. */}
-                    <div className="font-medium">{s.presetName ?? "preset"}</div>
+                    {/* Which patch this song ended up with. Editable because
+                        what comes off CustomTone — "ARCHON HEAVY AC" — says
+                        nothing about the song, and this label is what names
+                        the preset when you level it on its own in SoundPath.
+                        Snapshot names are not here: SoundPath reads those from
+                        the preset itself and is where they get corrected. */}
+                    <div className="font-medium">
+                      <EditableName
+                        value={s.presetName ?? "preset"}
+                        maxLength={PRESET_NAME_MAX}
+                        onCommit={(name) => renamePreset(s.id, name)}
+                      />
+                    </div>
                     <div className="text-[11px] text-muted-foreground">
                       {s.snapshots === null ? (
                         <span className="text-muted-foreground/60">

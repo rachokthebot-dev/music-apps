@@ -25,6 +25,15 @@ export type Role = "clean" | "rhythm" | "chorus" | "solo";
 export interface SnapshotState {
   index: number;
   name: string;
+  /**
+   * Set when the name was typed here rather than read out of the preset.
+   *
+   * A hand-typed name sticks across re-pushes and is written into the exported
+   * file; a name that came from the payload is re-derived each time, so
+   * fixing it in the Setlists app isn't fought over. Absent means derived —
+   * the same shape as roleSource, and for the same reason.
+   */
+  nameSource?: "user";
   role: Role;
   /** Where the role came from, so a guess can be flagged as one. */
   roleSource: "name" | "default" | "user";
@@ -62,6 +71,8 @@ export interface LevelPreset {
   /** Position in the document — for a setlist, also its Helix slot. */
   index: number;
   name: string;
+  /** Set when the name was typed here. See SnapshotState.nameSource. */
+  nameSource?: "user";
   /** The .hlx JSON, as stored in a preset file. */
   hlx: string;
   /**
@@ -485,6 +496,21 @@ const DOC_DIRS = ["setlists", "leveling"];
  */
 export function userRolesByHash(): Map<string, Map<number, Role>> {
   const out = new Map<string, Map<number, Role>>();
+  for (const doc of eachStoredDoc()) {
+    for (const p of doc.presets) {
+      for (const s of p.snapshots ?? []) {
+        if (s.roleSource !== "user") continue;
+        const byIndex = out.get(p.hash) ?? new Map<number, Role>();
+        byIndex.set(s.index, s.role);
+        out.set(p.hash, byIndex);
+      }
+    }
+  }
+  return out;
+}
+
+/** Every readable level document in DOC_DIRS. Unreadable ones are skipped. */
+function* eachStoredDoc(): Generator<LevelDoc> {
   for (const dir of DOC_DIRS) {
     const path = join(PRESET_DIR, dir);
     if (!existsSync(path)) continue;
@@ -497,13 +523,40 @@ export function userRolesByHash(): Map<string, Map<number, Role>> {
         continue;
       }
       if (!Array.isArray(doc?.presets)) continue;
-      for (const p of doc.presets) {
-        for (const s of p.snapshots ?? []) {
-          if (s.roleSource !== "user") continue;
-          const byIndex = out.get(p.hash) ?? new Map<number, Role>();
-          byIndex.set(s.index, s.role);
-          out.set(p.hash, byIndex);
-        }
+      yield doc;
+    }
+  }
+}
+
+/** A patch's hand-typed names: its own, and its snapshots' by index. */
+export interface UserNames {
+  preset?: string;
+  snapshots: Map<number, string>;
+}
+
+/**
+ * Every name a person has actually typed, keyed by preset hash.
+ *
+ * Same rule as userRolesByHash, and scanned in the same pass of the same
+ * directories: naming a patch "Verse — clean" is a decision about the patch,
+ * so it holds wherever that patch turns up and survives the Setlists app
+ * re-pushing the gig. Names read out of the payload are excluded — those are
+ * re-derived from the .hlx each time, and pinning one gig's copy would freeze
+ * a name the source has since corrected.
+ */
+export function userNamesByHash(): Map<string, UserNames> {
+  const out = new Map<string, UserNames>();
+  const entry = (hash: string): UserNames => {
+    const found = out.get(hash) ?? { snapshots: new Map<number, string>() };
+    out.set(hash, found);
+    return found;
+  };
+
+  for (const doc of eachStoredDoc()) {
+    for (const p of doc.presets) {
+      if (p.nameSource === "user" && p.name) entry(p.hash).preset = p.name;
+      for (const s of p.snapshots ?? []) {
+        if (s.nameSource === "user" && s.name) entry(p.hash).snapshots.set(s.index, s.name);
       }
     }
   }

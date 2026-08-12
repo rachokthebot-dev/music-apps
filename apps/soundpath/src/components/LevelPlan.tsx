@@ -19,6 +19,7 @@ import { useRouter } from "next/navigation";
 import RecordPreset, { when } from "@/components/RecordPreset";
 import {
   ConnectHelix,
+  EditableName,
   LoadedRow,
   RoleOffsets,
   SEVERITY_DOT,
@@ -349,6 +350,23 @@ export function LevelPlan({ setlistId }: { setlistId?: string | null }) {
     await load();
   };
 
+  /**
+   * Rename a preset or one of its snapshots.
+   *
+   * The name is a label on the document, never a change to the preset payload:
+   * the payload's bytes are what the readings are keyed to, so editing a name
+   * in there would drop every recording this gig has. The export writes these
+   * names into the file it builds.
+   */
+  const rename = async (index: number, body: { name?: string; snapshots?: Record<string, string> }) => {
+    await fetch(`/soundpath/api/setlist/${index}/name${q}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    await load();
+  };
+
   const setLevels = async (patch: Record<string, number>) => {
     await fetch(`/soundpath/api/setlist/levels${q}`, {
       method: "PATCH",
@@ -515,12 +533,20 @@ export function LevelPlan({ setlistId }: { setlistId?: string | null }) {
           <div key={p.index} className="border border-border rounded-lg overflow-hidden">
             <div className="flex items-center gap-3 px-3 py-2.5 text-[12.5px]">
               <span className="text-muted-foreground w-5">{p.index + 1}</span>
-              <button onClick={() => setOpen(open === p.index ? null : p.index)} className="flex-1 min-w-0 text-left">
+              <div className="flex-1 min-w-0">
                 {/* The name truncates, the badge does not — it sits outside
                     the truncating span, or a crowded row drops the one thing
                     telling you this preset is the odd one out. */}
                 <span className="font-medium flex items-center gap-2 min-w-0">
-                  <span className="truncate">{p.name}</span>
+                  {/* Editable rather than part of the expand toggle: clicking
+                      a name to rename it and getting the panel instead is the
+                      kind of thing you only forgive once. */}
+                  <EditableName
+                    value={p.name}
+                    edited={p.nameSource === "user"}
+                    onCommit={(n) => rename(p.index, { name: n })}
+                    className="min-w-0"
+                  />
                   {p.changedPending && (
                     <span
                       className="shrink-0 text-[9.5px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-600"
@@ -530,11 +556,14 @@ export function LevelPlan({ setlistId }: { setlistId?: string | null }) {
                     </span>
                   )}
                 </span>
-                <span className="text-[11px] text-muted-foreground">
+                <button
+                  onClick={() => setOpen(open === p.index ? null : p.index)}
+                  className="text-[11px] text-muted-foreground text-left block"
+                >
                   {p.snapshots.length} snapshot{p.snapshots.length > 1 ? "s" : ""}
                   {msg[p.index] && <span className="text-destructive"> · {msg[p.index]}</span>}
-                </span>
-              </button>
+                </button>
+              </div>
               {/* Anything with nothing recorded can be levelled on its own —
                   one .hlx on the pedal rather than the whole gig — and the
                   readings come back here when they exist. */}
@@ -612,6 +641,7 @@ export function LevelPlan({ setlistId }: { setlistId?: string | null }) {
               <SnapshotTable
                 snapshots={p.snapshots}
                 onRole={(snapIdx, role) => setRole(p.index, snapIdx, role)}
+                onRename={(snapIdx, name) => rename(p.index, { snapshots: { [snapIdx]: name } })}
               />
             )}
           </div>
@@ -635,6 +665,7 @@ export function LevelPlan({ setlistId }: { setlistId?: string | null }) {
         <RecordPreset
           cap={cap}
           measureUrl={`/soundpath/api/setlist/${recording}/measure?id=${encodeURIComponent(setlistId)}`}
+          source="setlist"
           title={plan.presets.find((p) => p.index === recording)?.name ?? ""}
           subtitle={`Slot ${recording + 1} · one take per snapshot`}
           snapshots={plan.presets.find((p) => p.index === recording)?.snapshots ?? []}

@@ -11,7 +11,7 @@
  * Each returns { status, body } so a route is a lookup and a call.
  */
 
-import { splitAndMeasure } from "@music-apps/gain-estimator";
+import { type HlxLike, nameSnapshots, splitAndMeasure } from "@music-apps/gain-estimator";
 
 import { applyPlanToPresets, planGains } from "./applyLevels";
 import { baselineInForce } from "./levelPlan";
@@ -264,6 +264,81 @@ export function setRoles(
   return ok({ snapshots: preset.snapshots });
 }
 
+/**
+ * Helix shows 16 characters, and the export trims to it either way — so
+ * refuse the extra here rather than accepting a name the device will halve.
+ */
+const NAME_MAX = 16;
+
+const cleanName = (v: unknown): string | null => {
+  if (typeof v !== "string") return null;
+  const n = v.trim().replace(/\s+/g, " ").slice(0, NAME_MAX).trim();
+  return n || null;
+};
+
+/**
+ * Rename a preset, its snapshots, or both.
+ *
+ * Only the document is touched, never the .hlx: the payload's bytes are the
+ * preset's identity — hashPreset digests them, and every reading, role and
+ * library key hangs off that hash — so editing a name in there would re-key
+ * the patch and drop its recordings. The export writes these names into the
+ * file it builds instead, which is where a name needs to be real.
+ *
+ * A rename is a label, not a role. Calling a snapshot "Solo" here leaves its
+ * role alone, because roles decide gains: re-deriving one from a name typed
+ * mid-gig would move levels on a pass already recorded.
+ */
+export function setNames(
+  store: LevelDocStore,
+  doc: LevelDoc,
+  preset: LevelPreset,
+  body: { name?: unknown; snapshots?: Record<string, unknown> },
+  /**
+   * Whether the document is named after this preset. True for a single-preset
+   * levelling session, where openPresetLevel sets both from one label and the
+   * export reads the document's — leave it and a rename never reaches the file.
+   * False for a gig, whose name is the gig's and is not the patch's to change.
+   */
+  renamesDoc = false
+): ActionResult {
+  let changed = 0;
+
+  const presetName = cleanName(body.name);
+  if (presetName && presetName !== preset.name) {
+    preset.name = presetName;
+    preset.nameSource = "user";
+    if (renamesDoc) doc.name = presetName;
+    changed++;
+  }
+
+  const snapshots = body.snapshots ?? {};
+  preset.snapshots = preset.snapshots.map((s) => {
+    if (!(String(s.index) in snapshots)) return s;
+    const next = cleanName(snapshots[String(s.index)]);
+    if (!next || next === s.name) return s;
+    changed++;
+    return { ...s, name: next, nameSource: "user" as const };
+  });
+
+  // Nothing to write is not an error — the caller sent a name that was already
+  // the name, which is what a UI that submits on blur does constantly.
+  if (changed === 0) return ok({ changed: 0, name: preset.name, snapshots: preset.snapshots });
+
+  store.write(doc);
+  return ok({ changed, name: preset.name, snapshots: preset.snapshots });
+}
+
+/** Hand-typed snapshot names written into a preset payload, or it unchanged. */
+function stampSnapshotNames(hlx: string, preset: LevelPreset): string {
+  if (!preset.snapshots?.some((s) => s.nameSource === "user")) return hlx;
+  try {
+    return JSON.stringify(nameSnapshots(JSON.parse(hlx) as HlxLike, preset.snapshots));
+  } catch {
+    return hlx;
+  }
+}
+
 const LEVEL_KEYS = [
   "rhythmOffsetDb",
   "chorusOffsetDb",
@@ -419,14 +494,16 @@ export function confirmVersion(store: LevelDocStore, doc: LevelDoc): ActionResul
   };
 
   // Freeze the finished presets so this pass survives its sources being
-  // replaced later.
+  // replaced later. Snapshot names are written in here rather than at
+  // download: a version is what you took to a gig, names included, so renaming
+  // a snapshot afterwards must not change a file you already played.
   store.writeVersionPayload(
     doc.id,
     version.n,
     applyPlanToPresets(doc).map((a) => ({
       index: a.preset.index,
       name: a.preset.name,
-      hlx: a.hlx,
+      hlx: stampSnapshotNames(a.hlx, a.preset),
     }))
   );
 

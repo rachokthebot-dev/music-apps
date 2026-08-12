@@ -19,6 +19,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import RecordPreset from "@/components/RecordPreset";
 import {
   ConnectHelix,
+  EditableName,
   LoadedRow,
   RoleOffsets,
   SnapshotTable,
@@ -111,6 +112,20 @@ export function PresetLevel({ presetId }: { presetId?: string | null }) {
     await load();
   };
 
+  /**
+   * Rename this preset or one of its snapshots. The document is what changes;
+   * the preset payload is left alone, because its bytes are what the readings
+   * are keyed to. The export writes these names into the .hlx it builds.
+   */
+  const rename = async (body: { name?: string; snapshots?: Record<string, string> }) => {
+    await fetch(`/soundpath/api/level/name${q}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    await load();
+  };
+
   const setLevels = async (patch: Record<string, number>) => {
     await fetch(`/soundpath/api/level/levels${q}`, {
       method: "PATCH",
@@ -164,7 +179,13 @@ export function PresetLevel({ presetId }: { presetId?: string | null }) {
       <div className="flex items-start justify-between gap-4 flex-wrap mb-3">
         <div>
           <div className="flex items-center gap-2.5 flex-wrap">
-            <h2 className="text-[15px] font-semibold">{plan.name}</h2>
+            <h2 className="text-[15px] font-semibold max-w-xs">
+              <EditableName
+                value={plan.name}
+                edited={preset?.nameSource === "user"}
+                onCommit={(n) => rename({ name: n })}
+              />
+            </h2>
             <span
               className={`text-[11px] font-bold px-2.5 py-1 rounded-full ${plan.complete ? "bg-emerald-500/15 text-emerald-600" : "bg-amber-500/15 text-amber-600"}`}
             >
@@ -277,7 +298,11 @@ export function PresetLevel({ presetId }: { presetId?: string | null }) {
       </div>
 
       <div className="border border-border rounded-lg overflow-hidden">
-        <SnapshotTable snapshots={preset.snapshots} onRole={setRole} />
+        <SnapshotTable
+          snapshots={preset.snapshots}
+          onRole={setRole}
+          onRename={(snapIdx, name) => rename({ snapshots: { [snapIdx]: name } })}
+        />
       </div>
 
       <p className="text-[11px] text-muted-foreground mt-3">
@@ -297,6 +322,7 @@ export function PresetLevel({ presetId }: { presetId?: string | null }) {
         <RecordPreset
           cap={cap}
           measureUrl={`/soundpath/api/level/measure?id=${encodeURIComponent(presetId)}`}
+          source="preset"
           title={plan.name}
           subtitle="one take per snapshot"
           snapshots={preset.snapshots}

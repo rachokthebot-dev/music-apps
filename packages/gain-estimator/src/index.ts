@@ -89,5 +89,6 @@ export {
 export {
   buildSetlistFile,
   nameForSong,
+  nameSnapshots,
   type HlxLike,
 } from "./hls";

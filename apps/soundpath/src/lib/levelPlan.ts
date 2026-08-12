@@ -189,6 +189,7 @@ export function buildPlan(doc: LevelDoc) {
       return {
         index: s.index,
         name: s.name,
+        nameSource: s.nameSource,
         role: s.role,
         roleSource: s.roleSource,
         measuredLufs: m,
@@ -220,6 +221,7 @@ export function buildPlan(doc: LevelDoc) {
     return {
       index: p.index,
       name: p.name,
+      nameSource: p.nameSource,
       hash: p.hash,
       /**
        * Changed, and that change hasn't reached a confirmed version yet.

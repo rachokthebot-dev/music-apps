@@ -9,8 +9,14 @@
  * presets, a preset is just the table.
  */
 
+// Its own subpath, not the package barrel: the barrel pulls in the ffmpeg and
+// yt-dlp helpers, which import child_process and can't be bundled for a client.
+import { EditableName } from "@music-apps/shared/editable-name";
+
 import { useHelixCapture } from "@/lib/useHelixCapture";
 import { when } from "@/components/RecordPreset";
+
+export { EditableName };
 
 export type Role = "clean" | "rhythm" | "chorus" | "solo";
 
@@ -28,6 +34,8 @@ export interface VersionRow {
 export interface PlanSnapshot {
   index: number;
   name: string;
+  /** "user" when the name was typed here rather than read off the preset. */
+  nameSource?: string;
   role: Role;
   roleSource: string;
   measuredLufs: number | null;
@@ -43,6 +51,8 @@ export interface PlanSnapshot {
 export interface PlanPreset {
   index: number;
   name: string;
+  /** "user" when the name was typed here rather than read off the preset. */
+  nameSource?: string;
   /** Identifies the patch — what a levelling session for it is keyed to. */
   hash: string;
   /** Changed since the rest was recorded, and not yet in a confirmed version. */
@@ -329,9 +339,17 @@ export function LoadedRow({
         <span className="flex items-center gap-1.5 pl-2.5 py-1 rounded-md border border-dashed border-border">
           <a
             href={originalHref}
-            onClick={() => onLoaded(null, plan.recordOffsetDb)}
+            // Downloading says the original is what's on the pedal now. It
+            // must not decide *how* the file is offset — the checkbox does
+            // that, and forcing the offset on here is what silently handed
+            // back a backed-off file when a plain one was asked for.
+            onClick={() => onLoaded(null, plan.loadedOffsetDb)}
             className="text-[11.5px] font-semibold hover:underline"
-            title="Exactly as stored, with no levelling applied. This is what you load to record a fresh pass."
+            title={
+              plan.loadedOffsetDb !== 0
+                ? `Exactly as stored, turned down ${Math.abs(plan.loadedOffsetDb)} dB because "in the loaded file" is ticked. Untick it for the untouched preset.`
+                : "Exactly as stored, with no levelling and no offset applied. This is what you load to record a fresh pass."
+            }
           >
             original .{kind} ⤓
           </a>
@@ -340,7 +358,7 @@ export function LoadedRow({
               never is — a confirmed version carries no offset, by design. */}
           <label
             className="flex items-center gap-1.5 text-[11px] text-muted-foreground cursor-pointer select-none"
-            title="Tick this when the file on the Helix has the offset baked in. It captures the value as it is now, so moving the stepper afterwards won't re-interpret takes you've already recorded."
+            title="Tick this when the file on the Helix has the offset baked in — the original download follows it, so ticked you get the backed-off file and unticked you get the preset untouched. It captures the value as it is now, so moving the stepper afterwards won't re-interpret takes you've already recorded."
           >
             <input
               type="checkbox"
@@ -415,9 +433,11 @@ export function RoleOffsets({
 export function SnapshotTable({
   snapshots,
   onRole,
+  onRename,
 }: {
   snapshots: PlanSnapshot[];
   onRole: (snapshotIndex: number, role: Role) => void;
+  onRename: (snapshotIndex: number, name: string) => void;
 }) {
   return (
     <table className="w-full text-[12px] border-t border-border">
@@ -436,7 +456,13 @@ export function SnapshotTable({
       <tbody>
         {snapshots.map((s) => (
           <tr key={s.index} className="border-t border-border/60">
-            <td className="px-3 py-1.5">{s.name}</td>
+            <td className="px-3 py-1.5 max-w-[13rem]">
+              <EditableName
+                value={s.name}
+                edited={s.nameSource === "user"}
+                onCommit={(n) => onRename(s.index, n)}
+              />
+            </td>
             <td>
               <RoleSelect value={s.role} source={s.roleSource} onChange={(r) => onRole(s.index, r)} />
             </td>

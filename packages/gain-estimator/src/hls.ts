@@ -34,6 +34,33 @@ export function nameForSong(preset: HlxLike, title: string): HlxLike {
   return preset;
 }
 
+/**
+ * Write hand-typed snapshot names into the preset.
+ *
+ * The counterpart to nameForSong, one level down. A snapshot's name is what
+ * you read off the Helix while playing, so a rename that only lived in the app
+ * would be missing from the one place it's needed. Only names a person typed
+ * are written — anything derived from the payload is already what's in there.
+ *
+ * Snapshots the preset doesn't have are skipped rather than created: an
+ * absent snapshot block means the author never used that slot, and inventing
+ * one would put a named-but-empty snapshot on the device.
+ */
+export function nameSnapshots(
+  preset: HlxLike,
+  names: Array<{ index: number; name: string; nameSource?: "user" }>
+): HlxLike {
+  const tone = (preset?.data as { tone?: Record<string, unknown> })?.tone;
+  if (!tone) return preset;
+  for (const s of names) {
+    if (s.nameSource !== "user") continue;
+    const snap = tone[`snapshot${s.index}`] as { "@name"?: string } | undefined;
+    if (!snap || typeof snap !== "object") continue;
+    snap["@name"] = s.name.trim().slice(0, NAME_MAX).trim();
+  }
+  return preset;
+}
+
 export function buildSetlistFile(name: string, presets: HlxLike[]): string {
   const slots: unknown[] = new Array(SLOT_COUNT).fill(null).map(() => ({}));
 
