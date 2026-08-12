@@ -32,17 +32,24 @@ Six apps, one monorepo, one URL behind a local proxy. Use the ones you want.
 
 ### Shreddy — practice the song you can't quite play yet
 
-Drop in any MP3 or paste a YouTube URL. Shreddy auto-detects sections (Intro, Verse, Chorus, Solo, etc.), BPM, and key. Then you slow it down without changing pitch and loop the hard four bars until your fingers know it.
+Drop in any MP3, or search YouTube without leaving the app. Shreddy auto-detects sections (Intro, Verse, Chorus, Solo, etc.), BPM, and key. Then you slow it down without changing pitch and loop the hard four bars until your fingers know it.
 
 ![Shreddy library](apps/landing/assets/screenshots/shreddy-library.png)
 
 **Supported features**
 
 *Library*
-- Upload MP3 / MP4 or import direct from any YouTube URL (yt-dlp under the hood)
+- Upload MP3 / MP4, or search YouTube from the import dialog — or paste a URL, as before
 - Auto-detected metadata: BPM, musical key, artist, album, genre, year
 - Auto-detected song structure (Intro / Verse / Chorus / Bridge / Solo / Outro) via local SongFormer model — no cloud round-trip, ~30s per song
 - Folders to group songs, pin favourites, search and sort by title / artist / date
+
+Search results are ranked and annotated with *why* they scored, so you can tell the
+album cut from a ten-minute live version before importing. Anything over your
+duration limit is greyed out with the limit named, rather than hidden or left to
+fail at import:
+
+![Shreddy — search YouTube from the import dialog](apps/landing/assets/screenshots/shreddy-youtube-search.png)
 
 *Practice player*
 
@@ -57,6 +64,7 @@ Drop in any MP3 or paste a YouTube URL. Shreddy auto-detects sections (Intro, Ve
 - Bar count per section, time signature display (4/4, 3/4, 6/8), section CSV export
 - Share a clip of any section as a downloadable audio file
 - Practice notes per song
+- **Find tone** — jumps straight into Tone Search with the song's title and artist, so a tone hunt starts from what you're playing rather than a blank box
 - Built-in metronome synced to detected BPM
 - Remembers position, tempo, pitch, selected section across reloads
 - Optimized for iPad Safari — full-network mode (`--hostname 0.0.0.0`) for couch practice
@@ -91,7 +99,7 @@ You hear a great phrase in a YouTube cover or lesson and you know you'll forget 
 **Supported features**
 
 *Library*
-- Import any YouTube video as a source — automatic title, duration, channel
+- Import any YouTube video as a source — automatic title, duration, channel. Search from the import dialog with the same ranked picker Shreddy uses, or paste a URL
 - Two views: all individual licks (grid of clip thumbnails) or grouped by source video
 - Custom folders + drag-to-organize
 - Search across lick names, source titles, channels
@@ -169,7 +177,7 @@ Web-Audio scheduled (not `setInterval`), so it stays in time even on iPad Safari
 
 For anyone running a Line 6 Helix LT. Two patches that look identical on paper can sit 30 dB apart in the room, because a modeller's loudness depends on the whole non-linear chain and its spectrum — you cannot read it off the preset. So SoundPath doesn't try. You play each snapshot once, it measures integrated loudness (ITU-R BS.1770) in the browser, and writes the correction to the path output block.
 
-![SoundPath](apps/landing/assets/screenshots/soundpath.png)
+![SoundPath — a gig levelled from recordings, with one preset's snapshots open](apps/landing/assets/screenshots/soundpath.png)
 
 **Supported features**
 
@@ -178,7 +186,10 @@ For anyone running a Line 6 Helix LT. Two patches that look identical on paper c
 - **Every reading carries the level it was taken through**, so re-recording one changed song is safe and the other twenty stay correct.
 - **Confirmed versions.** A pass is frozen with its gains and stays rebuildable, so the file you took to a gig doesn't quietly change meaning next time you record.
 - **Role offsets** — clean / rhythm / chorus / solo sit at chosen distances from one target, and a snapshot the output block can't reach is flagged rather than silently clamped.
+- **Rename presets and snapshots, and the names go into the file.** A patch off CustomTone is called `ARCHON HEAVY AC` and its snapshots are called `WHERE?` — and those names are what you read off the pedal mid-song. Renaming edits the document, never the preset payload, whose bytes every reading is keyed to; the export stamps the typed names in. A name you typed is marked as typed, so it survives Setlists re-pushing the gig, while names read out of the payload stay derived and a fix at the source still wins.
+- **The "original" download is honest about its offset.** It gives the preset exactly as stored, unless you've ticked *in the loaded file* to say the record offset is already baked into what's on the pedal — in which case the download matches what the plan believes, and the file and the corrections can't disagree.
 - Live capture off the Helix's USB tap, or a `.wav` per preset. Clipped takes are refused: a clipped chord measures quieter than it is, so the plan would push it further into the ceiling.
+- **Takes are archived** to `takes/` with the proposed measurement window, the window you dragged it to, and the reading each gave. Nothing reads them back — they exist so the auto-window can be tuned against real recordings instead of remembered ones.
 
 [→ SoundPath README](apps/soundpath/README.md)
 
@@ -188,12 +199,17 @@ For anyone running a Line 6 Helix LT. Two patches that look identical on paper c
 
 Assemble a setlist from Apple Music or a pasted list, match each song to a Helix patch and a practice video, and push the lot to SoundPath for levelling. Snapshot counts come back from SoundPath rather than being counted here, so the number next to a song is the number you actually have to record.
 
+![Setlists — a gig matched to patches, with recording progress fed back from SoundPath](apps/landing/assets/screenshots/setlists.png)
+
 **Supported features**
 
 - Import a gig from an Apple Music playlist or plain text; reorder by dragging (pointer events, so it works on the iPad)
 - Match each song to a Helix preset from ToneCloud, a pasted link, or an upload
+- Rename the patch a song uses, in place — `ARCHON HEAVY AC` says nothing about the song, and this label is what names the preset when you level it on its own in SoundPath
 - Per-song links into Shreddy and LickBank for practice
 - **Edit in SoundPath** hands the whole gig over; a single changed song can be opened there on its own
+
+[→ Setlists README](apps/setlists/README.md)
 
 ---
 
@@ -231,6 +247,21 @@ menu (the "All apps" launcher and app-to-app switching) links to bare paths like
 `/lickbank`, so it only resolves on the single proxy origin (8080). See
 [`proxy/README.md`](proxy/README.md).
 
+### Recording from another device on the LAN
+
+SoundPath records through the browser, and `getUserMedia` only runs in a secure
+context — so `http://<lan-ip>:8080` can't reach the mic at all, no matter the
+permissions. The proxy also serves **https on 8443** when it finds a cert:
+
+```bash
+mkcert -cert-file lan.pem -key-file lan-key.pem <lan-ip> localhost 127.0.0.1
+mv lan.pem lan-key.pem ~/.config/music-apps/certs/
+```
+
+Then record from `https://<lan-ip>:8443/soundpath`. Each device has to trust
+the mkcert CA once. No cert, no TLS — the proxy says so at startup and plain
+http on 8080 carries on as normal.
+
 ### Single-app dev (backend only)
 
 ```bash
@@ -247,6 +278,11 @@ These run one app on its own port for isolated work. Each is mounted at `/<slug>
 they only work through the proxy on 8080. (`run-all.sh` also starts HelAIx on `:3005` →
 `/helaix`, which the `dev:*` scripts don't cover.)
 
+The proxy additionally mounts two sibling projects that live outside this repo, so
+cross-app links resolve: **HelAIx** at `/helaix` (describe a tone, get a `.hlx`) and
+**Tone Search** at `/tones` (semantic search over indexed CustomTone Helix presets —
+what Shreddy's *Find tone* button opens).
+
 If you want them reachable off your LAN — e.g. an iPad over cellular — point
 [ngrok](https://ngrok.com) at the proxy: `ngrok http 8080`.
 
@@ -256,7 +292,7 @@ If you want them reachable off your LAN — e.g. an iPad over cellular — point
 
 | Package | Purpose |
 |---|---|
-| `packages/shared`         | YouTube import, ffmpeg pitch, practice stats, basepath shim — shared by Shreddy + LickBank |
+| `packages/shared`         | YouTube import + ranked search picker, ffmpeg pitch, practice stats, rename-in-place field, basepath shim — shared by Shreddy, LickBank, Setlists + SoundPath |
 | `packages/ui`             | Small set of shared components |
 | `packages/gain-estimator` | Helix preset loudness math, alignment, apply pipeline — used by SoundPath. Block catalog vendored from [HelAIx](https://github.com/MrCitron/helaix) (MIT). |
 | `packages/helix-builder`  | Optional Python build tooling for regenerating preset skeletons. **Not required at runtime.** Depends on phelix (GPL v3) which is not bundled — see [its README](packages/helix-builder/README.md). |
