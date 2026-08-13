@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Music Apps — tools for guitar players who practice</title>
-<meta name="description" content="Four hand-built web apps for musicians: Shreddy, LickBank, ChordCraft, and Metronome. Local-first, iPad-ready, built by a guitar player." />
+<meta name="description" content="Six hand-built web apps for musicians: Shreddy, LickBank, ChordCraft, Metronome, SoundPath, and Setlists. Local-first, iPad-ready, built by a guitar player." />
 <style>
   :root {
     --ink: #1d1d1f;
@@ -22,6 +22,10 @@
     --accent-chordcraft: #17c27a;
     --accent-chordcraft-glow: rgba(23,194,122,.14);
     --accent-metronome-glow: rgba(255,255,255,.10);
+    --accent-soundpath: #a855f7;
+    --accent-soundpath-glow: rgba(168,85,247,.14);
+    --accent-setlists: #8b5cf6;
+    --accent-setlists-glow: rgba(139,92,246,.14);
     --radius-xl: 22px;
     --radius-lg: 18px;
     --radius-md: 12px;
@@ -125,9 +129,11 @@
   }
   .hero-strip {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    /* Three across, two rows: six chips in a four-column grid strand the last
+       two on a line of their own. */
+    grid-template-columns: repeat(3, 1fr);
     gap: 14px;
-    max-width: 720px;
+    max-width: 620px;
     margin: 0 auto;
   }
   .hero-chip {
@@ -156,6 +162,11 @@
   .mark.lickbank { background: linear-gradient(135deg, #5b6cff, #8b9aff); }
   .mark.chordcraft { background: linear-gradient(135deg, #17c27a, #4ad897); }
   .mark.metronome { background: linear-gradient(135deg, #1d1d1f, #424245); }
+  .mark.soundpath { background: linear-gradient(135deg, #a855f7, #c98bfa); }
+  .mark.setlists { background: linear-gradient(135deg, #8b5cf6, #b39bfa); }
+  /* Both start with the S that Shreddy already owns, so these two take a
+     second letter — and a smaller size to sit in the same box. */
+  .mark.soundpath, .mark.setlists { font-size: 10.5px; letter-spacing: 0; }
 
   @media (max-width: 640px) {
     .hero { padding: 80px 0 60px; }
@@ -294,11 +305,15 @@
   .section.lickbank .halo::before { background: var(--accent-lickbank-glow); }
   .section.chordcraft .halo::before { background: var(--accent-chordcraft-glow); }
   .section.metronome .halo::before { background: var(--accent-metronome-glow); }
+  .section.soundpath .halo::before { background: var(--accent-soundpath-glow); }
+  .section.setlists .halo::before { background: var(--accent-setlists-glow); }
 
   .dot.shreddy { background: var(--accent-shreddy); }
   .dot.lickbank { background: var(--accent-lickbank); }
   .dot.chordcraft { background: var(--accent-chordcraft); }
   .dot.metronome { background: #fff; }
+  .dot.soundpath { background: var(--accent-soundpath); }
+  .dot.setlists { background: var(--accent-setlists); }
   .dot.unified { background: linear-gradient(135deg, #ff4d2e, #5b6cff 40%, #17c27a 80%); }
 
   /* Unified-library tile grid */
@@ -366,6 +381,8 @@
       <a href="#lickbank">LickBank</a>
       <a href="#chordcraft">ChordCraft</a>
       <a href="#metronome">Metronome</a>
+      <a href="#soundpath">SoundPath</a>
+      <a href="#setlists">Setlists</a>
       <a href="#library">Library</a>
     </div>
   </div>
@@ -373,14 +390,16 @@
 
 <header class="hero">
   <div class="shell">
-    <span class="eyebrow">Four apps · one practice room</span>
+    <span class="eyebrow">Six apps · one practice room</span>
     <h1 class="hero-title">The practice tools I always wished existed.</h1>
-    <p class="hero-sub">I play guitar. I wanted software that respects the way musicians actually learn — slow passages down, loop the hard bits, steal licks from YouTube, feel the shape of a progression. So I built four apps.</p>
+    <p class="hero-sub">I play guitar. I wanted software that respects the way musicians actually learn — slow passages down, loop the hard bits, steal licks from YouTube, feel the shape of a progression, then walk on stage without one song blowing the roof off. So I built six apps.</p>
     <div class="hero-strip">
       <a class="hero-chip" href="#shreddy"><span class="mark shreddy">S</span>Shreddy</a>
       <a class="hero-chip" href="#lickbank"><span class="mark lickbank">L</span>LickBank</a>
       <a class="hero-chip" href="#chordcraft"><span class="mark chordcraft">C</span>ChordCraft</a>
       <a class="hero-chip" href="#metronome"><span class="mark metronome">M</span>Metronome</a>
+      <a class="hero-chip" href="#soundpath"><span class="mark soundpath">SP</span>SoundPath</a>
+      <a class="hero-chip" href="#setlists"><span class="mark setlists">SL</span>Setlists</a>
     </div>
   </div>
 </header>
@@ -528,8 +547,78 @@
   </div>
 </section>
 
+<!-- SOUNDPATH -->
+<section id="soundpath" class="section soundpath">
+  <div class="halo"></div>
+  <div class="shell">
+    <div class="section-head">
+      <div class="section-kicker"><span class="dot soundpath"></span>SoundPath</div>
+      <h2 class="section-title">Every song at the same volume.</h2>
+      <p class="section-lede">Two Helix presets that look identical on paper can sit 30 dB apart in the room — a modeller's loudness depends on the whole non-linear chain, so you cannot read it off the patch. SoundPath doesn't try. You play each snapshot once, it measures the loudness in the browser, and writes the correction into the preset.</p>
+    </div>
+    <div class="frame">
+      <img src="assets/screenshots/soundpath.png" alt="SoundPath levelling a gig — eight songs with their measured corrections, one preset expanded to show its snapshot table" />
+    </div>
+    <div class="features">
+      <div class="feature">
+        <h3>Measured, not guessed</h3>
+        <p>Integrated loudness to the ITU-R BS.1770 standard, taken off the Helix's own USB tap. A clipped take is refused rather than trusted — it measures quieter than it really is, which would push it further into the ceiling.</p>
+      </div>
+      <div class="feature">
+        <h3>Level a whole gig at once</h3>
+        <p>Record every snapshot in a setlist and ship one file where every song sits at the same target. Re-record the one song that changed and the other twenty stay exactly as they were.</p>
+      </div>
+      <div class="feature">
+        <h3>Clean, rhythm, chorus, solo</h3>
+        <p>Each role sits at a chosen distance from the target, so a solo still lifts. A snapshot the preset can't physically reach gets flagged instead of silently clamped.</p>
+      </div>
+      <div class="feature">
+        <h3>Names you can actually read</h3>
+        <p>A patch off CustomTone is called ARCHON HEAVY AC and its snapshots are called WHERE?. Rename them here and the names are written into the file — because that's what you read off the pedal mid-song.</p>
+      </div>
+      <div class="feature">
+        <h3>Versions that stay put</h3>
+        <p>Confirm a pass and it's frozen with its gains, still rebuildable later. The file you took to a gig doesn't quietly change meaning the next time you record.</p>
+      </div>
+      <div class="feature">
+        <h3>Record from the couch</h3>
+        <p>Serve it over https on your own network and an iPad on the music stand can capture straight off the pedal in the same room. No tunnel, no cloud, nothing leaves the house.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- SETLISTS -->
+<section id="setlists" class="section tint setlists">
+  <div class="halo"></div>
+  <div class="shell">
+    <div class="section-head">
+      <div class="section-kicker"><span class="dot setlists"></span>Setlists</div>
+      <h2 class="section-title">Build the gig. Then go play it.</h2>
+      <p class="section-lede">Paste an Apple Music playlist or a plain list of songs. Match each one to the Helix patch you'll use and the video you're learning it from. Then hand the whole thing to SoundPath and let it level the night end to end.</p>
+    </div>
+    <div class="frame">
+      <img src="assets/screenshots/setlists.png" alt="A setlist of eight songs, each matched to a Helix patch, with practice links and recording progress fed back from SoundPath" />
+    </div>
+    <div class="features">
+      <div class="feature">
+        <h3>A gig in one paste</h3>
+        <p>Import from an Apple Music playlist or typed-out text, then drag the running order into shape — with touch, so it works on the iPad you already have out.</p>
+      </div>
+      <div class="feature">
+        <h3>Every song knows its tone</h3>
+        <p>Match a song to a patch from ToneCloud, a link, or a file you already have. Rename it to something that means something, because ARCHON HEAVY AC tells you nothing at a glance.</p>
+      </div>
+      <div class="feature">
+        <h3>Practice is one tap away</h3>
+        <p>Each song links straight into Shreddy to slow it down and LickBank to steal from it. The setlist is the index to the practice, not a separate chore.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
 <!-- UNIFIED LIBRARY -->
-<section id="library" class="section tint">
+<section id="library" class="section">
   <div class="shell">
     <div class="section-head">
       <div class="section-kicker"><span class="dot unified"></span>One library, every tool</div>
