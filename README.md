@@ -40,9 +40,12 @@ Drop in any MP3, or search YouTube without leaving the app. Shreddy auto-detects
 
 *Library*
 - Upload MP3 / MP4, or search YouTube from the import dialog — or paste a URL, as before
+- **Import a whole playlist** from an Apple Music or Spotify link: every track is matched to a YouTube video (ranked, with the unsure ones flagged for a look), queued, and filed into a folder named after the playlist. Songs you already have are filed into that folder too, with nothing downloaded again
 - Auto-detected metadata: BPM, musical key, artist, album, genre, year
 - Auto-detected song structure (Intro / Verse / Chorus / Bridge / Solo / Outro) via local SongFormer model — no cloud round-trip, ~30s per song
-- Folders to group songs, pin favourites, search and sort by title / artist / date
+- Folders in the sidebar, most recently added to or changed first. A song can sit in several; deleting a folder only takes the songs out of it, never out of the library
+- Pin favourites, search and sort by title / artist / date, drag to reorder inside a folder
+- On iPad, swipe a song left for Pin / Copy / Move / Delete; with a mouse the same actions appear on hover
 
 Search results are ranked and annotated with *why* they scored, so you can tell the
 album cut from a ten-minute live version before importing. Anything over your
@@ -58,7 +61,7 @@ fail at import:
 - Section timeline color-coded by detected sections — tap to loop, shift-tap to chain multiple sections
 - Tempo control 0.1× → 1.2× without affecting pitch (ultra-slow 0.1×–0.4× via a server-side ffmpeg stretch, since iPad Safari clamps `playbackRate` at 0.5×)
 - Pitch shifter ±12 semitones without affecting tempo (server-side ffmpeg, cached per song/pitch)
-- Stem separation (Demucs) with a per-stem mixer — isolate or mute vocals / drums / bass / other
+- Stem separation (Demucs) with a per-stem mixer — isolate or mute vocals / drums / bass / other. The stems follow the pitch control too
 - A-B loop with custom markers anywhere in the song
 - Deep-practice modes: Silent/mental-rehearsal toggle, rotating cue prompts, and a dual-task Distraction overlay
 - Bar count per section, time signature display (4/4, 3/4, 6/8), section CSV export
@@ -129,11 +132,11 @@ Pick a key. Pick a difficulty. Hit play. Name what you hear before the reveal. S
 **Supported features**
 
 *Practice mode*
-- 20+ built-in progressions across Blues, Country, Folk, Jazz, Pop, Rock
-- Genre filters + difficulty tags (beginner / intermediate)
+- 20+ built-in progressions across Blues, Country, Folk, Jazz, Pop, Rock, plus your own
+- Genres in the sidebar, the way the other apps list folders; the progressions in them as cards under the player, with difficulty tags (beginner / intermediate)
 - Pick any of the 12 keys
 - Three chord vocabularies: Basic triads, 7ths, Extended
-- BPM control 40 → 240
+- BPM control 60 → 200
 - Independent volume sliders for Chords, Bass, Drums
 - Bass and Drums toggle on/off independently
 - Guitar chord diagrams for every chord in the active progression
@@ -163,10 +166,10 @@ Web-Audio scheduled (not `setInterval`), so it stays in time even on iPad Safari
 - Big BPM readout, slider from 40 → 320 BPM
 - Tap-tempo button
 - Time signatures: 4/4, 3/4, 6/8
+- Rhythm patterns: straight, dotted (either way round) and triplet — switchable while it plays
 - Visual beat indicator dots, synced to playback
 - Focus timer: Off / 1m / 2m / 5m / 10m / custom min:sec
-- Volume control
-- Dark / light mode toggle
+- Dark / light mode toggle, in the sidebar like every other app
 - Web Audio scheduling — accurate even when the tab loses focus
 
 [→ Metronome README](apps/metronome/README.md)
@@ -222,7 +225,7 @@ You're not meant to use all six at once. The point is they share enough scaffold
 - **Tone not right?** SoundPath dials it in for Helix users; Shreddy stays your practice surface.
 - **Playing out?** Setlists builds the gig and hands it to SoundPath, which levels every song against one target so nothing jumps between songs.
 
-Same look-and-feel across all of them. One proxy so a single URL on your LAN reaches every app from any device. Shared utilities (YouTube import, ffmpeg pitch, practice stats) so behavior is consistent.
+Same look-and-feel across all of them — not by convention but by construction: every app sits in the same shell (a sidebar with the app's name, the app menu, its sections or folders and the theme toggle, which becomes a drawer on a phone or a portrait iPad) and imports one set of design tokens, so a colour or a radius changes everywhere at once. One proxy so a single URL on your LAN reaches every app from any device. Shared utilities (YouTube import, ffmpeg pitch, practice stats) so behavior is consistent.
 
 ---
 
@@ -292,8 +295,8 @@ If you want them reachable off your LAN — e.g. an iPad over cellular — point
 
 | Package | Purpose |
 |---|---|
-| `packages/shared`         | YouTube import + ranked search picker, ffmpeg pitch, practice stats, rename-in-place field, basepath shim — shared by Shreddy, LickBank, Setlists + SoundPath |
-| `packages/ui`             | Small set of shared components |
+| `packages/shared`         | The app shell (sidebar, drawer, app menu, theme toggle) every app sits in; YouTube import + ranked search picker, Apple Music + Spotify playlist parsing, ffmpeg pitch, practice stats, rename-in-place field, basepath shim |
+| `packages/ui`             | `theme.css` — the palette, radii and easing every app imports — and a small set of shared components |
 | `packages/gain-estimator` | Helix preset loudness math, alignment, apply pipeline — used by SoundPath. Block catalog vendored from [HelAIx](https://github.com/MrCitron/helaix) (MIT). |
 | `packages/helix-builder`  | Optional Python build tooling for regenerating preset skeletons. **Not required at runtime.** Depends on phelix (GPL v3) which is not bundled — see [its README](packages/helix-builder/README.md). |
 

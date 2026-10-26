@@ -7,10 +7,11 @@ A local-first guitar practice companion web app. Upload songs or import from You
 ## Features
 
 ### Song Library
-- **Upload MP3/MP4** files or **import from YouTube** by URL
+- **Upload MP3/MP4** files or **import from YouTube** — search from the dialog or paste a URL
+- **Import a playlist** from an Apple Music or Spotify link into a folder named after it; songs already in the library are filed in without downloading again
 - **Local AI section detection** — librosa for BPM/key/beats + the local SongFormer model to automatically identify Intro, Verse, Chorus, Bridge, Solo, Outro, etc. No cloud round-trip (~30–60s/song on M-series Macs)
 - **Auto-detected metadata** — BPM, musical key, artist, album, genre, year (from ID3 tags or YouTube)
-- **Folder organization** — create folders, move songs between them
+- **Folder organization** — folders in the sidebar (a drawer on phone / portrait iPad), most recently changed first; a song can be in several, and deleting a folder never deletes its songs
 - **Pin songs** to the top of the library
 - **Search and sort** by title, artist, date added, or recent
 
