@@ -16,10 +16,10 @@
 import { Suspense, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { AppSwitcher } from "@music-apps/shared/app-switcher";
+import { SidebarMenuButton } from "@music-apps/shared/app-shell";
 
 import { PresetLevel } from "@/components/PresetLevel";
-import { ViewTabs } from "@/components/ViewTabs";
+import { Shell } from "@/components/Shell";
 
 interface SessionRow {
   id: string;
@@ -49,21 +49,12 @@ function PresetLevelView() {
   const from = params.get("from");
 
   return (
-    <main className="p-6 max-w-5xl mx-auto min-h-screen">
-      <header className="mb-4 flex items-baseline justify-between gap-4 flex-wrap">
-        <div>
-          <h1 className="text-2xl font-semibold">soundpath</h1>
-          <p className="text-sm text-muted-foreground">Align gain between Helix presets.</p>
-        </div>
-        <div className="flex items-center gap-4">
-          <Link href="/help" className="text-xs text-muted-foreground hover:text-foreground underline">
-            Recording guide
-          </Link>
-          <AppSwitcher currentAppId="soundpath" />
-        </div>
+    <Shell>
+    <main className="w-full px-4 lg:px-8 py-4 lg:py-6 max-w-5xl mx-auto">
+      <header className="mb-6 flex items-center gap-1">
+        <SidebarMenuButton />
+        <h1 className="text-2xl font-semibold tracking-tight">Preset</h1>
       </header>
-
-      <ViewTabs />
 
       {id ? (
         <>
@@ -82,6 +73,7 @@ function PresetLevelView() {
         <SessionList />
       )}
     </main>
+    </Shell>
   );
 }
 

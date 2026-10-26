@@ -41,6 +41,33 @@ function hasNamedSnapshots(tone: Record<string, unknown>): boolean {
   return false;
 }
 
+/**
+ * Assign an output's gain to the snapshot controller.
+ *
+ * Snapshot overrides only take effect for parameters registered here. Without
+ * it the Helix ignores them and every snapshot plays at the block's level —
+ * which is what happened to every preset whose author hadn't already assigned
+ * the output to snapshots by hand. The shape is the one HX Edit writes.
+ */
+function assignToSnapshots(tone: Record<string, unknown>, dsp: string, slot: string): void {
+  const ctl = (tone.controller ??= {}) as Record<string, Record<string, Node>>;
+  ctl[dsp] ??= {};
+  ctl[dsp][slot] ??= {};
+  ctl[dsp][slot].gain = {
+    "@min": -120,
+    "@max": 20,
+    "@controller": 19,
+    "@snapshot_disable": false,
+  };
+}
+
+/** Undo assignToSnapshots, once no snapshot overrides the output any more. */
+function unassignFromSnapshots(tone: Record<string, unknown>, dsp: string, slot: string): void {
+  const ctl = tone.controller as Record<string, Record<string, Node>> | undefined;
+  delete ctl?.[dsp]?.[slot]?.gain;
+  if (ctl?.[dsp]?.[slot] && Object.keys(ctl[dsp][slot]).length === 0) delete ctl[dsp][slot];
+}
+
 export interface AppliedPreset {
   preset: LevelPreset;
   hlx: string;
@@ -103,6 +130,7 @@ export function applyGainsToPresets(
             | undefined;
           delete snap?.controllers?.[dsp]?.[slot]?.gain;
         }
+        unassignFromSnapshots(tone, dsp, slot);
       }
       written[0] = gain;
     } else {
@@ -111,35 +139,45 @@ export function applyGainsToPresets(
       const fallback = rows[0]?.outputGainDb;
       if (typeof fallback === "number") for (const [, node] of outs) node.gain = fallback;
 
-      // Snapshots with no reading must fall back to the block, not keep the
-      // author's old override — SMELLS LIKE T.S. left its unused slots at +3
-      // while the measured ones went to -17, a 20 dB jump one footswitch away.
-      const measuredIdx = new Set(rows.flatMap((r) => peersOf(r.index)));
-      for (let i = 0; i < 8; i++) {
-        if (measuredIdx.has(i)) continue;
+      if (typeof fallback === "number") for (const [slot] of outs) assignToSnapshots(tone, dsp, slot);
+
+      const setOverride = (i: number, gain: number) => {
         const snap = tone[`snapshot${i}`] as
           | { controllers?: Record<string, Record<string, Node>> }
           | undefined;
-        for (const [slot] of outs) delete snap?.controllers?.[dsp]?.[slot]?.gain;
+        if (!snap) return;
+        snap.controllers ??= {};
+        snap.controllers[dsp] ??= {};
+        for (const [slot] of outs) {
+          snap.controllers[dsp][slot] ??= {};
+          (snap.controllers[dsp][slot] as Record<string, unknown>).gain = {
+            "@value": gain,
+            "@fs_enabled": false,
+          };
+        }
+      };
+
+      // Snapshots with no reading must fall back to the block, not keep the
+      // author's old override — SMELLS LIKE T.S. left its unused slots at +3
+      // while the measured ones went to -17, a 20 dB jump one footswitch away.
+      // Written out as the block's value rather than deleted: with the gain
+      // assigned to snapshots, every snapshot needs a value of its own.
+      const measuredIdx = new Set(rows.flatMap((r) => peersOf(r.index)));
+      for (let i = 0; i < 8; i++) {
+        if (measuredIdx.has(i)) continue;
+        if (typeof fallback === "number") {
+          setOverride(i, fallback);
+        } else {
+          const snap = tone[`snapshot${i}`] as
+            | { controllers?: Record<string, Record<string, Node>> }
+            | undefined;
+          for (const [slot] of outs) delete snap?.controllers?.[dsp]?.[slot]?.gain;
+        }
       }
 
       for (const row of rows) {
         const gain = row.outputGainDb as number;
-        for (const i of peersOf(row.index)) {
-          const snap = tone[`snapshot${i}`] as
-            | { controllers?: Record<string, Record<string, Node>> }
-            | undefined;
-          if (!snap) continue;
-          snap.controllers ??= {};
-          snap.controllers[dsp] ??= {};
-          for (const [slot] of outs) {
-            snap.controllers[dsp][slot] ??= {};
-            (snap.controllers[dsp][slot] as Record<string, unknown>).gain = {
-              "@value": gain,
-              "@fs_enabled": false,
-            };
-          }
-        }
+        for (const i of peersOf(row.index)) setOverride(i, gain);
         written[row.index] = gain;
       }
     }

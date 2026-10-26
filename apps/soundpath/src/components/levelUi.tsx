@@ -434,11 +434,20 @@ export function SnapshotTable({
   snapshots,
   onRole,
   onRename,
+  onArrange,
 }: {
   snapshots: PlanSnapshot[];
   onRole: (snapshotIndex: number, role: Role) => void;
   onRename: (snapshotIndex: number, name: string) => void;
+  /** Reorder or delete: the snapshot indices in their new order, deleted ones left out. */
+  onArrange?: (order: number[]) => void;
 }) {
+  const order = snapshots.map((s) => s.index);
+  const move = (at: number, by: number) => {
+    const next = [...order];
+    [next[at], next[at + by]] = [next[at + by], next[at]];
+    onArrange?.(next);
+  };
   return (
     <table className="w-full text-[12px] border-t border-border">
       <thead>
@@ -451,10 +460,11 @@ export function SnapshotTable({
           <th className="text-right">Target</th>
           <th className="text-right">Change</th>
           <th className="text-right pr-3">Output level</th>
+          {onArrange && <th />}
         </tr>
       </thead>
       <tbody>
-        {snapshots.map((s) => (
+        {snapshots.map((s, at) => (
           <tr key={s.index} className="border-t border-border/60">
             <td className="px-3 py-1.5 max-w-[13rem]">
               <EditableName
@@ -496,6 +506,15 @@ export function SnapshotTable({
               {s.outputGainDb === null ? "—" : s.outputGainDb}
               {!s.achievable && <span className="text-destructive"> ⚠{s.shortfallDb}</span>}
             </td>
+            {onArrange && (
+              <td className="pr-2 whitespace-nowrap text-right text-muted-foreground/60">
+                <button disabled={at === 0} onClick={() => move(at, -1)} title="Move up" className="px-1 hover:text-foreground disabled:opacity-30">↑</button>
+                <button disabled={at === snapshots.length - 1} onClick={() => move(at, 1)} title="Move down" className="px-1 hover:text-foreground disabled:opacity-30">↓</button>
+                {snapshots.length > 1 && (
+                  <button onClick={() => onArrange(order.filter((i) => i !== s.index))} title="Delete this snapshot" aria-label={`Delete ${s.name}`} className="px-1 hover:text-destructive">✕</button>
+                )}
+              </td>
+            )}
           </tr>
         ))}
       </tbody>

@@ -367,6 +367,54 @@ export function LevelPlan({ setlistId }: { setlistId?: string | null }) {
     await load();
   };
 
+  /**
+   * Drop a preset from this gig, readings and all.
+   *
+   * The presets after it move up a slot, so per-row state keyed by index is
+   * cleared rather than left pointing at the wrong song.
+   */
+  const removePreset = async (index: number, name: string) => {
+    if (!window.confirm(`Remove "${name}" from this setlist? Its recordings go with it. Confirmed versions stay downloadable.`)) return;
+    const d = await fetch(`/soundpath/api/setlist/${index}${q}`, { method: "DELETE" }).then((x) => x.json());
+    if (!d.ok) window.alert(d.error ?? "Could not remove that preset");
+    setOpen(null);
+    setMsg({});
+    await load();
+  };
+
+  /**
+   * Move a preset up or down a slot. Readings are keyed by hash, so they come
+   * along; per-row state keyed by index is cleared like a delete.
+   */
+  const movePreset = async (at: number, by: number) => {
+    if (!plan) return;
+    const order = plan.presets.map((p) => p.index);
+    [order[at], order[at + by]] = [order[at + by], order[at]];
+    await fetch(`/soundpath/api/setlist/order${q}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ order }),
+    });
+    setOpen(null);
+    setMsg({});
+    await load();
+  };
+
+  /**
+   * Reorder or delete snapshots. This rewrites the preset itself — slot order
+   * is footswitch order on the Helix — but each reading moves with its snapshot.
+   */
+  const arrangeSnapshots = async (index: number, order: number[], removed?: string) => {
+    if (removed && !window.confirm(`Delete snapshot "${removed}" from this preset? Its recording goes with it.`)) return;
+    const d = await fetch(`/soundpath/api/setlist/${index}/arrange${q}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ order }),
+    }).then((x) => x.json());
+    if (!d.ok) window.alert(d.error ?? "Could not change the snapshots");
+    await load();
+  };
+
   const setLevels = async (patch: Record<string, number>) => {
     await fetch(`/soundpath/api/setlist/levels${q}`, {
       method: "PATCH",
@@ -432,7 +480,7 @@ export function LevelPlan({ setlistId }: { setlistId?: string | null }) {
               }}
             />
           </label>
-          {plan.complete && (
+          {(plan.complete || (!versions.length && plan.measuredCount > 0)) && (
             // Left enabled when it would produce the same gains as last time.
             // A version also records when the pass happened and what it came
             // from, which is worth freezing after a re-record even if the
@@ -451,7 +499,7 @@ export function LevelPlan({ setlistId }: { setlistId?: string | null }) {
             >
               {confirming
                 ? "Confirming…"
-                : `Confirm → v${(versions[0]?.n ?? 0) + 1}${plan.sameAsLastVersion ? " (same gains)" : ""}`}
+                : `Confirm → v${(versions[0]?.n ?? 0) + 1}${plan.sameAsLastVersion ? " (same gains)" : ""}${plan.complete ? "" : " (partial)"}`}
             </button>
           )}
           {versions[0] ? (
@@ -463,7 +511,7 @@ export function LevelPlan({ setlistId }: { setlistId?: string | null }) {
               v{versions[0].n}.hls ⤓
             </a>
           ) : (
-            plan.complete && (
+            plan.measuredCount > 0 && (
               // Nothing confirmed yet. Still downloadable, but it carries no
               // version number precisely because it isn't one — record
               // anything and this file's gains move.
@@ -529,9 +577,13 @@ export function LevelPlan({ setlistId }: { setlistId?: string | null }) {
       </p>
 
       <div className="flex flex-col gap-1.5">
-        {plan.presets.map((p) => (
+        {plan.presets.map((p, at) => (
           <div key={p.index} className="border border-border rounded-lg overflow-hidden">
             <div className="flex items-center gap-3 px-3 py-2.5 text-[12.5px]">
+              <span className="flex flex-col leading-none text-[10px] text-muted-foreground/60">
+                <button disabled={at === 0} onClick={() => movePreset(at, -1)} title="Move up" className="hover:text-foreground disabled:opacity-30">▲</button>
+                <button disabled={at === plan.presets.length - 1} onClick={() => movePreset(at, 1)} title="Move down" className="hover:text-foreground disabled:opacity-30">▼</button>
+              </span>
               <span className="text-muted-foreground w-5">{p.index + 1}</span>
               <div className="flex-1 min-w-0">
                 {/* The name truncates, the badge does not — it sits outside
@@ -632,6 +684,16 @@ export function LevelPlan({ setlistId }: { setlistId?: string | null }) {
               >
                 {busy === p.index ? "measuring…" : "upload .wav"}
               </button>
+              {plan.presets.length > 1 && (
+                <button
+                  onClick={() => removePreset(p.index, p.name)}
+                  title="Remove this preset from the setlist"
+                  aria-label={`Remove ${p.name}`}
+                  className="text-muted-foreground/50 hover:text-destructive text-sm shrink-0"
+                >
+                  ✕
+                </button>
+              )}
               <button onClick={() => setOpen(open === p.index ? null : p.index)} className="text-muted-foreground/50 text-xs">
                 {open === p.index ? "▾" : "▸"}
               </button>
@@ -642,6 +704,15 @@ export function LevelPlan({ setlistId }: { setlistId?: string | null }) {
                 snapshots={p.snapshots}
                 onRole={(snapIdx, role) => setRole(p.index, snapIdx, role)}
                 onRename={(snapIdx, name) => rename(p.index, { snapshots: { [snapIdx]: name } })}
+                onArrange={(order) =>
+                  arrangeSnapshots(
+                    p.index,
+                    order,
+                    order.length < p.snapshots.length
+                      ? p.snapshots.find((s) => !order.includes(s.index))?.name
+                      : undefined
+                  )
+                }
               />
             )}
           </div>

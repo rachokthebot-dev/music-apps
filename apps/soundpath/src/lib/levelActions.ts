@@ -458,15 +458,18 @@ export function listVersions(store: LevelDocStore, doc: LevelDoc): ActionResult 
  * levelling pass real — and what stops a file you already took to a gig from
  * quietly changing meaning the next time you record something.
  *
- * Requires a reading on every snapshot. A partial set doesn't produce a partial
- * answer: unmeasured snapshots fall back to the block level, so what you'd get
- * is a file that is levelled in places and untouched in others, with nothing on
- * the Helix to say which is which.
+ * Later versions require a reading on every snapshot. A partial set doesn't
+ * produce a partial answer: unmeasured snapshots fall back to the block level,
+ * so what you'd get is a file that is levelled in places and untouched in
+ * others, with nothing on the Helix to say which is which. The first version
+ * is let through with one reading or more, so a gig can be saved before every
+ * snapshot has been recorded.
  */
 export function confirmVersion(store: LevelDocStore, doc: LevelDoc): ActionResult {
   const all = doc.presets.flatMap((p) => p.snapshots);
   const unmeasured = all.filter((s) => s.measuredLufs === null);
-  if (all.length === 0 || unmeasured.length > 0) {
+  const first = (doc.versions ?? []).length === 0;
+  if (unmeasured.length === all.length || (unmeasured.length > 0 && !first)) {
     return fail(
       409,
       `${unmeasured.length} of ${all.length} snapshots still need recording. A version has to come from a complete set — anything unmeasured keeps the level it already had.`,

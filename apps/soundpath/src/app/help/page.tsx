@@ -1,4 +1,5 @@
-import Link from "next/link";
+import { SidebarMenuButton } from "@music-apps/shared/app-shell";
+import { Shell } from "@/components/Shell";
 
 /**
  * Recording guide for levelling a gig.
@@ -14,12 +15,13 @@ export const metadata = { title: "soundpath — recording guide" };
 
 export default function Help() {
   return (
-    <main className="p-6 max-w-3xl mx-auto min-h-screen">
+    <Shell>
+    <main className="w-full px-4 lg:px-8 py-4 lg:py-6 max-w-3xl mx-auto">
       <header className="mb-8">
-        <Link href="/setlist" className="text-xs text-muted-foreground hover:text-foreground underline">
-          ← back to the setlist
-        </Link>
-        <h1 className="text-2xl font-semibold mt-2">Recording guide</h1>
+        <div className="flex items-center gap-1">
+          <SidebarMenuButton />
+          <h1 className="text-2xl font-semibold tracking-tight">Recording guide</h1>
+        </div>
         <p className="text-sm text-muted-foreground mt-1">
           Record your presets, and the gig gets levelled from what they really sound like.
         </p>
@@ -339,6 +341,7 @@ export default function Help() {
       </Section>
 
     </main>
+    </Shell>
   );
 }
 

@@ -24,6 +24,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { SidebarMenuButton } from "@music-apps/shared/app-shell";
+import { Shell } from "@/components/Shell";
 import {
   floorFromTrace,
   measureRegion,
@@ -432,9 +434,13 @@ export default function MeasureBench() {
   }, [results]);
 
   return (
-    <main className="p-6 max-w-3xl mx-auto min-h-screen">
+    <Shell>
+    <main className="w-full px-4 lg:px-8 py-4 lg:py-6 max-w-3xl mx-auto">
       <header className="mb-4">
-        <h1 className="text-2xl font-semibold">Measure bench</h1>
+        <div className="flex items-center gap-1">
+          <SidebarMenuButton />
+          <h1 className="text-2xl font-semibold tracking-tight">Measure bench</h1>
+        </div>
         <p className="text-sm text-muted-foreground mt-1">
           One recording per snapshot, straight off the Helix. Nothing here changes a preset — this
           is to find out whether the capture path is honest. Takes are archived to{" "}
@@ -641,6 +647,7 @@ export default function MeasureBench() {
         </section>
       )}
     </main>
+    </Shell>
   );
 }
 

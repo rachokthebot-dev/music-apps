@@ -16,9 +16,10 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { AppSwitcher } from "@music-apps/shared/app-switcher";
+import { SidebarMenuButton } from "@music-apps/shared/app-shell";
+import { XIcon } from "@phosphor-icons/react";
 
-import { ViewTabs } from "@/components/ViewTabs";
+import { Shell } from "@/components/Shell";
 
 interface SetlistRow {
   id: string;
@@ -145,32 +146,23 @@ export default function Library() {
   };
 
   return (
-    <main className="p-6 max-w-4xl mx-auto min-h-screen">
-      <header className="mb-6 flex items-baseline justify-between gap-4 flex-wrap">
-        <div>
-          <h1 className="text-2xl font-semibold">soundpath</h1>
-          <p className="text-sm text-muted-foreground">Align gain between Helix presets.</p>
-        </div>
-        <div className="flex items-center gap-4">
-          <Link href="/help" className="text-xs text-muted-foreground hover:text-foreground underline">
-            Recording guide
-          </Link>
-          <AppSwitcher currentAppId="soundpath" />
-        </div>
+    <Shell>
+    <main className="w-full px-4 lg:px-8 py-4 lg:py-6 max-w-4xl mx-auto">
+      <header className="mb-6 flex items-center gap-1">
+        <SidebarMenuButton />
+        <h1 className="text-2xl font-semibold tracking-tight">Library</h1>
       </header>
 
-      <ViewTabs />
-
       {error && (
-        <p className="mb-4 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-[12.5px] text-destructive">
+        <p className="mb-4 rounded-2xl bg-destructive/10 px-4 py-3 text-sm text-destructive">
           {error}
         </p>
       )}
 
       <section className="mb-8">
-        <div className="mb-2">
-          <h2 className="text-[15px] font-semibold">Setlists</h2>
-          <p className="text-xs text-muted-foreground mt-0.5">
+        <div className="mb-3">
+          <h2 className="text-2xl font-semibold tracking-tight">Setlists</h2>
+          <p className="text-sm text-muted-foreground mt-1">
             A whole gig, levelled from recordings. Open one to record and download its .hls —
             uploading one starts from the{" "}
             <Link href="/setlist" className="underline hover:text-foreground">
@@ -188,7 +180,7 @@ export default function Library() {
             Setlist tab to start a session.
           </Empty>
         ) : (
-          <ul className="flex flex-col gap-1.5">
+          <ul className="flex flex-col gap-2">
             {setlists.map((s) => (
               <LibraryRow
                 key={s.id}
@@ -215,8 +207,8 @@ export default function Library() {
       </section>
 
       <section>
-        <h2 className="text-[15px] font-semibold">Presets</h2>
-        <p className="text-xs text-muted-foreground mt-0.5 mb-2">
+        <h2 className="text-2xl font-semibold tracking-tight">Presets</h2>
+        <p className="text-sm text-muted-foreground mt-1 mb-3">
           Every patch stored here, whether or not it belongs to a gig. Open one to record it on its
           own, against the same target a setlist levels to.
         </p>
@@ -226,7 +218,7 @@ export default function Library() {
         ) : presets.length === 0 ? (
           <Empty>No presets stored. They arrive from HelAIx, or from a generation here.</Empty>
         ) : (
-          <ul className="flex flex-col gap-1.5">
+          <ul className="flex flex-col gap-2">
             {presets.map((p) => (
               <LibraryRow
                 key={p.key}
@@ -258,7 +250,7 @@ export default function Library() {
                     // Placeholder keeps the buttons in one column; this patch
                     // lives inside its setlist, so it goes when that does.
                     <span
-                      className="w-7 shrink-0 text-center text-muted-foreground/25 text-sm"
+                      className="w-11 shrink-0 text-center text-muted-foreground/25 text-sm"
                       title={`Stored inside ${p.origin} — delete that setlist to remove it`}
                     >
                       ·
@@ -271,6 +263,7 @@ export default function Library() {
         )}
       </section>
     </main>
+    </Shell>
   );
 }
 
@@ -311,32 +304,32 @@ function LibraryRow({
 
   return (
     <li
-      className="flex items-center gap-3 pr-2 rounded-lg border border-border hover:border-muted-foreground/40"
+      className="flex items-center gap-3 pr-2 rounded-3xl bg-card border border-border hover:bg-muted/40 transition-colors"
       title={hint}
     >
       <button
         onClick={onOpen}
         disabled={busy}
-        className="flex-1 min-w-0 flex items-center gap-3 px-3 py-2.5 text-left disabled:opacity-50"
+        className="flex-1 min-w-0 flex items-center gap-3 px-5 py-3.5 text-left active:scale-[0.99] transition-transform duration-300 ease-spring disabled:opacity-50"
       >
         <span className="flex-1 min-w-0">
-          <span className="text-[13px] font-medium block truncate">{title}</span>
-          <span className="text-[11px] text-muted-foreground block truncate">{subtitle}</span>
+          <span className="text-base font-semibold block truncate">{title}</span>
+          <span className="text-sm text-muted-foreground block truncate">{subtitle}</span>
         </span>
         {/* Hidden on a phone. The name is the thing you are scanning for, and
             a fixed date column plus the badge left it squeezed to nothing. */}
         <span
-          className="hidden sm:block text-[11px] text-muted-foreground tabular-nums shrink-0"
+          className="hidden sm:block text-sm text-muted-foreground tabular-nums shrink-0"
           title={updatedAt ? new Date(updatedAt).toLocaleString() : undefined}
         >
           {busy ? "opening…" : `${updatedLabel ? updatedLabel + " " : ""}${when(updatedAt)}`}
         </span>
         {/* Reserved at width from sm up, so the two lists line up even when a
             patch has nothing to report yet. */}
-        <span className="sm:w-28 shrink-0 text-right">
+        <span className="sm:w-32 shrink-0 text-right">
           {known && (
             <span
-              className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+              className={`text-xs font-semibold px-2.5 py-1 rounded-full ${
                 done ? "bg-emerald-500/15 text-emerald-600" : "bg-amber-500/15 text-amber-600"
               }`}
             >
@@ -367,16 +360,16 @@ function DeleteButton({
       disabled={disabled}
       title={title}
       aria-label={title}
-      className="w-7 h-7 shrink-0 rounded-md text-muted-foreground/50 hover:text-destructive hover:bg-destructive/10 disabled:opacity-30"
+      className="size-11 shrink-0 grid place-items-center rounded-full text-muted-foreground/60 hover:text-destructive hover:bg-destructive/10 active:scale-90 transition-all disabled:opacity-30"
     >
-      {busy ? "…" : "✕"}
+      {busy ? "…" : <XIcon className="size-5" />}
     </button>
   );
 }
 
 function Empty({ children }: { children: React.ReactNode }) {
   return (
-    <div className="rounded-xl border border-dashed border-border p-6 text-center text-[12.5px] text-muted-foreground">
+    <div className="rounded-3xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
       {children}
     </div>
   );
