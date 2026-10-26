@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
+import { SidebarMenuButton } from "@music-apps/shared/app-shell";
+import { Shell } from "@/components/Shell";
 
 export default function SettingsPage() {
   const [email, setEmail] = useState("");
@@ -46,12 +47,11 @@ export default function SettingsPage() {
   };
 
   return (
-    <div className="flex-1 max-w-2xl w-full mx-auto p-5">
-      <header className="flex items-center gap-3 mb-5">
-        <Link href="/" className="text-sm text-muted-foreground hover:text-foreground">
-          ← Setlists
-        </Link>
-        <h1 className="text-lg font-semibold">Settings</h1>
+    <Shell>
+    <div className="flex-1 max-w-2xl w-full mx-auto px-4 lg:px-8 py-4 lg:py-6">
+      <header className="flex items-center gap-1 mb-5">
+        <SidebarMenuButton />
+        <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
       </header>
 
       <div className="bg-card border border-border rounded-xl p-5">
@@ -97,5 +97,6 @@ export default function SettingsPage() {
         </div>
       </div>
     </div>
+    </Shell>
   );
 }

@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { SidebarMenuButton } from "@music-apps/shared/app-shell";
+import { Shell } from "@/components/Shell";
 import { prisma } from "@/lib/prisma";
 import { OpenSetlistInSoundPath } from "@/components/OpenSetlistInSoundPath";
 import { SongOrderTable } from "@/components/SongOrderTable";
@@ -67,8 +69,12 @@ export default async function SavedSetlist({ params }: { params: Promise<{ id: s
   const fromSoundPath = await snapshotsFromSoundPath(sl.id);
 
   return (
-    <div className="flex-1 max-w-5xl w-full mx-auto p-5">
-      <div className="bg-card border border-border rounded-xl p-5 mb-3">
+    <Shell>
+    <div className="flex-1 max-w-5xl w-full mx-auto px-4 lg:px-8 py-4 lg:py-6">
+      <div className="mb-3 lg:hidden">
+        <SidebarMenuButton />
+      </div>
+      <div className="bg-card border border-border rounded-3xl p-5 mb-3">
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div>
             <div className="flex items-center gap-2.5">
@@ -137,5 +143,6 @@ export default async function SavedSetlist({ params }: { params: Promise<{ id: s
       />
 
     </div>
+    </Shell>
   );
 }

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { fetchApplePlaylist, isApplePlaylistUrl } from "@/lib/apple-music";
+import { fetchApplePlaylist, isApplePlaylistUrl } from "@music-apps/shared/apple-music";
 
 /**
  * Preview a playlist without saving anything — the wizard shows the parsed

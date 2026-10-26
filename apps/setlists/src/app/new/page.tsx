@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
+import { SidebarMenuButton } from "@music-apps/shared/app-shell";
+import { Shell } from "@/components/Shell";
 
 interface Track {
   title: string;
@@ -79,12 +80,11 @@ export default function NewSetlistPage() {
   };
 
   return (
-    <div className="flex-1 max-w-3xl w-full mx-auto p-5">
-      <header className="flex items-center gap-3 mb-5">
-        <Link href="/" className="text-sm text-muted-foreground hover:text-foreground">
-          ← Setlists
-        </Link>
-        <h1 className="text-lg font-semibold">New setlist</h1>
+    <Shell>
+    <div className="flex-1 max-w-3xl w-full mx-auto px-4 lg:px-8 py-4 lg:py-6">
+      <header className="flex items-center gap-1 mb-5">
+        <SidebarMenuButton />
+        <h1 className="text-2xl font-semibold tracking-tight">New setlist</h1>
       </header>
 
       <div className="bg-card border border-border rounded-xl p-5">
@@ -178,5 +178,6 @@ export default function NewSetlistPage() {
         )}
       </div>
     </div>
+    </Shell>
   );
 }
