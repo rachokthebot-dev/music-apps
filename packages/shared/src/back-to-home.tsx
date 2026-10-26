@@ -7,6 +7,9 @@ interface BackToHomeProps {
   label?: string;
   /** Extra classes for the link wrapper. */
   className?: string;
+  /** App-relative target, for returning to the home screen in the state you
+   *  left it — e.g. "/?folder=abc". Defaults to the plain home screen. */
+  href?: string;
 }
 
 /** Back control for a sub-page → the app's own main screen.
@@ -14,10 +17,10 @@ interface BackToHomeProps {
  *  Uses next/link with href="/", so the app's basePath IS prepended and the
  *  link resolves to the app home (e.g. /shreddy), not the proxy launcher.
  *  (For the launcher, use AppSwitcher's "All apps" entry instead.) */
-export function BackToHome({ label = "Back", className = "" }: BackToHomeProps) {
+export function BackToHome({ label = "Back", className = "", href = "/" }: BackToHomeProps) {
   return (
     <Link
-      href="/"
+      href={href}
       className={`inline-flex items-center gap-1.5 p-2 -ml-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors ${className}`}
       aria-label="Back to home"
     >

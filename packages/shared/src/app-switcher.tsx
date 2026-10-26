@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useLayoutEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import { APP_REGISTRY, getAppUrl, LAUNCHER_PATH } from "./app-registry";
 
 interface AppSwitcherProps {
@@ -31,6 +32,11 @@ export function AppSwitcher({ currentAppId }: AppSwitcherProps) {
    * the fold, off screen entirely.
    *
    * Measured after layout instead, and again on scroll and resize.
+   *
+   * Portalled to <body>, because `fixed` is only viewport-relative while no
+   * ancestor sets transform/translate/filter. LickBank's sidebar drawer slides
+   * with `translate`, which made the aside the containing block and put the
+   * panel a viewport-width off to the left.
    */
   useLayoutEffect(() => {
     if (!open) return;
@@ -67,7 +73,9 @@ export function AppSwitcher({ currentAppId }: AppSwitcherProps) {
   useEffect(() => {
     if (!open) return;
     function handleClick(e: MouseEvent) {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+      // The panel lives in a portal, outside menuRef, so it needs its own check.
+      const target = e.target as Node;
+      if (!menuRef.current?.contains(target) && !panelRef.current?.contains(target)) {
         setOpen(false);
       }
     }
@@ -97,7 +105,7 @@ export function AppSwitcher({ currentAppId }: AppSwitcherProps) {
         <GridIcon />
       </button>
 
-      {open && (
+      {open && createPortal(
         <div
           ref={panelRef}
           role="menu"
@@ -156,7 +164,8 @@ export function AppSwitcher({ currentAppId }: AppSwitcherProps) {
               );
             })}
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

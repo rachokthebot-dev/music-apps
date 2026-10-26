@@ -1,34 +1,27 @@
-export interface ParsedTrack {
-  title: string;
-  artist: string;
-}
+import { cleanTitle, type ParsedPlaylist, type ParsedTrack } from "./playlist";
 
-export interface ParsedPlaylist {
-  name: string;
-  tracks: ParsedTrack[];
-}
+// Re-exported so a caller that already speaks Apple doesn't need a second
+// import for the shape it gets back.
+export type { ParsedPlaylist, ParsedTrack };
 
 /** Apple Music playlist URLs look like /playlist/<slug>/pl.<id>. */
 export function isApplePlaylistUrl(url: string): boolean {
   return /^https?:\/\/music\.apple\.com\/[^/]+\/playlist\//.test(url.trim());
 }
 
-/**
- * Suffixes Apple appends that hurt a YouTube search more than they help.
- * "[Extended Version]" and friends rarely match how a lesson video is titled.
- */
-function cleanTitle(title: string): string {
-  return (
-    title
-      // A year often precedes the keyword — "(2012 Remaster)" — so allow it
-      // rather than anchoring the keyword to the bracket.
-      .replace(
-        /\s*[[(][^\])]*\b(?:extended|remaster(?:ed)?|deluxe|single|album version|radio edit|mono|stereo|bonus|anniversary)\b[^\])]*[\])]/gi,
-        ""
-      )
-      .replace(/\s*-\s*(?:\d{4}\s+)?(?:remaster(?:ed)?|single|radio edit)[^-]*$/i, "")
-      .trim()
-  );
+/** ld+json states length as an ISO 8601 duration: "PT3M57S". */
+function parseIsoDuration(raw: unknown): number | null {
+  if (typeof raw !== "string") return null;
+  const m = raw.match(/^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/);
+  if (!m) return null;
+  const sec = Number(m[1] ?? 0) * 3600 + Number(m[2] ?? 0) * 60 + Number(m[3] ?? 0);
+  return sec > 0 ? sec : null;
+}
+
+/** serialized-server-data states it in milliseconds. */
+function parseMsDuration(raw: unknown): number | null {
+  if (typeof raw !== "number" || !Number.isFinite(raw) || raw <= 0) return null;
+  return Math.round(raw / 1000);
 }
 
 /**
@@ -70,10 +63,11 @@ function parseLdJson(html: string): ParsedPlaylist | null {
     return {
       name: String(d?.name ?? "Imported playlist"),
       tracks: raw
-        .map((t: { name?: string; byArtist?: { name?: string } | string }) => ({
+        .map((t: { name?: string; byArtist?: { name?: string } | string; duration?: unknown }) => ({
           title: cleanTitle(String(t?.name ?? "")),
           artist:
             typeof t?.byArtist === "object" ? String(t.byArtist?.name ?? "") : String(t?.byArtist ?? ""),
+          durationSec: parseIsoDuration(t?.duration),
         }))
         .filter((t: ParsedTrack) => t.title),
     };
@@ -109,7 +103,11 @@ function parseServerData(html: string): ParsedPlaylist | null {
     const links = o.subtitleLinks;
     if (typeof o.title === "string" && Array.isArray(links) && links.length > 0) {
       const first = links[0] as { title?: string };
-      found.push({ title: String(o.title), artist: String(first?.title ?? "") });
+      found.push({
+        title: String(o.title),
+        artist: String(first?.title ?? ""),
+        durationSec: parseMsDuration(o.duration),
+      });
     }
     Object.values(o).forEach(walk);
   };
@@ -126,7 +124,7 @@ function parseServerData(html: string): ParsedPlaylist | null {
     if (seen.has(key)) continue;
     if (t.title.toLowerCase() === name.toLowerCase()) continue;
     seen.add(key);
-    deduped.push({ title: cleanTitle(t.title), artist: t.artist });
+    deduped.push({ title: cleanTitle(t.title), artist: t.artist, durationSec: t.durationSec });
   }
 
   return { name, tracks: deduped.filter((t) => t.title) };

@@ -6,6 +6,9 @@
   "types": "./src/index.ts",
   "exports": {
     ".": "./src/index.ts",
+    "./apple-music": "./src/apple-music.ts",
+    "./spotify": "./src/spotify.ts",
+    "./playlist": "./src/playlist.ts",
     "./youtube-utils": "./src/youtube-utils.ts",
     "./youtube-search": "./src/youtube-search.ts",
     "./youtube-search-panel": "./src/youtube-search-panel.tsx",
@@ -13,7 +16,11 @@
     "./practice-stats": "./src/practice-stats.ts",
     "./app-registry": "./src/app-registry.ts",
     "./app-switcher": "./src/app-switcher.tsx",
+    "./app-shell": "./src/app-shell.tsx",
     "./back-to-home": "./src/back-to-home.tsx",
     "./editable-name": "./src/editable-name.tsx"
+  },
+  "scripts": {
+    "test": "node --import tsx --test src/*.test.ts"
   }
 }

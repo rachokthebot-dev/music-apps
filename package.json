@@ -17,6 +17,9 @@
     "dev:soundpath": "npm run dev --workspace=apps/soundpath",
     "build:soundpath": "npm run build --workspace=apps/soundpath",
     "dev:setlists": "npm run dev --workspace=apps/setlists",
-    "build:setlists": "npm run build --workspace=apps/setlists"
+    "build:setlists": "npm run build --workspace=apps/setlists",
+    "test:shreddy": "npm run test --workspace=apps/shreddy",
+    "test:shared": "npm run test --workspace=packages/shared",
+    "test": "npm run test:shared && npm run test:shreddy"
   }
 }
