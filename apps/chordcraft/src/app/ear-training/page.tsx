@@ -1,9 +1,9 @@
 "use client";
 
 import { useState, useCallback, useRef, useEffect } from "react";
-import { Play, SkipForward, Headphones, Music, ChevronUp, ChevronDown, Volume2 } from "lucide-react";
-import { AppSwitcher } from "@music-apps/shared/app-switcher";
-import { BackToHome } from "@music-apps/shared/back-to-home";
+import { PlayIcon, SkipForwardIcon, MusicNotesIcon, CaretUpIcon, CaretDownIcon, SpeakerHighIcon } from "@phosphor-icons/react";
+import { SidebarMenuButton } from "@music-apps/shared/app-shell";
+import { Shell } from "@/components/shell";
 import { progressions, type Progression } from "@/lib/progressions";
 import { getProgressionInKey, ALL_KEYS, type Chord } from "@/lib/music-theory";
 import { playProgressionOnce, playChord, ensureAudioContext, stopPlayback } from "@/lib/audio-engine";
@@ -282,48 +282,38 @@ export default function EarTrainingPage() {
   };
 
   return (
-    <div className="flex flex-col flex-1 min-h-0">
-      {/* Header */}
-      <header className="border-b border-border px-4 md:px-6 py-3 md:py-4 flex items-center justify-between shrink-0">
-        <div className="flex items-center gap-2">
-          <BackToHome label="" />
-          <Headphones className="w-6 h-6 md:w-7 md:h-7 text-primary" />
-          <h1 className="text-xl md:text-2xl font-bold tracking-tight">Ear Training</h1>
-        </div>
-        <AppSwitcher currentAppId="chordcraft" />
-      </header>
+    <Shell>
+      <main className="flex-1 flex flex-col">
+        <div className="flex-1 px-4 lg:px-8 py-4 lg:py-6 max-w-2xl mx-auto w-full">
+          <div className="flex items-center gap-1 mb-5">
+            <SidebarMenuButton />
+            <h1 className="text-2xl font-semibold tracking-tight">Ear Training</h1>
+          </div>
 
-      <main className="flex-1 flex flex-col overflow-y-auto">
-        {/* Mode tabs */}
-        <div className="flex border-b border-border shrink-0">
-          <button
-            onClick={() => setMode("progression")}
-            className={`flex-1 py-3 md:py-4 text-sm md:text-base font-medium text-center transition-colors ${
-              mode === "progression"
-                ? "text-primary border-b-2 border-primary"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            <Music className="w-4 h-4 md:w-5 md:h-5 inline mr-1.5 -mt-0.5" />
-            Progression Recognition
-          </button>
-          <button
-            onClick={() => setMode("interval")}
-            className={`flex-1 py-3 md:py-4 text-sm md:text-base font-medium text-center transition-colors ${
-              mode === "interval"
-                ? "text-primary border-b-2 border-primary"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            <Volume2 className="w-4 h-4 md:w-5 md:h-5 inline mr-1.5 -mt-0.5" />
-            Interval Training
-          </button>
-        </div>
+          {/* Mode tabs */}
+          <div className="grid grid-cols-2 p-1 mb-6 rounded-2xl bg-muted">
+            {(
+              [
+                ["progression", "Progressions", MusicNotesIcon],
+                ["interval", "Intervals", SpeakerHighIcon],
+              ] as const
+            ).map(([m, label, Icon]) => (
+              <button
+                key={m}
+                onClick={() => setMode(m)}
+                className={`h-11 rounded-xl flex items-center justify-center gap-2 text-sm font-semibold transition-all duration-300 ease-spring ${
+                  mode === m ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <Icon className="size-5" />
+                {label}
+              </button>
+            ))}
+          </div>
 
-        <div className="flex-1 p-4 md:p-6 max-w-2xl mx-auto w-full">
           {/* Difficulty suggestion banner */}
           {suggestion && (
-            <div className="mb-4 px-4 py-2.5 rounded-lg bg-amber-500/15 border border-amber-500/30 text-amber-300 text-sm text-center animate-in fade-in duration-300">
+            <div className="mb-4 px-4 py-2.5 rounded-full bg-amber-500/15 text-amber-300 text-sm text-center animate-in fade-in duration-300">
               {suggestion}
             </div>
           )}
@@ -361,7 +351,7 @@ export default function EarTrainingPage() {
           )}
         </div>
       </main>
-    </div>
+    </Shell>
   );
 }
 
@@ -405,15 +395,15 @@ function ProgressionMode({
     <div className="space-y-6">
       {/* Difficulty & Score row */}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex bg-secondary rounded-lg p-0.5">
+        <div className="flex bg-muted rounded-2xl p-1">
           {(["easy", "medium", "hard"] as ProgressionDifficulty[]).map((d) => (
             <button
               key={d}
               onClick={() => onSetDifficulty(d)}
-              className={`px-3 py-1.5 md:px-4 md:py-2 rounded-md text-xs md:text-sm font-medium transition-colors ${
+              className={`h-9 px-4 rounded-xl text-sm font-semibold transition-all duration-300 ease-spring ${
                 difficulty === d
-                  ? "bg-primary text-primary-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-secondary-foreground"
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
               }`}
             >
               {difficultyLabels[d]}
@@ -439,23 +429,23 @@ function ProgressionMode({
           <button
             onClick={onPlay}
             disabled={isPlaying}
-            className={`flex items-center gap-2 px-6 py-3 rounded-xl font-medium text-sm transition-all ${
+            className={`flex items-center gap-2 h-12 px-6 rounded-full font-semibold text-sm transition-all ${
               isPlaying
                 ? "bg-primary/20 text-primary cursor-not-allowed animate-pulse"
                 : "bg-primary text-primary-foreground hover:bg-primary/90 active:scale-95"
             }`}
           >
-            <Play className="w-5 h-5 md:w-6 md:h-6" />
+            <PlayIcon className="w-5 h-5 md:w-6 md:h-6" />
             {isPlaying ? "Playing..." : "Play"}
           </button>
 
           <button
             onClick={onPlayRoot}
             disabled={isPlaying}
-            className="flex items-center gap-2 px-4 py-3 rounded-xl font-medium text-sm bg-secondary text-secondary-foreground hover:bg-accent transition-colors active:scale-95"
+            className="flex items-center gap-2 h-12 px-5 rounded-full font-semibold text-sm bg-card border border-border text-foreground hover:bg-muted transition-colors active:scale-95"
             title="Play the root chord to establish the key"
           >
-            <Music className="w-4 h-4" />
+            <MusicNotesIcon className="w-4 h-4" />
             Root
           </button>
 
@@ -463,9 +453,9 @@ function ProgressionMode({
             <button
               onClick={onPlay}
               disabled={isPlaying}
-              className="flex items-center gap-2 px-4 py-3 rounded-xl font-medium text-sm bg-secondary text-secondary-foreground hover:bg-accent transition-colors active:scale-95"
+              className="flex items-center gap-2 h-12 px-5 rounded-full font-semibold text-sm bg-card border border-border text-foreground hover:bg-muted transition-colors active:scale-95"
             >
-              <Play className="w-4 h-4" />
+              <PlayIcon className="w-4 h-4" />
               Replay
             </button>
           )}
@@ -501,7 +491,7 @@ function ProgressionMode({
               key={opt.id}
               onClick={() => onAnswer(opt.id)}
               disabled={answered}
-              className={`flex flex-col items-start p-4 md:p-5 rounded-xl border-2 transition-all ${bgClass} ${
+              className={`flex flex-col items-start p-4 md:p-5 rounded-3xl border transition-all ${bgClass} ${
                 !answered ? "active:scale-[0.98] cursor-pointer" : "cursor-default"
               }`}
             >
@@ -536,9 +526,9 @@ function ProgressionMode({
 
           <button
             onClick={onNext}
-            className="flex items-center gap-2 px-6 py-3 rounded-xl font-medium text-sm bg-primary text-primary-foreground hover:bg-primary/90 transition-colors active:scale-95"
+            className="flex items-center gap-2 h-12 px-6 rounded-full font-semibold text-sm bg-primary text-primary-foreground hover:bg-primary/90 transition-colors active:scale-95"
           >
-            <SkipForward className="w-4 h-4" />
+            <SkipForwardIcon className="w-4 h-4" />
             Next
           </button>
         </div>
@@ -583,15 +573,15 @@ function IntervalMode({
     <div className="space-y-6">
       {/* Difficulty & Score row */}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex bg-secondary rounded-lg p-0.5">
+        <div className="flex bg-muted rounded-2xl p-1">
           {(["easy", "medium", "hard"] as IntervalDifficulty[]).map((d) => (
             <button
               key={d}
               onClick={() => onSetDifficulty(d)}
-              className={`px-3 py-1.5 md:px-4 md:py-2 rounded-md text-xs md:text-sm font-medium transition-colors ${
+              className={`h-9 px-4 rounded-xl text-sm font-semibold transition-all duration-300 ease-spring ${
                 difficulty === d
-                  ? "bg-primary text-primary-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-secondary-foreground"
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
               }`}
             >
               {difficultyLabels[d]}
@@ -616,9 +606,9 @@ function IntervalMode({
         <div className="flex items-center gap-3">
           <button
             onClick={onPlay}
-            className="flex items-center gap-2 px-6 py-3 rounded-xl font-medium text-sm bg-primary text-primary-foreground hover:bg-primary/90 transition-all active:scale-95"
+            className="flex items-center gap-2 h-12 px-6 rounded-full font-semibold text-sm bg-primary text-primary-foreground hover:bg-primary/90 transition-all active:scale-95"
           >
-            <Play className="w-5 h-5 md:w-6 md:h-6" />
+            <PlayIcon className="w-5 h-5 md:w-6 md:h-6" />
             Play Interval
           </button>
         </div>
@@ -646,7 +636,7 @@ function IntervalMode({
               key={opt.semitones}
               onClick={() => onAnswer(opt.semitones)}
               disabled={answered}
-              className={`flex flex-col items-center p-4 md:p-5 rounded-xl border-2 transition-all ${bgClass} ${
+              className={`flex flex-col items-center p-4 md:p-5 rounded-3xl border transition-all ${bgClass} ${
                 !answered ? "active:scale-[0.98] cursor-pointer" : "cursor-default"
               }`}
             >
@@ -682,9 +672,9 @@ function IntervalMode({
 
           <button
             onClick={onNext}
-            className="flex items-center gap-2 px-6 py-3 rounded-xl font-medium text-sm bg-primary text-primary-foreground hover:bg-primary/90 transition-colors active:scale-95"
+            className="flex items-center gap-2 h-12 px-6 rounded-full font-semibold text-sm bg-primary text-primary-foreground hover:bg-primary/90 transition-colors active:scale-95"
           >
-            <SkipForward className="w-4 h-4" />
+            <SkipForwardIcon className="w-4 h-4" />
             Next
           </button>
         </div>

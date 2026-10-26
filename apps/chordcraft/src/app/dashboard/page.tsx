@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { LayoutDashboard, Clock, Flame, Calendar, TrendingUp, Guitar, Music, Headphones } from "lucide-react";
+import { ClockIcon, FireIcon, CalendarIcon, TrendUpIcon, GuitarIcon, MusicNotesIcon, HeadphonesIcon } from "@phosphor-icons/react";
 import { APP_REGISTRY } from "@music-apps/shared/app-registry";
-import { AppSwitcher } from "@music-apps/shared/app-switcher";
-import { BackToHome } from "@music-apps/shared/back-to-home";
+import { SidebarMenuButton } from "@music-apps/shared/app-shell";
+import { Shell } from "@/components/shell";
 
 interface TopItem {
   name: string;
@@ -189,33 +189,28 @@ export default function DashboardPage() {
   const maxDailySec = Math.max(...dailyBreakdown.map((d) => d.totalSec), 1);
 
   const apps = [
-    { id: "shreddy", name: "Shreddy", stats: data.shreddy, icon: Guitar, color: "text-orange-400", bg: "bg-orange-500/15" },
-    { id: "lickbank", name: "LickBank", stats: data.lickbank, icon: Headphones, color: "text-blue-400", bg: "bg-blue-500/15" },
-    { id: "chordcraft", name: "ChordCraft", stats: data.chordcraft, icon: Music, color: "text-purple-400", bg: "bg-purple-500/15" },
+    { id: "shreddy", name: "Shreddy", stats: data.shreddy, icon: GuitarIcon, color: "text-orange-400", bg: "bg-orange-500/15" },
+    { id: "lickbank", name: "LickBank", stats: data.lickbank, icon: HeadphonesIcon, color: "text-blue-400", bg: "bg-blue-500/15" },
+    { id: "chordcraft", name: "ChordCraft", stats: data.chordcraft, icon: MusicNotesIcon, color: "text-purple-400", bg: "bg-purple-500/15" },
   ];
 
   return (
-    <div className="flex flex-col flex-1 min-h-0">
-      <header className="border-b border-border px-4 md:px-6 py-3 md:py-4 flex items-center justify-between shrink-0">
-        <div className="flex items-center gap-2">
-          <BackToHome label="" />
-          <LayoutDashboard className="w-6 h-6 md:w-7 md:h-7 text-emerald-400" />
-          <h1 className="text-xl md:text-2xl font-bold tracking-tight">Dashboard</h1>
+    <Shell>
+      <main className="flex-1 px-4 lg:px-8 py-4 lg:py-6 max-w-3xl mx-auto w-full">
+        <div className="flex items-center gap-1 mb-5">
+          <SidebarMenuButton />
+          <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
         </div>
-        <AppSwitcher currentAppId="chordcraft" />
-      </header>
-
-      <main className="flex-1 overflow-y-auto p-4 md:p-6 max-w-3xl mx-auto w-full">
         {loading ? (
           <div className="flex items-center justify-center py-20 text-muted-foreground">Loading stats...</div>
         ) : (
           <div className="space-y-6">
             {/* Total stats */}
             <div className="grid grid-cols-2 gap-3 md:gap-4">
-              <StatCard icon={<Clock className="w-5 h-5 text-blue-400" />} label="Today" value={formatDuration(totals.todaySec)} />
-              <StatCard icon={<Calendar className="w-5 h-5 text-purple-400" />} label="This Week" value={formatDuration(totals.weekSec)} />
-              <StatCard icon={<Flame className="w-5 h-5 text-orange-400" />} label="Best Streak" value={totals.streak > 0 ? `${totals.streak} day${totals.streak !== 1 ? "s" : ""}` : "No streak"} />
-              <StatCard icon={<TrendingUp className="w-5 h-5 text-green-400" />} label="All Time" value={formatDuration(totals.allTimeSec)} />
+              <StatCard icon={<ClockIcon className="w-5 h-5 text-blue-400" />} label="Today" value={formatDuration(totals.todaySec)} />
+              <StatCard icon={<CalendarIcon className="w-5 h-5 text-purple-400" />} label="This Week" value={formatDuration(totals.weekSec)} />
+              <StatCard icon={<FireIcon className="w-5 h-5 text-orange-400" />} label="Best Streak" value={totals.streak > 0 ? `${totals.streak} day${totals.streak !== 1 ? "s" : ""}` : "No streak"} />
+              <StatCard icon={<TrendUpIcon className="w-5 h-5 text-green-400" />} label="All Time" value={formatDuration(totals.allTimeSec)} />
             </div>
 
             {/* 7-day chart */}
@@ -277,7 +272,7 @@ export default function DashboardPage() {
                       </div>
                       {stats && stats.streak > 0 && (
                         <div className="flex items-center gap-1 px-2 py-1 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-300 text-xs font-medium">
-                          <Flame className="w-3 h-3" />
+                          <FireIcon className="w-3 h-3" />
                           {stats.streak}
                         </div>
                       )}
@@ -374,7 +369,7 @@ export default function DashboardPage() {
           </div>
         )}
       </main>
-    </div>
+    </Shell>
   );
 }
 

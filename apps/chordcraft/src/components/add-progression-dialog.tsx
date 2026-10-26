@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import { Plus, X, Trash2 } from "lucide-react";
+import { PlusIcon, XIcon, TrashIcon } from "@phosphor-icons/react";
 import type { Progression } from "@/lib/progressions";
 import { VALID_NUMERALS } from "@/lib/custom-progressions";
 
@@ -86,7 +86,7 @@ export function AddProgressionDialog({ open, onClose, onSave }: AddProgressionDi
             onClick={handleClose}
             className="p-1.5 rounded-lg hover:bg-secondary transition-colors"
           >
-            <X className="w-4 h-4" />
+            <XIcon className="w-4 h-4" />
           </button>
         </div>
 
@@ -118,7 +118,7 @@ export function AddProgressionDialog({ open, onClose, onSave }: AddProgressionDi
                 >
                   {n}
                   <button onClick={() => removeNumeral(i)} className="hover:text-destructive">
-                    <Trash2 className="w-3 h-3" />
+                    <TrashIcon className="w-3 h-3" />
                   </button>
                 </span>
               ))}
@@ -233,9 +233,9 @@ export function AddProgressionButton({ onClick }: { onClick: () => void }) {
   return (
     <button
       onClick={onClick}
-      className="flex items-center gap-1.5 w-full px-3 py-2.5 md:py-3 rounded-lg text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors border border-dashed border-border"
+      className="flex items-center justify-center gap-2 w-full min-h-[5.25rem] p-4 rounded-3xl text-sm font-semibold text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors border border-dashed border-border"
     >
-      <Plus className="w-4 h-4" />
+      <PlusIcon className="size-5" />
       Add progression
     </button>
   );

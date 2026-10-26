@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useRef, useEffect } from "react";
-import { Play, Square, Music, ChevronDown, ChevronUp, Guitar, Shuffle, SkipForward, Volume2, Drum, Trash2 } from "lucide-react";
+import { PlayIcon, StopIcon, CaretDownIcon, CaretUpIcon, GuitarIcon, ShuffleIcon, SkipForwardIcon, SpeakerHighIcon, MetronomeIcon, TrashIcon, FolderIcon, FolderOpenIcon } from "@phosphor-icons/react";
 import { progressions, getAllGenres, type Progression } from "@/lib/progressions";
 import { getProgressionInKey, ALL_KEYS, type Chord, type ComplexityLevel } from "@/lib/music-theory";
 import {
@@ -23,7 +23,8 @@ import { getVoicings } from "@/lib/chord-voicings";
 import { usePracticeStats } from "@/hooks/usePracticeStats";
 import { loadCustomProgressions, addCustomProgression, deleteCustomProgression } from "@/lib/custom-progressions";
 import { AddProgressionDialog, AddProgressionButton } from "@/components/add-progression-dialog";
-import { AppSwitcher } from "@music-apps/shared/app-switcher";
+import { SidebarItem, SidebarMenuButton, SidebarSection } from "@music-apps/shared/app-shell";
+import { Shell } from "@/components/shell";
 
 export default function Home() {
   const [customProgressions, setCustomProgressions] = useState<Progression[]>([]);
@@ -252,104 +253,36 @@ export default function Home() {
   ];
 
   return (
-    <div className="flex flex-col flex-1 min-h-0">
-      {/* Header */}
-      <header className="border-b border-border px-4 md:px-6 py-3 md:py-4 flex items-center justify-between shrink-0">
-        <div className="flex items-center gap-2">
-          <Music className="w-6 h-6 md:w-7 md:h-7 text-primary" />
-          <h1 className="text-xl md:text-2xl font-bold tracking-tight">ChordCraft</h1>
+    <Shell
+      extra={
+        <>
+          <SidebarSection label="Genres" />
+          <SidebarItem
+            active={selectedGenres.size === 0}
+            icon={selectedGenres.size === 0 ? <FolderOpenIcon className="size-5" /> : <FolderIcon className="size-5" />}
+            label="All progressions"
+            count={allProgressions.length}
+            onClick={handleClearGenres}
+          />
+          {allGenres.map((genre) => (
+            <SidebarItem
+              key={genre}
+              active={selectedGenres.has(genre)}
+              icon={selectedGenres.has(genre) ? <FolderOpenIcon className="size-5" /> : <FolderIcon className="size-5" />}
+              label={genre[0].toUpperCase() + genre.slice(1)}
+              count={genreCounts[genre]}
+              onClick={() => handleGenreToggle(genre)}
+            />
+          ))}
+        </>
+      }
+    >
+      <main className="max-w-5xl w-full mx-auto px-4 lg:px-8 py-4 lg:py-6">
+        <div className="flex items-center gap-1 mb-4 lg:hidden">
+          <SidebarMenuButton />
+          <h1 className="text-xl font-semibold tracking-tight">ChordCraft</h1>
         </div>
-        <AppSwitcher currentAppId="chordcraft" />
-      </header>
-
-      <main className="flex-1 flex flex-col md:flex-row overflow-hidden">
-        {/* Sidebar: Progression picker */}
-        <aside className="md:w-72 lg:w-80 border-b md:border-b-0 md:border-r border-border overflow-y-auto shrink-0 max-h-[35vh] md:max-h-none">
-          <div className="p-3">
-            {/* Genre filter pills with counts and multi-select */}
-            <div className="flex flex-wrap gap-1.5 mb-3">
-              <button
-                onClick={handleClearGenres}
-                className={`px-2.5 py-1 md:px-3 md:py-1.5 rounded-full text-xs md:text-sm font-medium transition-colors ${
-                  selectedGenres.size === 0
-                    ? "bg-primary text-primary-foreground"
-                    : "bg-secondary text-secondary-foreground hover:bg-accent"
-                }`}
-              >
-                All ({allProgressions.length})
-              </button>
-              {allGenres.map((genre) => (
-                <button
-                  key={genre}
-                  onClick={() => handleGenreToggle(genre)}
-                  className={`px-2.5 py-1 md:px-3 md:py-1.5 rounded-full text-xs md:text-sm font-medium capitalize transition-colors ${
-                    selectedGenres.has(genre)
-                      ? "bg-primary text-primary-foreground"
-                      : "bg-secondary text-secondary-foreground hover:bg-accent"
-                  }`}
-                >
-                  {genre} ({genreCounts[genre]})
-                </button>
-              ))}
-            </div>
-
-            {/* Progression list */}
-            <div className="space-y-1">
-              {filteredProgressions.map((prog) => {
-                const isCustom = prog.id.startsWith("custom-");
-                return (
-                  <div key={prog.id} className="group relative">
-                    <button
-                      onClick={() => handleProgressionSelect(prog)}
-                      className={`w-full text-left px-3 py-2.5 md:py-3 rounded-lg transition-colors ${
-                        selectedProgression.id === prog.id
-                          ? "bg-accent text-accent-foreground"
-                          : "hover:bg-secondary"
-                      }`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="font-medium text-sm">{prog.name}</span>
-                        <span className="flex items-center gap-1.5">
-                          {isCustom && (
-                            <span className="text-[9px] px-1 py-0.5 rounded bg-primary/10 text-primary font-medium">
-                              custom
-                            </span>
-                          )}
-                          <span className={`text-[10px] ${difficultyColor[prog.difficulty]}`}>
-                            {prog.difficulty}
-                          </span>
-                        </span>
-                      </div>
-                      <div className="text-xs text-muted-foreground mt-0.5">
-                        {prog.numerals.join(" - ")}
-                      </div>
-                    </button>
-                    {isCustom && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDeleteProgression(prog.id);
-                        }}
-                        className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-md opacity-0 group-hover:opacity-100 hover:bg-destructive/20 hover:text-destructive transition-all"
-                        title="Delete progression"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* Add custom progression */}
-            <div className="mt-2">
-              <AddProgressionButton onClick={() => setShowAddDialog(true)} />
-            </div>
-          </div>
-        </aside>
-
-        {/* Main content — scrollable on mobile, static on tablet+ */}
-        <div className="flex-1 flex flex-col p-4 md:p-6 overflow-y-auto md:overflow-hidden">
+        <div className="flex flex-col">
           {/* Controls row */}
           <div className="flex flex-wrap items-center gap-3 mb-4">
             {/* Key selector */}
@@ -365,7 +298,7 @@ export default function Home() {
                   }
                   setSelectedKey(e.target.value);
                 }}
-                className="appearance-none bg-secondary text-secondary-foreground pl-3 pr-8 py-2 rounded-lg text-sm font-medium focus:outline-none focus:ring-2 focus:ring-ring cursor-pointer"
+                className="appearance-none h-11 bg-card border border-border text-foreground pl-4 pr-9 rounded-full text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-ring cursor-pointer"
               >
                 {ALL_KEYS.map((k) => (
                   <option key={k} value={k}>
@@ -373,11 +306,11 @@ export default function Home() {
                   </option>
                 ))}
               </select>
-              <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+              <CaretDownIcon className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
             </div>
 
             {/* Complexity level toggle */}
-            <div className="flex bg-secondary rounded-lg p-0.5">
+            <div className="flex bg-muted rounded-2xl p-1">
               {complexityLevels.map((level) => (
                 <button
                   key={level.value}
@@ -385,10 +318,10 @@ export default function Home() {
                     setComplexityLevel(level.value);
                     setExpandedChordIndex(null);
                   }}
-                  className={`px-3 py-1.5 md:px-4 md:py-2 rounded-md text-xs md:text-sm font-medium transition-colors ${
+                  className={`h-9 px-4 rounded-xl text-sm font-semibold transition-all duration-300 ease-spring ${
                     complexityLevel === level.value
-                      ? "bg-primary text-primary-foreground shadow-sm"
-                      : "text-muted-foreground hover:text-secondary-foreground"
+                      ? "bg-background text-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground"
                   }`}
                 >
                   {level.label}
@@ -397,8 +330,8 @@ export default function Home() {
             </div>
 
             {/* Tempo control */}
-            <div className="flex items-center gap-2 bg-secondary rounded-lg px-3 py-1.5">
-              <span className="text-xs text-muted-foreground whitespace-nowrap">BPM</span>
+            <div className="h-11 flex items-center gap-2 bg-card border border-border rounded-full px-4">
+              <span className="text-xs font-semibold text-muted-foreground whitespace-nowrap">BPM</span>
               <input
                 type="range"
                 min={60}
@@ -407,25 +340,23 @@ export default function Home() {
                 onChange={(e) => setBpm(Number(e.target.value))}
                 className="w-24 md:w-32 accent-primary"
               />
-              <span className="text-sm font-mono w-8 text-right">{bpm}</span>
+              <span className="text-sm font-semibold tabular-nums w-8 text-right">{bpm}</span>
             </div>
 
             {/* Play/Stop */}
             <button
               onClick={handlePlay}
-              className={`flex items-center gap-2 px-5 py-2 md:px-6 md:py-3 rounded-lg font-medium text-sm md:text-base transition-colors ${
-                isPlaying
-                  ? "bg-destructive text-white hover:bg-destructive/90"
-                  : "bg-primary text-primary-foreground hover:bg-primary/90"
+              className={`relative h-12 flex items-center gap-2 px-6 rounded-full bg-primary text-primary-foreground font-semibold text-sm md:text-base active:scale-95 transition-all duration-200 ease-spring ${
+                isPlaying ? "play-pulse" : ""
               }`}
             >
               {isPlaying ? (
                 <>
-                  <Square className="w-4 h-4" /> Stop
+                  <StopIcon className="size-5" weight="fill" /> Stop
                 </>
               ) : (
                 <>
-                  <Play className="w-4 h-4" /> Play
+                  <PlayIcon className="size-5" weight="fill" /> Play
                 </>
               )}
             </button>
@@ -433,14 +364,14 @@ export default function Home() {
             {/* Shuffle */}
             <button
               onClick={handleShuffleToggle}
-              className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+              className={`h-11 flex items-center gap-1.5 px-4 rounded-full text-sm font-semibold active:scale-95 transition-all duration-200 ease-spring ${
                 shuffleMode
-                  ? "bg-green-600 text-white hover:bg-green-700"
-                  : "bg-secondary text-secondary-foreground hover:bg-accent"
+                  ? "bg-emerald-500/15 text-emerald-500"
+                  : "bg-card border border-border text-foreground hover:bg-muted"
               }`}
               title="Shuffle mode"
             >
-              <Shuffle className="w-4 h-4" />
+              <ShuffleIcon className="w-4 h-4" />
               <span className="hidden sm:inline">Shuffle</span>
             </button>
 
@@ -448,10 +379,10 @@ export default function Home() {
             {shuffleMode && (
               <button
                 onClick={pickRandomProgression}
-                className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium bg-secondary text-secondary-foreground hover:bg-accent transition-colors"
+                className="h-11 flex items-center gap-1.5 px-4 rounded-full text-sm font-semibold bg-card border border-border text-foreground hover:bg-muted active:scale-95 transition-all duration-200 ease-spring"
                 title="Next random progression"
               >
-                <SkipForward className="w-4 h-4" />
+                <SkipForwardIcon className="w-4 h-4" />
                 <span className="hidden sm:inline">Next</span>
               </button>
             )}
@@ -462,26 +393,26 @@ export default function Home() {
             {/* Bass toggle */}
             <button
               onClick={handleBassToggle}
-              className={`h-11 flex items-center gap-2 px-4 rounded-lg font-medium transition-colors ${
+              className={`h-11 flex items-center gap-2 px-4 rounded-full font-semibold active:scale-95 transition-all duration-200 ease-spring ${
                 bassOn
-                  ? "bg-blue-600/20 text-blue-400 border border-blue-600/30"
-                  : "bg-secondary text-muted-foreground border border-transparent"
+                  ? "bg-blue-500/15 text-blue-400 border border-transparent"
+                  : "bg-card text-muted-foreground border border-border"
               }`}
             >
-              <Volume2 className="w-4 h-4" />
+              <SpeakerHighIcon className="w-4 h-4" />
               Bass
             </button>
 
             {/* Drums toggle */}
             <button
               onClick={handleDrumsToggle}
-              className={`h-11 flex items-center gap-2 px-4 rounded-lg font-medium transition-colors ${
+              className={`h-11 flex items-center gap-2 px-4 rounded-full font-semibold active:scale-95 transition-all duration-200 ease-spring ${
                 drumsOn
-                  ? "bg-orange-600/20 text-orange-400 border border-orange-600/30"
-                  : "bg-secondary text-muted-foreground border border-transparent"
+                  ? "bg-orange-500/15 text-orange-400 border border-transparent"
+                  : "bg-card text-muted-foreground border border-border"
               }`}
             >
-              <Drum className="w-4 h-4" />
+              <MetronomeIcon className="w-4 h-4" />
               Drums
             </button>
 
@@ -528,9 +459,9 @@ export default function Home() {
           {/* Progression name */}
           <div className="mb-4">
             <div className="flex items-center gap-2">
-              <h2 className="text-2xl md:text-3xl font-bold">{selectedProgression.name}</h2>
+              <h2 className="text-2xl md:text-3xl font-semibold tracking-tight">{selectedProgression.name}</h2>
               {shuffleMode && (
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-green-600/20 text-green-400 font-medium">
+                <span className="text-xs font-bold uppercase tracking-wider text-emerald-500">
                   SHUFFLE
                 </span>
               )}
@@ -548,13 +479,13 @@ export default function Home() {
               <button
                 key={`seq-${i}`}
                 onClick={() => handleChordTap(chord, i)}
-                className={`min-w-14 min-h-14 px-4 py-3 rounded-xl text-base md:text-lg font-semibold transition-all flex items-center justify-center gap-2 ${
+                className={`min-w-16 min-h-16 px-5 py-3 rounded-2xl text-base md:text-lg font-semibold transition-all duration-300 ease-spring flex items-center justify-center gap-2 ${
                   activeChordIndex === i
-                    ? "bg-primary text-primary-foreground shadow-md scale-105"
-                    : "bg-secondary text-secondary-foreground hover:bg-accent"
+                    ? "bg-loop text-loop-foreground shadow-md scale-105"
+                    : "bg-card border border-border text-foreground hover:bg-muted"
                 }`}
               >
-                <span className="text-xs text-muted-foreground">{selectedProgression.numerals[i]}</span>
+                <span className={`text-xs ${activeChordIndex === i ? "opacity-70" : "text-muted-foreground"}`}>{selectedProgression.numerals[i]}</span>
                 {showChords && chord.name}
               </button>
             ))}
@@ -563,11 +494,11 @@ export default function Home() {
           {/* Show/hide chord diagrams toggle */}
           <button
             onClick={() => setShowChords(!showChords)}
-            className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors mb-4"
+            className="h-11 w-fit flex items-center gap-1.5 px-3 -ml-3 rounded-full text-sm font-semibold text-muted-foreground hover:text-foreground hover:bg-muted transition-colors mb-4"
           >
-            <Guitar className="w-4 h-4" />
+            <GuitarIcon className="w-4 h-4" />
             {showChords ? "Hide Chords" : "Show Chords"}
-            {showChords ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+            {showChords ? <CaretUpIcon className="w-3.5 h-3.5" /> : <CaretDownIcon className="w-3.5 h-3.5" />}
           </button>
 
           {/* Chord diagrams — deduplicated, shown on toggle */}
@@ -586,15 +517,15 @@ export default function Home() {
                       <div key={chord.name} className="flex flex-col">
                         <button
                           onClick={() => handleChordTap(chord, chordIndex)}
-                          className={`relative flex flex-col items-center justify-center p-4 md:p-5 rounded-xl border-2 transition-all duration-150 active:scale-95 ${
+                          className={`relative flex flex-col items-center justify-center p-4 md:p-5 rounded-3xl border bg-card transition-all duration-300 ease-spring active:scale-95 ${
                             isExpanded
-                              ? "border-primary/50 bg-card"
-                              : "border-border bg-card hover:border-muted-foreground/30"
+                              ? "border-muted-foreground/50"
+                              : "border-border hover:bg-muted"
                           }`}
                         >
                           {hasVoicings && (
                             <span className="absolute top-1.5 right-2">
-                              <Guitar className="w-3 h-3 text-muted-foreground/50" />
+                              <GuitarIcon className="w-3 h-3 text-muted-foreground/50" />
                             </span>
                           )}
                           <span className="text-lg md:text-xl font-bold text-card-foreground">
@@ -622,13 +553,73 @@ export default function Home() {
             <div className="mt-4">
               <button
                 onClick={handleStartAudio}
-                className="w-full h-14 flex items-center justify-center gap-2 rounded-xl bg-amber-500/15 border border-amber-500/40 text-amber-700 dark:text-amber-300 hover:bg-amber-500/25 transition-colors text-base font-semibold"
+                className="w-full h-14 flex items-center justify-center gap-2 rounded-full bg-loop/15 text-loop hover:bg-loop/25 active:scale-[0.99] transition-all duration-200 ease-spring text-base font-semibold"
               >
-                <Volume2 className="w-5 h-5" />
+                <SpeakerHighIcon className="w-5 h-5" />
                 Tap to enable audio
               </button>
             </div>
           )}
+        </div>
+
+        {/* The progressions in the chosen genres — the list, the way Shreddy
+            lists songs. Picking one loads it into the player above. */}
+        <div className="flex items-baseline gap-3 mt-10 mb-4">
+          <h2 className="text-2xl font-semibold tracking-tight">
+            {selectedGenres.size === 0
+              ? "All progressions"
+              : [...selectedGenres].map((g) => g[0].toUpperCase() + g.slice(1)).join(", ")}
+          </h2>
+          <span className="text-sm text-muted-foreground">
+            {filteredProgressions.length} {filteredProgressions.length === 1 ? "progression" : "progressions"}
+          </span>
+        </div>
+        <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-3">
+          {filteredProgressions.map((prog) => {
+            const isCustom = prog.id.startsWith("custom-");
+            const selected = selectedProgression.id === prog.id;
+            return (
+              <div key={prog.id} className="group relative">
+                <button
+                  onClick={() => {
+                    handleProgressionSelect(prog);
+                    window.scrollTo({ top: 0, behavior: "smooth" });
+                  }}
+                  className={`w-full text-left p-4 rounded-3xl border transition-all duration-300 ease-spring active:scale-[0.99] ${
+                    selected ? "bg-muted border-muted-foreground/40" : "bg-card border-border hover:bg-muted/60"
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-base font-semibold truncate">{prog.name}</span>
+                    <span className="flex items-center gap-1.5 shrink-0">
+                      {isCustom && (
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground font-medium">
+                          custom
+                        </span>
+                      )}
+                      <span className={`text-xs font-medium ${difficultyColor[prog.difficulty]}`}>
+                        {prog.difficulty}
+                      </span>
+                    </span>
+                  </div>
+                  <div className="text-sm text-muted-foreground mt-1">{prog.numerals.join(" - ")}</div>
+                </button>
+                {isCustom && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDeleteProgression(prog.id);
+                    }}
+                    className="absolute right-3 bottom-3 size-9 grid place-items-center rounded-full opacity-0 group-hover:opacity-100 hover:bg-destructive/20 hover:text-destructive transition-all"
+                    title="Delete progression"
+                  >
+                    <TrashIcon className="size-4" />
+                  </button>
+                )}
+              </div>
+            );
+          })}
+          <AddProgressionButton onClick={() => setShowAddDialog(true)} />
         </div>
       </main>
 
@@ -637,7 +628,7 @@ export default function Home() {
         onClose={() => setShowAddDialog(false)}
         onSave={handleAddProgression}
       />
-    </div>
+    </Shell>
   );
 }
 
@@ -649,14 +640,14 @@ function PositionExplorer({ chordName }: { chordName: string }) {
   if (voicings.length === 0) return null;
 
   return (
-    <div className="mt-2 p-3 rounded-xl border border-border bg-card/80 backdrop-blur">
+    <div className="mt-2 p-3 rounded-3xl border border-border bg-card">
       <div className="text-xs text-muted-foreground mb-2 font-medium">
         Positions ({voicings.length})
       </div>
 
       {/* Voicing tabs */}
       {voicings.length > 1 && (
-        <div className="flex gap-1 mb-3">
+        <div className="flex flex-wrap gap-1 p-1 mb-3 rounded-2xl bg-muted">
           {voicings.map((v, idx) => (
             <button
               key={idx}
@@ -664,10 +655,10 @@ function PositionExplorer({ chordName }: { chordName: string }) {
                 e.stopPropagation();
                 setSelectedVoicing(idx);
               }}
-              className={`px-2 py-1 rounded text-[10px] font-medium transition-colors ${
+              className={`h-8 px-2.5 rounded-xl text-xs font-semibold transition-all duration-300 ease-spring ${
                 selectedVoicing === idx
-                  ? "bg-primary text-primary-foreground"
-                  : "bg-secondary text-muted-foreground hover:text-secondary-foreground"
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
               }`}
             >
               {v.positionLabel || `Pos ${idx + 1}`}
