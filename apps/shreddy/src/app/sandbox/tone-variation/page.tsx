@@ -9,7 +9,12 @@
 // the UX, not whether the technique compounds learning.
 
 import { useCallback, useRef, useState } from "react";
-import { AlertTriangle, Play, Pause, X } from "lucide-react";
+import {
+  PauseIcon,
+  PlayIcon,
+  WarningIcon,
+  XIcon,
+} from "@phosphor-icons/react";
 import { useStubPlayer } from "@/hooks/useStubPlayer";
 import { defaultStub } from "@/app/sandbox/mock-data";
 import { SandboxHeader } from "@/app/sandbox/_components/SandboxHeader";
@@ -55,7 +60,7 @@ export default function ToneVariationPage() {
         {/* Pedagogy caveat — required per research review */}
         {showCaveat && (
           <div className="flex items-start gap-3 p-4 rounded-xl border border-[var(--sandbox-accent)]/30 bg-[var(--sandbox-accent)]/5">
-            <AlertTriangle className="size-5 text-[var(--sandbox-accent)] shrink-0 mt-0.5" />
+            <WarningIcon className="size-5 text-[var(--sandbox-accent)] shrink-0 mt-0.5" />
             <div className="flex-1">
               <p className="text-sm text-foreground font-medium">
                 No published research backing.
@@ -72,7 +77,7 @@ export default function ToneVariationPage() {
               className="text-muted-foreground hover:text-foreground active:scale-95 transition"
               aria-label="Dismiss"
             >
-              <X className="size-4" />
+              <XIcon className="size-4" />
             </button>
           </div>
         )}
@@ -108,9 +113,9 @@ export default function ToneVariationPage() {
             aria-label={playing ? "Pause" : "Play"}
           >
             {playing ? (
-              <Pause className="size-6" />
+              <PauseIcon className="size-6" />
             ) : (
-              <Play className="size-6 ml-0.5" />
+              <PlayIcon className="size-6 ml-0.5" />
             )}
           </button>
         </div>

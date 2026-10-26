@@ -11,7 +11,7 @@
 // specific RCTs; effective in theory once base rhythm is internalized.
 
 import { useCallback, useState } from "react";
-import { Play, Pause } from "lucide-react";
+import { PauseIcon, PlayIcon } from "@phosphor-icons/react";
 import {
   useMetronomePattern,
   type MetronomePattern,
@@ -128,9 +128,9 @@ export default function RhythmicAlternationPage() {
             aria-label={clickEnabled ? "Stop" : "Start"}
           >
             {clickEnabled ? (
-              <Pause className="size-6" />
+              <PauseIcon className="size-6" />
             ) : (
-              <Play className="size-6 ml-0.5" />
+              <PlayIcon className="size-6 ml-0.5" />
             )}
           </button>
         </div>

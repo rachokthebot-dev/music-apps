@@ -48,14 +48,32 @@ export async function PATCH(
   const body = parsed.data;
   const song = await prisma.$transaction(async (tx) => {
     if (body.folderIds !== undefined) {
-      await tx.songFolder.deleteMany({ where: { songId: id } });
-      if (body.folderIds.length > 0) {
-        await tx.songFolder.createMany({
-          data: body.folderIds.map((folderId, i) => ({
-            songId: id,
-            folderId,
-            orderIndex: i,
-          })),
+      // orderIndex is the song's place within each folder, so folders the
+      // song stays in keep it, and a folder it joins gets it at the end.
+      const before = await tx.songFolder.findMany({ where: { songId: id } });
+      await tx.songFolder.deleteMany({
+        where: { songId: id, folderId: { notIn: body.folderIds } },
+      });
+      const existing = before.filter((f) => body.folderIds!.includes(f.folderId));
+      // Folders the song joined or left move to the top of the folder list.
+      const changed = [
+        ...before.filter((f) => !body.folderIds!.includes(f.folderId)).map((f) => f.folderId),
+        ...body.folderIds.filter((fid) => !before.some((f) => f.folderId === fid)),
+      ];
+      if (changed.length > 0) {
+        await tx.folder.updateMany({
+          where: { id: { in: changed } },
+          data: { updatedAt: new Date() },
+        });
+      }
+      for (const folderId of body.folderIds) {
+        if (existing.some((f) => f.folderId === folderId)) continue;
+        const last = await tx.songFolder.findFirst({
+          where: { folderId },
+          orderBy: { orderIndex: "desc" },
+        });
+        await tx.songFolder.create({
+          data: { songId: id, folderId, orderIndex: (last?.orderIndex ?? -1) + 1 },
         });
       }
     }

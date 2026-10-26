@@ -14,6 +14,7 @@
 //   <songId>_stem_drums.mp3
 //   <songId>_stem_bass.mp3
 //   <songId>_stem_other.mp3
+//   <songId>_stem_guitar.mp3   (on-demand only — see ensureGuitarStem below)
 //
 // Stored in AUDIO_DIR so the existing /api/media/<filename> route serves
 // them with range-request support (no new media route needed).
@@ -27,11 +28,75 @@ import { prisma } from "./prisma";
 const PROJECT_ROOT = path.resolve(process.cwd(), "..");
 const DEMUCS_BIN = path.join(PROJECT_ROOT, ".venv-sf", "bin", "demucs");
 
-const STEM_NAMES = ["vocals", "drums", "bass", "other"] as const;
+export const STEM_NAMES = ["vocals", "drums", "bass", "other"] as const;
 export type StemName = (typeof STEM_NAMES)[number];
 
 export function stemFilename(songId: string, stem: StemName): string {
   return `${songId}_stem_${stem}.mp3`;
+}
+
+// --- guitar stem (on-demand, htdemucs_6s) ----------------------------------
+//
+// The default 4-source htdemucs buries guitar inside `other` alongside keys and
+// synths. htdemucs_6s adds dedicated guitar and piano sources; measured on a
+// real solo it yields ~2.6x more usable note detections than `other`, and the
+// pitch content actually centres on the song's key rather than the bass line.
+//
+// It runs as a SECOND, on-demand pass rather than replacing the 4-stem run:
+// only songs you actually transcribe pay the extra separation, and existing
+// stems on disk stay valid. Its piano source is known to bleed badly, so we
+// keep only the guitar and discard the rest.
+
+export function guitarStemFilename(songId: string): string {
+  return `${songId}_stem_guitar.mp3`;
+}
+
+export async function guitarStemExists(songId: string): Promise<boolean> {
+  return access(path.join(AUDIO_DIR, guitarStemFilename(songId)))
+    .then(() => true)
+    .catch(() => false);
+}
+
+/**
+ * Ensure `<id>_stem_guitar.mp3` exists, running htdemucs_6s if needed.
+ * Returns the absolute path. Idempotent; throws on separation failure so the
+ * caller can surface a real error (unlike processStems, which is fire-and-forget).
+ */
+export async function ensureGuitarStem(songId: string, audioPath: string): Promise<string> {
+  const dst = path.join(AUDIO_DIR, guitarStemFilename(songId));
+  if (await guitarStemExists(songId)) return dst;
+
+  const scratch = path.join(AUDIO_DIR, `.guitar-tmp-${songId}`);
+  await rm(scratch, { recursive: true, force: true });
+  await mkdir(scratch, { recursive: true });
+
+  try {
+    await new Promise<void>((resolve, reject) => {
+      execFile(
+        DEMUCS_BIN,
+        [
+          "-n", "htdemucs_6s",
+          "-d", "cpu",
+          "-j", "4",
+          "--mp3",
+          "--mp3-bitrate", "192",
+          "-o", scratch,
+          audioPath,
+        ],
+        { timeout: 20 * 60 * 1000 },
+        (error, _stdout, stderr) => {
+          if (error) reject(new Error(`demucs htdemucs_6s failed: ${stderr || error.message}`));
+          else resolve();
+        }
+      );
+    });
+
+    const audioBase = path.basename(audioPath, path.extname(audioPath));
+    await rename(path.join(scratch, "htdemucs_6s", audioBase, "guitar.mp3"), dst);
+    return dst;
+  } finally {
+    await rm(scratch, { recursive: true, force: true });
+  }
 }
 
 /**

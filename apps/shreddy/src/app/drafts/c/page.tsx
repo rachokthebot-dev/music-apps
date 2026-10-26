@@ -5,8 +5,17 @@ import Link from "next/link";
 import { Badge } from "@music-apps/ui";
 import { Slider } from "@music-apps/ui";
 import {
-  ArrowLeft, Play, Pause, SkipBack, Repeat, Repeat2, Star, Disc3, Volume2, StickyNote,
-} from "lucide-react";
+  ArrowLeftIcon,
+  ArrowsClockwiseIcon,
+  NoteIcon,
+  PauseIcon,
+  PlayIcon,
+  RepeatIcon,
+  SkipBackIcon,
+  SpeakerHighIcon,
+  StarIcon,
+  VinylRecordIcon,
+} from "@phosphor-icons/react";
 import { mockSong, mockSections, sectionColors, sectionDotColors, formatTime } from "../mock-data";
 
 const TEMPO_VALUES = [0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2];
@@ -27,7 +36,7 @@ export default function DraftC() {
       {/* Nav */}
       <div className="flex items-center justify-between mb-3">
         <Link href="/drafts" className="flex items-center gap-2 text-muted-foreground hover:text-foreground">
-          <ArrowLeft className="size-5" />
+          <ArrowLeftIcon className="size-5" />
         </Link>
         <Badge variant="outline" className="text-xs">Option C: Floating Player</Badge>
       </div>
@@ -41,7 +50,7 @@ export default function DraftC() {
             <span className="text-sm text-zinc-400">{mockSong.artist} · {mockSong.genre} · {mockSong.bpm} BPM</span>
           </div>
           <button className="p-2 text-zinc-500 hover:text-zinc-300">
-            <StickyNote className="size-5" />
+            <NoteIcon className="size-5" />
           </button>
         </div>
 
@@ -99,19 +108,19 @@ export default function DraftC() {
               loopSong ? "text-blue-400" : "text-zinc-600"
             }`}
           >
-            <Repeat className="size-4" />
+            <RepeatIcon className="size-4" />
           </button>
           <button className="size-10 rounded-full flex items-center justify-center text-zinc-400 hover:text-white">
-            <SkipBack className="size-5" />
+            <SkipBackIcon className="size-5" />
           </button>
           <button
             className="size-16 rounded-full bg-white text-zinc-900 flex items-center justify-center active:scale-95 transition-transform shadow-lg"
             onClick={() => setPlaying(!playing)}
           >
-            {playing ? <Pause className="size-7" /> : <Play className="size-7 ml-0.5" />}
+            {playing ? <PauseIcon className="size-7" /> : <PlayIcon className="size-7 ml-0.5" />}
           </button>
           <button className="size-10 rounded-full flex items-center justify-center text-zinc-400 hover:text-white">
-            <Repeat2 className="size-5" />
+            <ArrowsClockwiseIcon className="size-5" />
           </button>
           <button
             onClick={() => setMetronomeOn(!metronomeOn)}
@@ -119,7 +128,7 @@ export default function DraftC() {
               metronomeOn ? "text-blue-400" : "text-zinc-600"
             }`}
           >
-            <Disc3 className={`size-4 ${metronomeOn ? "animate-spin" : ""}`} />
+            <VinylRecordIcon className={`size-4 ${metronomeOn ? "animate-spin" : ""}`} />
           </button>
         </div>
       </div>
@@ -157,7 +166,7 @@ export default function DraftC() {
                 </span>
                 <div className="flex items-center gap-0 mt-1">
                   {[1, 2, 3, 4, 5].map(star => (
-                    <Star
+                    <StarIcon
                       key={star}
                       className={`size-3 ${section.masteryRating && star <= section.masteryRating ? "text-yellow-400 fill-yellow-400" : "text-muted-foreground/20"}`}
                     />
@@ -203,7 +212,7 @@ export default function DraftC() {
         {/* Metronome volume */}
         {metronomeOn && (
           <div className="flex items-center gap-2 min-w-[120px]">
-            <Volume2 className="size-3.5 text-muted-foreground" />
+            <SpeakerHighIcon className="size-3.5 text-muted-foreground" />
             <Slider min={0} max={1} step={0.05} value={[0.5]} className="flex-1" />
           </div>
         )}

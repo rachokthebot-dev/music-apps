@@ -10,7 +10,13 @@
 // this warning so graders evaluate it as advanced-only.
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Play, Pause, X, Check, AlertTriangle } from "lucide-react";
+import {
+  CheckIcon,
+  PauseIcon,
+  PlayIcon,
+  WarningIcon,
+  XIcon,
+} from "@phosphor-icons/react";
 import { useStubPlayer } from "@/hooks/useStubPlayer";
 import { defaultStub } from "@/app/sandbox/mock-data";
 import { SandboxHeader } from "@/app/sandbox/_components/SandboxHeader";
@@ -90,7 +96,7 @@ export default function DistractionPage() {
         {/* Skill-level warning — pedagogically required per research */}
         {showWarning && (
           <div className="flex items-start gap-3 p-4 rounded-xl border border-[var(--sandbox-accent)]/30 bg-[var(--sandbox-accent)]/5">
-            <AlertTriangle className="size-5 text-[var(--sandbox-accent)] shrink-0 mt-0.5" />
+            <WarningIcon className="size-5 text-[var(--sandbox-accent)] shrink-0 mt-0.5" />
             <div className="flex-1">
               <p className="text-sm text-foreground font-medium">
                 Advanced practice — may hurt early learning.
@@ -107,7 +113,7 @@ export default function DistractionPage() {
               className="text-muted-foreground hover:text-foreground active:scale-95 transition"
               aria-label="Dismiss"
             >
-              <X className="size-4" />
+              <XIcon className="size-4" />
             </button>
           </div>
         )}
@@ -143,14 +149,14 @@ export default function DistractionPage() {
               onClick={() => recordResult(false)}
               className="h-14 rounded-xl border border-destructive/40 text-destructive font-medium active:scale-95 transition"
             >
-              <X className="size-4 inline-block mr-2 align-middle" />
+              <XIcon className="size-4 inline-block mr-2 align-middle" />
               Failed
             </button>
             <button
               onClick={() => recordResult(true)}
               className="h-14 rounded-xl bg-foreground text-background font-medium active:scale-95 transition"
             >
-              <Check className="size-4 inline-block mr-2 align-middle" />
+              <CheckIcon className="size-4 inline-block mr-2 align-middle" />
               Passed
             </button>
           </div>
@@ -236,9 +242,9 @@ export default function DistractionPage() {
             aria-label={playing ? "Pause" : "Play"}
           >
             {playing ? (
-              <Pause className="size-6" />
+              <PauseIcon className="size-6" />
             ) : (
-              <Play className="size-6 ml-0.5" />
+              <PlayIcon className="size-6 ml-0.5" />
             )}
           </button>
         </div>

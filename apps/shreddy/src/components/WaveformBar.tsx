@@ -55,9 +55,19 @@ export function WaveformBar({
   onSeek,
   onBorderPointerDown,
 }: WaveformBarProps) {
+  // One region for whatever is looping: the A-B points, else the selected
+  // sections. It fills as the pass plays so you can see how far in you are.
+  const selected = sections.filter((s) => selectedSectionIds.includes(s.id));
+  const loop = abLoop
+    ? abLoop
+    : selected.length
+    ? { a: Math.min(...selected.map((s) => s.startSec)), b: Math.max(...selected.map((s) => s.endSec)) }
+    : null;
+  const loopFill = loop ? Math.min(1, Math.max(0, (currentTime - loop.a) / (loop.b - loop.a))) : 0;
+
   return (
-    <div className="mb-3">
-      <div ref={waveformRef} className={`relative h-20 rounded-2xl overflow-hidden bg-gradient-to-b from-zinc-800 to-zinc-900 shadow-inner transition-all ${
+    <div className="mb-4">
+      <div ref={waveformRef} className={`relative h-28 md:h-44 rounded-2xl overflow-hidden bg-zinc-900 transition-all ${
         editMode ? "ring-2 ring-yellow-500/50 ring-offset-1 ring-offset-background" : ""
       }`}>
         {sections.map((section, idx) => {
@@ -69,11 +79,9 @@ export function WaveformBar({
           return (
             <div
               key={section.id}
-              className={`absolute inset-y-0 flex items-center transition-colors ${
-                isSelected
-                  ? isPlaying ? "bg-blue-400/60" : "bg-blue-400/40"
-                  : abHighlight
-                  ? "bg-orange-400/40"
+              className={`absolute inset-y-0 flex items-start transition-colors ${
+                isSelected || abHighlight
+                  ? isPlaying ? "bg-loop/45" : "bg-loop/30"
                   : isPlaying
                   ? WAVEFORM_COLORS_ACTIVE[idx % WAVEFORM_COLORS_ACTIVE.length]
                   : WAVEFORM_COLORS[idx % WAVEFORM_COLORS.length]
@@ -85,7 +93,7 @@ export function WaveformBar({
               }}
             >
               {widthPct > 4 && (
-                <span className="text-[10px] sm:text-[11px] leading-none px-1 sm:px-2 truncate w-full text-white/80 font-medium pointer-events-none">
+                <span className="text-xs font-semibold px-2 pt-2 truncate w-full text-white/85 pointer-events-none">
                   {section.name}
                 </span>
               )}
@@ -114,6 +122,14 @@ export function WaveformBar({
             </div>
           );
         })}
+        {loop && (
+          <div
+            className="absolute inset-y-0 border-2 border-loop rounded-lg pointer-events-none z-[5]"
+            style={{ left: `${(loop.a / duration) * 100}%`, width: `${((loop.b - loop.a) / duration) * 100}%` }}
+          >
+            <div className="absolute inset-y-0 left-0 bg-loop/20" style={{ width: `${loopFill * 100}%` }} />
+          </div>
+        )}
         {/* Progress overlay */}
         <div className="absolute inset-y-0 left-0 bg-white/5 pointer-events-none" style={{ width: `${(currentTime / duration) * 100}%` }} />
         {/* Playhead */}
@@ -128,10 +144,10 @@ export function WaveformBar({
           className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-20"
         />
       </div>
-      <div className="flex justify-between items-center mt-1 px-1">
-        <span className="text-[11px] text-muted-foreground tabular-nums">{formatTime(currentTime)}</span>
-        {currentSectionName && <span className="text-xs text-foreground/70 font-medium">{currentSectionName}</span>}
-        <span className="text-[11px] text-muted-foreground tabular-nums">{formatTime(duration)}</span>
+      <div className="flex justify-between items-center mt-2 px-1">
+        <span className="text-sm text-foreground font-medium tabular-nums">{formatTime(currentTime)}</span>
+        {currentSectionName && <span className="text-sm text-muted-foreground">{currentSectionName}</span>}
+        <span className="text-sm text-muted-foreground tabular-nums">{formatTime(duration)}</span>
       </div>
     </div>
   );

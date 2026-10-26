@@ -15,7 +15,7 @@
 // in the original mockup.
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { X, Check, AlertTriangle } from "lucide-react";
+import { CheckIcon, WarningIcon, XIcon } from "@phosphor-icons/react";
 
 type Mode = "numbers" | "words" | "math";
 type Interval = 1 | 3 | 5 | 10;
@@ -178,14 +178,14 @@ export function DistractionOverlay({
           className="text-muted-foreground hover:text-foreground active:scale-95 transition"
           aria-label="Close distraction overlay"
         >
-          <X className="size-4" />
+          <XIcon className="size-4" />
         </button>
       </div>
 
       {/* Skill-level warning (Williamon & Valentine 2002) */}
       {showWarning && (
         <div className="flex items-start gap-3 p-3 rounded-xl border border-amber-500/30 bg-amber-500/5">
-          <AlertTriangle className="size-4 text-amber-600 dark:text-amber-500 shrink-0 mt-0.5" />
+          <WarningIcon className="size-4 text-amber-600 dark:text-amber-500 shrink-0 mt-0.5" />
           <div className="flex-1">
             <p className="text-xs text-foreground font-medium">
               Advanced practice — may hurt early learning.
@@ -202,7 +202,7 @@ export function DistractionOverlay({
             className="text-muted-foreground hover:text-foreground active:scale-95 transition"
             aria-label="Dismiss warning"
           >
-            <X className="size-3" />
+            <XIcon className="size-3" />
           </button>
         </div>
       )}
@@ -243,7 +243,7 @@ export function DistractionOverlay({
           disabled={!distractor}
           className="rounded-lg border border-destructive/40 text-destructive text-sm font-medium active:scale-95 transition disabled:opacity-30 disabled:active:scale-100"
         >
-          <X className="size-4 inline-block mr-1.5 align-middle" />
+          <XIcon className="size-4 inline-block mr-1.5 align-middle" />
           Failed
         </button>
         <button
@@ -251,7 +251,7 @@ export function DistractionOverlay({
           disabled={!distractor}
           className="rounded-lg bg-foreground text-background text-sm font-medium active:scale-95 transition disabled:opacity-30 disabled:active:scale-100"
         >
-          <Check className="size-4 inline-block mr-1.5 align-middle" />
+          <CheckIcon className="size-4 inline-block mr-1.5 align-middle" />
           Passed
         </button>
       </div>

@@ -49,6 +49,16 @@ export default function DraftsIndex() {
             No cards — horizontal strips, 96px section bar IS the selector, everything in one viewport
           </p>
         </Link>
+        <Link
+          href="/drafts/tab-extract"
+          className="block p-4 bg-card border border-border rounded-xl hover:border-ring/30 transition-all"
+        >
+          <h2 className="text-base font-semibold text-foreground">Solo → Tab</h2>
+          <p className="text-sm text-muted-foreground mt-1">
+            Extract tablature from a selected solo section: pipeline stages, confidence-shaded
+            tab staff, note inspector with alternate fretting positions
+          </p>
+        </Link>
       </div>
     </main>
   );

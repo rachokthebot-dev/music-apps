@@ -6,9 +6,22 @@ import { Button } from "@music-apps/ui";
 import { Badge } from "@music-apps/ui";
 import { Slider } from "@music-apps/ui";
 import {
-  ArrowLeft, Play, Pause, SkipBack, Repeat, Repeat2, Star, Pencil, Trash2,
-  Plus, StickyNote, ChevronDown, Disc3, Volume2, Clock,
-} from "lucide-react";
+  ArrowLeftIcon,
+  ArrowsClockwiseIcon,
+  CaretDownIcon,
+  ClockIcon,
+  NoteIcon,
+  PauseIcon,
+  PencilSimpleIcon,
+  PlayIcon,
+  PlusIcon,
+  RepeatIcon,
+  SkipBackIcon,
+  SpeakerHighIcon,
+  StarIcon,
+  TrashIcon,
+  VinylRecordIcon,
+} from "@phosphor-icons/react";
 import { mockSong, mockSections, sectionColors, sectionDotColors, formatTime } from "../mock-data";
 
 const TEMPO_VALUES = [0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2];
@@ -30,7 +43,7 @@ export default function DraftB() {
       {/* Nav bar */}
       <div className="flex items-center justify-between mb-4">
         <Link href="/drafts" className="flex items-center gap-2 text-muted-foreground hover:text-foreground">
-          <ArrowLeft className="size-5" />
+          <ArrowLeftIcon className="size-5" />
         </Link>
         <Badge variant="outline" className="text-xs">Option B: Dashboard Panels</Badge>
       </div>
@@ -86,7 +99,7 @@ export default function DraftB() {
           <div>
             <div className="flex items-center justify-between mb-2">
               <label className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
-                <Disc3 className={`size-3.5 ${metronomeOn ? "animate-spin text-primary" : ""}`} />
+                <VinylRecordIcon className={`size-3.5 ${metronomeOn ? "animate-spin text-primary" : ""}`} />
                 Metronome
               </label>
               <button
@@ -104,7 +117,7 @@ export default function DraftB() {
                   ))}
                 </div>
                 <div className="flex items-center gap-2">
-                  <Volume2 className="size-3 text-muted-foreground" />
+                  <SpeakerHighIcon className="size-3 text-muted-foreground" />
                   <Slider min={0} max={1} step={0.05} value={[0.5]} className="flex-1" />
                 </div>
               </div>
@@ -114,15 +127,15 @@ export default function DraftB() {
           {/* Notes */}
           <div>
             <button className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground w-full">
-              <StickyNote className="size-3.5" />
+              <NoteIcon className="size-3.5" />
               Notes
-              <ChevronDown className="size-3.5 ml-auto" />
+              <CaretDownIcon className="size-3.5 ml-auto" />
             </button>
           </div>
 
           {/* Session timer */}
           <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground/60 pt-2 border-t border-border/50">
-            <Clock className="size-3" />
+            <ClockIcon className="size-3" />
             Session: 2m 45s
           </div>
         </div>
@@ -197,22 +210,22 @@ export default function DraftB() {
                 loopSong ? "text-primary border-primary/30 bg-primary/5" : "text-muted-foreground/40 border-transparent"
               }`}
             >
-              <Repeat className="size-4" />
+              <RepeatIcon className="size-4" />
             </button>
-            <Button variant="outline" size="icon" className="size-11"><SkipBack className="size-5" /></Button>
+            <Button variant="outline" size="icon" className="size-11"><SkipBackIcon className="size-5" /></Button>
             <button
               className="size-20 rounded-full bg-primary text-primary-foreground flex items-center justify-center active:scale-95 transition-transform shadow-md"
               onClick={() => setPlaying(!playing)}
             >
-              {playing ? <Pause className="size-8" /> : <Play className="size-8 ml-1" />}
+              {playing ? <PauseIcon className="size-8" /> : <PlayIcon className="size-8 ml-1" />}
             </button>
-            <Button variant="outline" size="icon" className="size-11"><Repeat2 className="size-5" /></Button>
+            <Button variant="outline" size="icon" className="size-11"><ArrowsClockwiseIcon className="size-5" /></Button>
           </div>
 
           {/* Loop indicator */}
           {selectedIds.length > 0 && (
             <div className="flex items-center justify-center gap-2 px-3 py-1.5 bg-blue-50 dark:bg-blue-950 rounded-lg">
-              <Repeat className="size-3 text-blue-500" />
+              <RepeatIcon className="size-3 text-blue-500" />
               <span className="text-xs text-blue-600 dark:text-blue-400 font-medium">
                 {mockSections.filter(s => selectedIds.includes(s.id)).map(s => s.name).join(" + ")}
               </span>
@@ -225,7 +238,7 @@ export default function DraftB() {
           <div className="flex items-center justify-between mb-2">
             <h2 className="text-sm font-semibold text-foreground">Sections</h2>
             <Button variant="outline" size="sm" className="gap-1 h-7 text-xs">
-              <Plus className="size-3" /> Add
+              <PlusIcon className="size-3" /> Add
             </Button>
           </div>
           <ul className="space-y-0.5 max-h-[60vh] overflow-y-auto">
@@ -266,7 +279,7 @@ export default function DraftB() {
                       />
                     </div>
                   </div>
-                  <button className="p-1.5 rounded text-muted-foreground/30 hover:text-foreground"><Pencil className="size-3" /></button>
+                  <button className="p-1.5 rounded text-muted-foreground/30 hover:text-foreground"><PencilSimpleIcon className="size-3" /></button>
                 </li>
               );
             })}

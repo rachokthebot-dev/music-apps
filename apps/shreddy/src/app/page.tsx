@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useState, useCallback, useEffect } from "react";
+import { Suspense, useState, useCallback, useEffect, useRef } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
@@ -13,30 +13,32 @@ import {
   DialogTitle,
 } from "@music-apps/ui";
 import {
-  Star,
-  FolderOpen,
-  Trash2,
-  Upload,
-  Settings,
-  Search,
-  Plus,
-  X,
-  Music,
-  Loader2,
-  FolderInput,
-  BarChart3,
-  Link2,
-  Copy,
-  Pencil,
-  ArrowDownAZ,
-  ArrowDownUp,
-  Clock,
-  CalendarPlus,
-  MoreHorizontal,
-  Check,
-} from "lucide-react";
-import { AppSwitcher } from "@music-apps/shared/app-switcher";
+  ArrowsDownUpIcon,
+  CalendarPlusIcon,
+  ChartBarIcon,
+  CircleNotchIcon,
+  ClockIcon,
+  CopyIcon,
+  DotsSixVerticalIcon,
+  FolderIcon,
+  FolderOpenIcon,
+  FolderPlusIcon,
+  GearSixIcon,
+  LinkIcon,
+  MagnifyingGlassIcon,
+  MusicNotesIcon,
+  PencilSimpleIcon,
+  PlaylistIcon,
+  SortAscendingIcon,
+  StarIcon,
+  TrashIcon,
+  UploadSimpleIcon,
+  XIcon,
+} from "@phosphor-icons/react";
+import { AppShell, SidebarItem, SidebarMenuButton, SidebarSection } from "@music-apps/shared/app-shell";
 import { YouTubeSearchPanel } from "@music-apps/shared/youtube-search-panel";
+import { PlaylistImportDialog } from "@/components/PlaylistImportDialog";
+import { SwipeRow, type SwipeAction } from "@/components/SwipeRow";
 
 interface Folder {
   id: string;
@@ -46,6 +48,8 @@ interface Folder {
 
 interface SongFolderRef {
   folderId: string;
+  /** The song's place within this folder. */
+  orderIndex: number;
   folder: { id: string; name: string };
 }
 
@@ -61,10 +65,18 @@ interface Song {
   album: string;
   genre: string;
   year: string;
+  musicalKey: string;
+  bpm: number | null;
+  sections: { startSec: number; endSec: number }[];
   createdAt: string;
 }
 
-type SortMode = "title" | "artist" | "added" | "recent";
+interface WeekStats {
+  streak: number;
+  dailyBreakdown: { date: string; totalSec: number }[];
+}
+
+type SortMode = "custom" | "title" | "artist" | "added" | "recent";
 
 function formatDuration(sec: number | null): string {
   if (!sec) return "";
@@ -80,14 +92,14 @@ function statusBadge(status: string) {
     case "processing":
       return (
         <Badge variant="secondary" className="gap-1 text-[11px]">
-          <Loader2 className="size-3 animate-spin" />
+          <CircleNotchIcon className="size-3 animate-spin" />
           Processing
         </Badge>
       );
     case "pending":
       return (
         <Badge variant="secondary" className="gap-1 text-[11px]">
-          <Loader2 className="size-3 animate-spin" />
+          <CircleNotchIcon className="size-3 animate-spin" />
           Pending
         </Badge>
       );
@@ -100,21 +112,46 @@ function statusBadge(status: string) {
 
 function SongSkeleton() {
   return (
-    <li className="flex items-center gap-3 px-3 py-2.5 animate-pulse">
-      <div className="size-5 rounded bg-muted" />
-      <div className="flex-1 space-y-1.5">
-        <div className="h-3.5 bg-muted rounded w-2/3" />
-        <div className="h-3 bg-muted rounded w-1/3" />
+    <li className="flex items-center gap-3 px-4 py-3 min-h-[4.5rem] rounded-2xl border border-border bg-card animate-pulse">
+      <div className="size-11 rounded-xl bg-muted" />
+      <div className="flex-1 space-y-2">
+        <div className="h-4 bg-muted rounded w-2/3" />
+        <div className="h-3.5 bg-muted rounded w-1/3" />
       </div>
     </li>
   );
 }
 
+// Same order as the player's section dots, so a song's bar here matches the
+// sections you see when you open it.
+const SECTION_BAR_COLORS = [
+  "bg-violet-400", "bg-sky-400", "bg-emerald-400", "bg-amber-400", "bg-rose-400",
+  "bg-cyan-400", "bg-fuchsia-400", "bg-lime-400", "bg-orange-400", "bg-teal-400",
+];
+const COVER_COLORS = [
+  "bg-violet-500/15 text-violet-500", "bg-sky-500/15 text-sky-500", "bg-emerald-500/15 text-emerald-500",
+  "bg-amber-500/15 text-amber-500", "bg-rose-500/15 text-rose-500", "bg-fuchsia-500/15 text-fuchsia-500",
+];
+
+/** "G Minor" → "Gm", "F# Major" → "F♯". */
+function shortKey(key: string): string {
+  const m = key.match(/^([A-G][#b]?)\s*(Major|Minor)?/i);
+  if (!m) return key;
+  return m[1].replace("#", "♯").replace("b", "♭") + (/minor/i.test(m[2] ?? "") ? "m" : "");
+}
+
+function formatHours(sec: number): string {
+  const h = Math.floor(sec / 3600);
+  const m = Math.round((sec % 3600) / 60);
+  return h > 0 ? `${h}h ${m}m` : `${m}m`;
+}
+
 const SORT_OPTIONS: { value: SortMode; label: string; icon: React.ReactNode }[] = [
-  { value: "title", label: "Title", icon: <ArrowDownAZ className="size-3.5" /> },
-  { value: "artist", label: "Artist", icon: <ArrowDownAZ className="size-3.5" /> },
-  { value: "added", label: "Date Added", icon: <CalendarPlus className="size-3.5" /> },
-  { value: "recent", label: "Recent", icon: <Clock className="size-3.5" /> },
+  { value: "custom", label: "Folder order", icon: <DotsSixVerticalIcon className="size-3.5" /> },
+  { value: "title", label: "Title", icon: <SortAscendingIcon className="size-3.5" /> },
+  { value: "artist", label: "Artist", icon: <SortAscendingIcon className="size-3.5" /> },
+  { value: "added", label: "Date Added", icon: <CalendarPlusIcon className="size-3.5" /> },
+  { value: "recent", label: "Recent", icon: <ClockIcon className="size-3.5" /> },
 ];
 
 export default function LibraryPageWrapper() {
@@ -172,10 +209,25 @@ function LibraryPage() {
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [searchQuery, setSearchQuery] = useState("");
-  const [sortMode, setSortMode] = useState<SortMode>("added");
+  // "custom" is the folder's own drag-and-drop order; the whole library has
+  // none, so there it falls back to date added.
+  const [sortMode, setSortMode] = useState<SortMode>("custom");
   const [sortMenuOpen, setSortMenuOpen] = useState(false);
-  const [folderPickerOpen, setFolderPickerOpen] = useState(false);
-  const [folderPickerQuery, setFolderPickerQuery] = useState("");
+
+  // The one row whose swipe actions are showing
+  const [swipedId, setSwipedId] = useState<string | null>(null);
+  const [weekStats, setWeekStats] = useState<WeekStats | null>(null);
+  useEffect(() => {
+    fetch("/shreddy/api/stats")
+      .then((r) => r.json())
+      .then(setWeekStats)
+      .catch(() => {});
+  }, []);
+
+  // Drag-to-reorder within a folder
+  const [dragOrder, setDragOrder] = useState<string[] | null>(null);
+  const [dragId, setDragId] = useState<string | null>(null);
+  const dragListRef = useRef<HTMLElement | null>(null);
 
   // Folder dialog
   const [folderDialogOpen, setFolderDialogOpen] = useState(false);
@@ -189,6 +241,7 @@ function LibraryPage() {
 
   // YouTube import
   const [youtubeDialogOpen, setYoutubeDialogOpen] = useState(false);
+  const [playlistDialogOpen, setPlaylistDialogOpen] = useState(false);
   const [youtubeUrl, setYoutubeUrl] = useState("");
   const [youtubeImporting, setYoutubeImporting] = useState(false);
   const [youtubeError, setYoutubeError] = useState<string | null>(null);
@@ -368,12 +421,14 @@ function LibraryPage() {
   }
 
   async function deleteFolder(id: string, name: string) {
-    if (!confirm(`Delete folder "${name}"? Songs will be moved to unfiled.`)) return;
+    if (!confirm(`Delete folder "${name}"? The songs stay in your library.`)) return;
     await fetch(`/shreddy/api/folders/${id}`, { method: "DELETE" });
     if (activeFolder === id) setActiveFolder(null);
     await fetchFolders();
     await fetchSongs();
   }
+
+  const activeFolderRecord = activeFolder ? folders.find((f) => f.id === activeFolder) ?? null : null;
 
   // Filter songs by folder and search
   const filteredSongs = songs.filter((s) => {
@@ -385,11 +440,18 @@ function LibraryPage() {
     return true;
   });
 
+  const effectiveSort: SortMode = sortMode === "custom" && !activeFolder ? "added" : sortMode;
+  const folderPos = (s: Song) =>
+    s.folders.find((f) => f.folderId === activeFolder)?.orderIndex ?? 0;
+
   // Sort songs
   const sortedSongs = [...filteredSongs].sort((a, b) => {
     // Pinned always first
     if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
-    switch (sortMode) {
+    switch (effectiveSort) {
+      case "custom":
+        return folderPos(a) - folderPos(b) ||
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
       case "title":
         return a.title.localeCompare(b.title);
       case "artist":
@@ -406,170 +468,357 @@ function LibraryPage() {
   const pinnedSongs = sortedSongs.filter((s) => s.pinned);
   const unpinnedSongs = sortedSongs.filter((s) => !s.pinned);
 
-  function renderSong(song: Song) {
-    return (
-      <li
-        key={song.id}
-        className="group flex items-center gap-2.5 px-3 py-2 rounded-lg hover:bg-muted/50 active:scale-[0.99] transition-all cursor-pointer"
-        onClick={() => song.processingStatus === "ready" && router.push(`/songs/${song.id}`)}
-      >
-        {/* Pin button */}
-        <button
-          onClick={(e) => { e.stopPropagation(); handleTogglePin(song.id, song.pinned); }}
-          className={`shrink-0 p-1.5 -m-1 rounded-full active:scale-90 transition-transform ${
-            song.pinned ? "text-amber-500" : "text-muted-foreground/30 hover:text-amber-400"
-          }`}
-          title={song.pinned ? "Unpin" : "Pin"}
-        >
-          <Star className="size-4" fill={song.pinned ? "currentColor" : "none"} />
-        </button>
+  // While a drag is in progress rows are placed by dragOrder through CSS
+  // `order`, and the DOM keeps the server's order. Reordering the DOM would
+  // have React move the dragged row's own node whenever it goes down, which
+  // drops its pointer capture on iPad and ends the drag after one step.
+  const visualOrder = dragOrder ?? sortedSongs.map((s) => s.id);
+  const visualPos = new Map(visualOrder.map((id, i) => [id, i]));
 
-        {/* Song info */}
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            {song.processingStatus === "ready" ? (
-              <Link
-                href={`/songs/${song.id}`}
-                className="text-sm font-medium hover:underline truncate text-foreground"
-              >
-                {song.title}
-              </Link>
-            ) : (
-              <span className="text-sm font-medium truncate text-muted-foreground">
+  // Only the whole folder, in its own order, can be rearranged — a filtered
+  // or re-sorted view has no single order to write back.
+  const canReorder = !!activeFolder && effectiveSort === "custom" && !searchQuery;
+
+  /*
+   * Drag to reorder, by the grip on each row. Pointer events rather than
+   * HTML5 drag-and-drop, which never fires on iOS Safari. A row moves only
+   * within its own list, so pinned songs stay above the rest.
+   */
+  function onGripDown(e: React.PointerEvent, songId: string) {
+    e.preventDefault();
+    e.stopPropagation();
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    const list = (e.currentTarget as HTMLElement).closest("ul");
+    if (!list) return;
+    dragListRef.current = list;
+    setDragId(songId);
+    setDragOrder(sortedSongs.map((s) => s.id));
+  }
+
+  function onGripMove(e: React.PointerEvent) {
+    const list = dragListRef.current;
+    if (!dragId || !list) return;
+    const rows = (Array.from(list.children) as HTMLElement[]).sort(
+      (a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top
+    );
+    const target =
+      rows.find((r) => {
+        const rect = r.getBoundingClientRect();
+        return e.clientY < rect.top + rect.height / 2;
+      }) ?? rows[rows.length - 1];
+    const targetId = target?.dataset.songId;
+    if (!targetId || targetId === dragId) return;
+    setDragOrder((prev) => {
+      if (!prev) return prev;
+      const next = [...prev];
+      const from = next.indexOf(dragId);
+      const to = next.indexOf(targetId);
+      next.splice(from, 1);
+      next.splice(to, 0, dragId);
+      return next;
+    });
+  }
+
+  async function onGripUp() {
+    const order = dragOrder;
+    dragListRef.current = null;
+    setDragId(null);
+    setDragOrder(null);
+    if (!order || !activeFolder) return;
+    if (order.every((id, i) => id === sortedSongs[i]?.id)) return;
+    // Optimistic, so the row stays where it was dropped while the write lands.
+    setSongs((prev) =>
+      prev.map((s) => ({
+        ...s,
+        folders: s.folders.map((f) =>
+          f.folderId === activeFolder ? { ...f, orderIndex: order.indexOf(s.id) } : f
+        ),
+      }))
+    );
+    await fetch(`/shreddy/api/folders/${activeFolder}/order`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ songIds: order }),
+    }).catch(() => {});
+    await fetchSongs();
+  }
+
+  // Carry the folder being browsed into the player, so its Back control
+  // returns to that folder rather than to the whole library.
+  function songHref(songId: string) {
+    return activeFolder
+      ? `/songs/${songId}?folder=${encodeURIComponent(activeFolder)}`
+      : `/songs/${songId}`;
+  }
+
+  function renderSong(song: Song) {
+    const ready = song.processingStatus === "ready";
+    const actions: SwipeAction[] = [
+      {
+        label: song.pinned ? "Unpin" : "Pin",
+        icon: <StarIcon className="size-5" weight={song.pinned ? "fill" : "regular"} />,
+        className: "bg-amber-500",
+        onSelect: () => handleTogglePin(song.id, song.pinned),
+      },
+      ...(ready
+        ? [{ label: "Copy", icon: <CopyIcon className="size-5" />, className: "bg-zinc-500", onSelect: () => handleDuplicate(song.id) }]
+        : []),
+      { label: "Move", icon: <FolderPlusIcon className="size-5" />, className: "bg-blue-600", onSelect: () => openMoveDialog(song.id) },
+      { label: "Delete", icon: <TrashIcon className="size-5" />, className: "bg-red-500", onSelect: () => handleDelete(song.id, song.title) },
+    ];
+    const total = song.durationSec || song.sections.at(-1)?.endSec || 0;
+    return (
+      <SwipeRow
+        key={song.id}
+        data-song-id={song.id}
+        style={{ order: visualPos.get(song.id) }}
+        actions={actions}
+        open={swipedId === song.id}
+        onOpenChange={(o) => setSwipedId(o ? song.id : null)}
+        className={`rounded-2xl border border-border ${dragId === song.id ? "ring-2 ring-primary/40" : ""}`}
+      >
+        <div
+          className="group relative flex items-center gap-3 px-4 py-3 min-h-[4.5rem] cursor-pointer active:bg-muted/60 transition-colors"
+          onClick={() => ready && router.push(songHref(song.id))}
+        >
+          {canReorder && (
+            <span
+              onPointerDown={(e) => onGripDown(e, song.id)}
+              onPointerMove={onGripMove}
+              onPointerUp={onGripUp}
+              onPointerCancel={onGripUp}
+              onClick={(e) => e.stopPropagation()}
+              className="shrink-0 p-2.5 -m-2 text-muted-foreground/50 hover:text-foreground cursor-grab active:cursor-grabbing select-none"
+              style={{ touchAction: "none" }}
+              title="Drag to reorder"
+            >
+              <DotsSixVerticalIcon className="size-5" />
+            </span>
+          )}
+
+          {ready ? (
+            <div className={`relative size-11 shrink-0 rounded-xl grid place-items-center text-base font-semibold ${COVER_COLORS[song.title.charCodeAt(0) % COVER_COLORS.length]}`}>
+              {song.title.trim()[0]?.toUpperCase()}
+              {song.pinned && (
+                <StarIcon className="absolute -top-1 -right-1 size-4 text-amber-500 drop-shadow" weight="fill" />
+              )}
+            </div>
+          ) : (
+            <div className="size-11 shrink-0 rounded-xl bg-muted animate-pulse" />
+          )}
+
+          {/* Song info */}
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2">
+              <span className={`text-base font-semibold truncate ${ready ? "text-foreground" : "text-muted-foreground"}`}>
                 {song.title}
               </span>
-            )}
-            {statusBadge(song.processingStatus)}
-            {/* YouTube imports keep the source URL in originalFilename — link
-                back to it so the original is one tap away. */}
-            {/^https?:\/\//.test(song.originalFilename) && (
-              <a
-                href={song.originalFilename}
-                target="_blank"
-                rel="noreferrer"
-                onClick={(e) => e.stopPropagation()}
-                title="Open the source video on YouTube"
-                aria-label="Open the source video on YouTube"
-                className="shrink-0 text-muted-foreground/50 hover:text-red-500 transition-colors"
-              >
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M23.5 6.2a3 3 0 0 0-2.1-2.1C19.5 3.6 12 3.6 12 3.6s-7.5 0-9.4.5A3 3 0 0 0 .5 6.2 31 31 0 0 0 0 12a31 31 0 0 0 .5 5.8 3 3 0 0 0 2.1 2.1c1.9.5 9.4.5 9.4.5s7.5 0 9.4-.5a3 3 0 0 0 2.1-2.1A31 31 0 0 0 24 12a31 31 0 0 0-.5-5.8ZM9.6 15.6V8.4l6.2 3.6-6.2 3.6Z" />
-                </svg>
-              </a>
-            )}
-          </div>
-          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            {song.artist && (
-              <>
-                <span className="truncate max-w-[150px]">{song.artist}</span>
-                <span className="text-muted-foreground/30">·</span>
-              </>
-            )}
-            {song.durationSec ? (
-              <>
-                <span className="tabular-nums">{formatDuration(song.durationSec)}</span>
-              </>
-            ) : null}
-            {song.folders.length > 0 && !activeFolder && (
-              <>
-                <span className="text-muted-foreground/30">·</span>
-                <span className="flex items-center gap-1 flex-wrap">
-                  {song.folders.map((f) => (
-                    <span key={f.folderId} className="bg-muted px-1.5 py-0.5 rounded text-[11px]">
-                      {f.folder.name}
-                    </span>
-                  ))}
-                </span>
-              </>
-            )}
-            {song.genre && (
-              <>
-                <span className="text-muted-foreground/30">·</span>
-                <span className="text-[11px]">{song.genre}</span>
-              </>
+              {song.processingStatus === "error" && statusBadge(song.processingStatus)}
+              {/* YouTube imports keep the source URL in originalFilename — link
+                  back to it so the original is one tap away. */}
+              {/^https?:\/\//.test(song.originalFilename) && (
+                <a
+                  href={song.originalFilename}
+                  target="_blank"
+                  rel="noreferrer"
+                  onClick={(e) => e.stopPropagation()}
+                  title="Open the source video on YouTube"
+                  aria-label="Open the source video on YouTube"
+                  className="shrink-0 p-1 -m-1 text-muted-foreground/50 hover:text-red-500 transition-colors"
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M23.5 6.2a3 3 0 0 0-2.1-2.1C19.5 3.6 12 3.6 12 3.6s-7.5 0-9.4.5A3 3 0 0 0 .5 6.2 31 31 0 0 0 0 12a31 31 0 0 0 .5 5.8 3 3 0 0 0 2.1 2.1c1.9.5 9.4.5 9.4.5s7.5 0 9.4-.5a3 3 0 0 0 2.1-2.1A31 31 0 0 0 24 12a31 31 0 0 0-.5-5.8ZM9.6 15.6V8.4l6.2 3.6-6.2 3.6Z" />
+                  </svg>
+                </a>
+              )}
+            </div>
+            {ready || song.processingStatus === "error" ? (
+              <div className="flex items-center gap-1.5 text-sm text-muted-foreground min-w-0">
+                {song.artist && <span className="truncate max-w-[14rem]">{song.artist}</span>}
+                {song.folders.length > 0 && !activeFolder && (
+                  <span className="flex items-center gap-1 min-w-0 overflow-hidden">
+                    {song.artist && <span className="text-muted-foreground/40">·</span>}
+                    {song.folders.map((f) => (
+                      <span key={f.folderId} className="bg-muted px-1.5 py-0.5 rounded-md text-xs whitespace-nowrap">
+                        {f.folder.name}
+                      </span>
+                    ))}
+                  </span>
+                )}
+              </div>
+            ) : (
+              // Still importing: say what's happening, in the row's own shape.
+              <div className="flex items-center gap-2 text-sm text-loop">
+                <span className="size-1.5 rounded-full bg-loop animate-pulse" />
+                {song.processingStatus === "pending" ? "Waiting to process" : "Finding key, tempo and sections"}
+              </div>
             )}
           </div>
-        </div>
 
-        {/* Actions — visible on group hover on desktop, always visible on touch */}
-        <div className="flex items-center gap-0 shrink-0 opacity-60 group-hover:opacity-100 transition-opacity">
-          {song.processingStatus === "ready" && (
-            <button
-              onClick={(e) => { e.stopPropagation(); handleDuplicate(song.id); }}
-              className="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted active:scale-90 transition-all"
-              title="Duplicate"
-            >
-              <Copy className="size-3.5" />
-            </button>
+          {/* The song's structure at a glance */}
+          {song.sections.length > 0 && total > 0 && (
+            <div className="hidden md:flex w-28 xl:w-48 h-2 gap-0.5 rounded-full overflow-hidden shrink-0" title={`${song.sections.length} sections`}>
+              {song.sections.map((sec, idx) => (
+                <span
+                  key={idx}
+                  className={SECTION_BAR_COLORS[idx % SECTION_BAR_COLORS.length]}
+                  style={{ width: `${((sec.endSec - sec.startSec) / total) * 100}%` }}
+                />
+              ))}
+            </div>
           )}
-          <button
-            onClick={(e) => { e.stopPropagation(); openMoveDialog(song.id); }}
-            className="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted active:scale-90 transition-all"
-            title="Folders"
-          >
-            <FolderInput className="size-3.5" />
-          </button>
-          <button
-            onClick={(e) => { e.stopPropagation(); handleDelete(song.id, song.title); }}
-            className="p-2 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 active:scale-90 transition-all"
-            title="Delete"
-          >
-            <Trash2 className="size-3.5" />
-          </button>
+
+          <div className="hidden sm:block w-24 shrink-0 text-right text-sm text-muted-foreground tabular-nums">
+            {[song.musicalKey && shortKey(song.musicalKey), song.bpm && Math.round(song.bpm)].filter(Boolean).join(" · ")}
+          </div>
+          <div className="w-12 shrink-0 text-right text-sm text-muted-foreground tabular-nums">
+            {formatDuration(song.durationSec)}
+          </div>
+
+          {/* With a mouse there's no swipe, so the actions appear on hover —
+              floating over the row's end rather than holding a column open,
+              which on a narrow window squeezed the title down to one letter. */}
+          <div className="hidden [@media(pointer:fine)]:flex absolute right-3 top-1/2 -translate-y-1/2 items-center gap-0.5 p-1 rounded-xl bg-card border border-border shadow-sm opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-opacity">
+            {actions.map((a) => (
+              <button
+                key={a.label}
+                onClick={(e) => { e.stopPropagation(); a.onSelect(); }}
+                className="size-9 grid place-items-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted active:scale-90 transition-all [&_svg]:size-4"
+                title={a.label}
+              >
+                {a.icon}
+              </button>
+            ))}
+          </div>
         </div>
-      </li>
+      </SwipeRow>
     );
   }
 
+  const last7 = weekStats?.dailyBreakdown ?? [];
+  const last7Max = Math.max(1, ...last7.map((d) => d.totalSec));
+
   return (
-    <main className="flex-1 max-w-4xl mx-auto w-full px-4 py-6">
+    <AppShell
+      appId="shreddy"
+      title="Shreddy"
+      sidebar={
+        <>
+          <SidebarItem
+            active={activeFolder === null}
+            icon={<MusicNotesIcon className="size-5" />}
+            label="All songs"
+            count={songs.length}
+            onClick={() => setActiveFolder(null)}
+          />
+          <SidebarSection label="Folders" onAdd={openNewFolder} addLabel="New folder" />
+          {folders.map((folder) => (
+            <SidebarItem
+              key={folder.id}
+              active={activeFolder === folder.id}
+              icon={activeFolder === folder.id ? <FolderOpenIcon className="size-5" /> : <FolderIcon className="size-5" />}
+              label={folder.name}
+              count={folder._count.songFolders}
+              onClick={() => setActiveFolder(folder.id)}
+            />
+          ))}
+        </>
+      }
+      footer={
+        weekStats && (
+          <Link href="/stats" className="block rounded-2xl bg-muted p-4 active:scale-[0.98] transition-transform">
+            <div className="text-3xl font-semibold leading-9">
+              {weekStats.streak} {weekStats.streak === 1 ? "day" : "days"}
+            </div>
+            <div className="text-sm text-muted-foreground">
+              streak · {formatHours(last7.reduce((sum, d) => sum + d.totalSec, 0))} in 7 days
+            </div>
+            <div className="mt-3 flex items-end gap-1.5 h-12">
+              {last7.map((d, idx) => (
+                <div
+                  key={d.date}
+                  className={`flex-1 rounded ${idx === last7.length - 1 ? "bg-loop" : "bg-foreground/25"}`}
+                  style={{ height: `${Math.max(6, (d.totalSec / last7Max) * 100)}%` }}
+                  title={`${d.date}: ${formatHours(d.totalSec)}`}
+                />
+              ))}
+            </div>
+            <div className="mt-1 flex gap-1.5">
+              {last7.map((d) => (
+                <span key={d.date} className="flex-1 text-center text-xs text-muted-foreground">
+                  {"SMTWTFS"[new Date(`${d.date}T12:00:00`).getDay()]}
+                </span>
+              ))}
+            </div>
+          </Link>
+        )
+      }
+    >
+    <main className="flex-1 max-w-4xl lg:max-w-none mx-auto w-full px-4 lg:px-8 py-6">
       {/* Header */}
-      <div className="flex items-center justify-between mb-4">
-        <h1 className="text-xl font-semibold tracking-tight text-foreground">Shreddy</h1>
-        <div className="flex items-center gap-1">
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
+        <div className="flex items-center gap-1 lg:hidden">
+          <SidebarMenuButton />
+          <h1 className="text-xl font-semibold tracking-tight text-foreground">Shreddy</h1>
+        </div>
+        {/* On a phone the actions take their own row under the title, so the
+            app menu stays beside the name instead of wrapping on its own. */}
+        <div className="order-last w-full sm:order-none sm:w-auto flex items-center gap-2 lg:ml-auto">
           <Link
             href="/stats"
-            className="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted active:scale-90 transition-all"
+            className="size-11 grid place-items-center rounded-full text-muted-foreground hover:text-foreground hover:bg-muted active:scale-90 transition-all"
             title="Practice Stats"
           >
-            <BarChart3 className="size-5" />
+            <ChartBarIcon className="size-5" />
           </Link>
           <Link
             href="/settings"
-            className="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted active:scale-90 transition-all"
+            className="size-11 grid place-items-center rounded-full text-muted-foreground hover:text-foreground hover:bg-muted active:scale-90 transition-all"
             title="Settings"
           >
-            <Settings className="size-5" />
+            <GearSixIcon className="size-5" />
           </Link>
           <Button
             variant="outline"
             size="sm"
             onClick={() => { setYoutubeDialogOpen(true); setYoutubeError(null); setYoutubeUrl(""); setAnalyzeSections(analyzeDefault); }}
-            className="gap-1 h-8 px-2.5 text-xs"
+            className="gap-1.5 h-11 px-3.5 sm:px-4 rounded-full text-sm font-semibold"
+            aria-label="Import from a YouTube link"
           >
-            <Link2 className="size-3.5" />
-            URL
+            <LinkIcon className="size-4" />
+            <span className="hidden sm:inline">URL</span>
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setPlaylistDialogOpen(true)}
+            className="gap-1.5 h-11 px-3.5 sm:px-4 rounded-full text-sm font-semibold"
+            title="Import an Apple Music playlist"
+            aria-label="Import a playlist"
+          >
+            <PlaylistIcon className="size-4" />
+            <span className="hidden sm:inline">Playlist</span>
           </Button>
           <Button
             size="sm"
             disabled={uploading}
             onClick={() => document.getElementById("file-upload")?.click()}
-            className="gap-1 h-8 px-2.5 text-xs"
+            className="gap-1.5 h-11 px-3.5 sm:px-4 rounded-full text-sm font-semibold"
+            aria-label="Upload audio files"
           >
             {uploading ? (
               <>
-                <Loader2 className="size-3.5 animate-spin" />
+                <CircleNotchIcon className="size-3.5 animate-spin" />
                 {uploadProgress > 0 ? `${uploadProgress}%` : "..."}
               </>
             ) : (
               <>
-                <Upload className="size-3.5" />
-                Upload
+                <UploadSimpleIcon className="size-4" />
+                <span className="hidden sm:inline">Upload</span>
               </>
             )}
           </Button>
         </div>
-        <AppSwitcher currentAppId="shreddy" />
         <input
           id="file-upload"
           type="file"
@@ -589,165 +838,47 @@ function LibraryPage() {
         </div>
       )}
 
-      {/* Search */}
-      <div className="relative mb-3">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
-        <Input
-          placeholder="Search songs..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="pl-9 h-9 bg-card text-sm"
-        />
-        {searchQuery && (
-          <button
-            onClick={() => setSearchQuery("")}
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-          >
-            <X className="size-4" />
-          </button>
-        )}
-      </div>
-
-      {/* Folder tabs + Sort */}
-      <div className="flex items-center gap-2 mb-3">
-        <div className="flex items-center gap-1 overflow-x-auto flex-1 pb-0.5 -mx-1 px-1">
-          <button
-            onClick={() => setActiveFolder(null)}
-            className={`px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-colors active:scale-95 ${
-              activeFolder === null
-                ? "bg-primary text-primary-foreground"
-                : "bg-muted text-muted-foreground hover:bg-accent"
-            }`}
-          >
-            All ({songs.length})
-          </button>
-          {folders.map((folder) => (
+      {/* Search + sort */}
+      <div className="flex items-center gap-2 mb-4">
+        <div className="relative flex-1">
+          <MagnifyingGlassIcon className="absolute left-4 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+          <Input
+            placeholder="Search songs..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-10 h-12 rounded-full bg-card text-base"
+          />
+          {searchQuery && (
             <button
-              key={folder.id}
-              onClick={() => setActiveFolder(folder.id)}
-              className={`px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-colors active:scale-95 flex items-center gap-1 ${
-                activeFolder === folder.id
-                  ? "bg-primary text-primary-foreground"
-                  : "bg-muted text-muted-foreground hover:bg-accent"
-              }`}
+              onClick={() => setSearchQuery("")}
+              className="absolute right-2 top-1/2 -translate-y-1/2 size-9 grid place-items-center text-muted-foreground hover:text-foreground"
             >
-              {folder.name} ({folder._count.songFolders})
+              <XIcon className="size-4" />
             </button>
-          ))}
-          <button
-            onClick={openNewFolder}
-            className="p-1.5 rounded-full text-muted-foreground hover:bg-muted hover:text-foreground active:scale-90 transition-all shrink-0"
-            title="New folder"
-          >
-            <Plus className="size-3.5" />
-          </button>
+          )}
         </div>
 
-        {/* Folder picker — popover with searchable list of all folders.
-            Hidden when there are few folders (≤ 3) since they fit inline. */}
-        {folders.length > 3 && (
-          <div className="relative shrink-0">
-            <button
-              onClick={() => { setFolderPickerOpen(!folderPickerOpen); setFolderPickerQuery(""); }}
-              className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs text-muted-foreground hover:text-foreground hover:bg-muted active:scale-95 transition-all"
-              title="All folders"
-            >
-              <MoreHorizontal className="size-3.5" />
-            </button>
-            {folderPickerOpen && (
-              <>
-                <div className="fixed inset-0 z-30" onClick={() => setFolderPickerOpen(false)} />
-                <div className="absolute right-0 top-full mt-1 z-40 bg-card border border-border rounded-lg shadow-lg w-64 max-h-[60vh] overflow-hidden flex flex-col">
-                  <div className="p-2 border-b border-border">
-                    <div className="relative">
-                      <Search className="absolute left-2 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
-                      <Input
-                        autoFocus
-                        value={folderPickerQuery}
-                        onChange={(e) => setFolderPickerQuery(e.target.value)}
-                        placeholder="Search folders…"
-                        className="pl-7 h-8 text-xs"
-                      />
-                    </div>
-                  </div>
-                  <div className="overflow-y-auto py-1">
-                    <button
-                      onClick={() => { setActiveFolder(null); setFolderPickerOpen(false); }}
-                      className={`w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-muted transition-colors ${activeFolder === null ? "text-primary font-medium" : "text-foreground"}`}
-                    >
-                      {activeFolder === null ? <Check className="size-3.5" /> : <span className="size-3.5" />}
-                      <span className="flex-1 text-left">All</span>
-                      <span className="text-muted-foreground tabular-nums">{songs.length}</span>
-                    </button>
-                    {folders
-                      .filter((f) => !folderPickerQuery || f.name.toLowerCase().includes(folderPickerQuery.toLowerCase()))
-                      .map((folder) => {
-                        const isActive = activeFolder === folder.id;
-                        return (
-                          <button
-                            key={folder.id}
-                            onClick={() => { setActiveFolder(folder.id); setFolderPickerOpen(false); }}
-                            className={`w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-muted transition-colors ${isActive ? "text-primary font-medium" : "text-foreground"}`}
-                          >
-                            {isActive ? <Check className="size-3.5" /> : <span className="size-3.5" />}
-                            <span className="flex-1 text-left truncate">{folder.name}</span>
-                            <span className="text-muted-foreground tabular-nums">{folder._count.songFolders}</span>
-                          </button>
-                        );
-                      })}
-                  </div>
-                </div>
-              </>
-            )}
-          </div>
-        )}
-
-        {/* Folder actions (rename/delete) when a folder is active */}
-        {activeFolder && (
-          <div className="flex items-center gap-0.5 shrink-0">
-            <button
-              onClick={() => {
-                const folder = folders.find((f) => f.id === activeFolder);
-                if (folder) openEditFolder(folder);
-              }}
-              className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted active:scale-90 transition-all"
-              title="Rename folder"
-            >
-              <Pencil className="size-3.5" />
-            </button>
-            <button
-              onClick={() => {
-                const folder = folders.find((f) => f.id === activeFolder);
-                if (folder) deleteFolder(folder.id, folder.name);
-              }}
-              className="p-1.5 rounded-lg text-muted-foreground hover:text-destructive active:scale-90 transition-all"
-              title="Delete folder"
-            >
-              <Trash2 className="size-3.5" />
-            </button>
-          </div>
-        )}
-
-        {/* Sort button */}
+        {/* Sort button — next to the search field rather than after the
+            folders, so the folder row is nothing but folders. */}
         <div className="relative shrink-0">
           <button
             onClick={() => setSortMenuOpen(!sortMenuOpen)}
-            className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs text-muted-foreground hover:text-foreground hover:bg-muted active:scale-95 transition-all"
+            className="flex items-center gap-1.5 h-12 px-4 rounded-full text-sm text-muted-foreground hover:text-foreground hover:bg-muted active:scale-95 transition-all"
             title="Sort"
           >
-            <ArrowDownUp className="size-3.5" />
-            <span className="hidden sm:inline">{SORT_OPTIONS.find(o => o.value === sortMode)?.label}</span>
+            <ArrowsDownUpIcon className="size-4" />
+            <span className="hidden sm:inline">{SORT_OPTIONS.find(o => o.value === effectiveSort)?.label}</span>
           </button>
           {sortMenuOpen && (
             <>
               <div className="fixed inset-0 z-30" onClick={() => setSortMenuOpen(false)} />
-              <div className="absolute right-0 top-full mt-1 z-40 bg-card border border-border rounded-lg shadow-lg py-1 min-w-[140px]">
-                {SORT_OPTIONS.map((opt) => (
+              <div className="absolute right-0 top-full mt-2 z-40 bg-popover border border-border rounded-2xl shadow-lg p-1.5 min-w-[11rem]">
+                {SORT_OPTIONS.filter((opt) => opt.value !== "custom" || activeFolder).map((opt) => (
                   <button
                     key={opt.value}
                     onClick={() => { setSortMode(opt.value); setSortMenuOpen(false); }}
-                    className={`w-full text-left px-3 py-2 text-xs flex items-center gap-2 hover:bg-muted transition-colors ${
-                      sortMode === opt.value ? "text-primary font-medium" : "text-foreground"
+                    className={`w-full text-left px-3 h-11 rounded-xl text-sm flex items-center gap-2 hover:bg-muted transition-colors ${
+                      effectiveSort === opt.value ? "text-primary font-medium" : "text-foreground"
                     }`}
                   >
                     {opt.icon}
@@ -760,11 +891,43 @@ function LibraryPage() {
         </div>
       </div>
 
+      <div className="mb-4">
+        {/* What you are looking at, and what you can do to it. Its own line,
+            so selecting a folder never reshuffles the row above. */}
+        <div className="flex items-center gap-2 pl-0.5">
+          <h2 className="text-2xl font-semibold text-foreground truncate">
+            {activeFolderRecord ? activeFolderRecord.name : "All songs"}
+          </h2>
+          <span className="text-sm text-muted-foreground whitespace-nowrap mt-1">
+            {sortedSongs.length} {sortedSongs.length === 1 ? "song" : "songs"}
+          </span>
+          <div className="flex-1" />
+          {activeFolderRecord && (
+            <>
+              <button
+                onClick={() => openEditFolder(activeFolderRecord)}
+                className="size-10 grid place-items-center rounded-full text-muted-foreground hover:text-foreground hover:bg-muted active:scale-90 transition-all"
+                title="Rename folder"
+              >
+                <PencilSimpleIcon className="size-4" />
+              </button>
+              <button
+                onClick={() => deleteFolder(activeFolderRecord.id, activeFolderRecord.name)}
+                className="size-10 grid place-items-center rounded-full text-muted-foreground hover:text-destructive active:scale-90 transition-all"
+                title="Delete folder"
+              >
+                <TrashIcon className="size-4" />
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+
       {/* Error state */}
       {error && (
         <div className="text-center py-12">
           <div className="inline-flex items-center justify-center size-14 rounded-full bg-destructive/10 mb-4">
-            <X className="size-6 text-destructive" />
+            <XIcon className="size-6 text-destructive" />
           </div>
           <p className="text-base font-medium text-foreground mb-1">Something went wrong</p>
           <p className="text-sm text-muted-foreground mb-4">{error}</p>
@@ -776,7 +939,7 @@ function LibraryPage() {
 
       {/* Loading skeleton */}
       {loading && !error && (
-        <ul className="space-y-0.5">
+        <ul className="flex flex-col gap-2">
           <SongSkeleton />
           <SongSkeleton />
           <SongSkeleton />
@@ -789,64 +952,66 @@ function LibraryPage() {
       {!loading && !error && (
         <>
           {sortedSongs.length === 0 ? (
-            <div className="text-center py-20">
-              <div className="inline-flex items-center justify-center size-16 rounded-full bg-muted mb-4">
-                {searchQuery ? (
-                  <Search className="size-7 text-muted-foreground" />
-                ) : (
-                  <Music className="size-7 text-muted-foreground" />
+            searchQuery ? (
+              <div className="text-center py-20">
+                <div className="inline-flex items-center justify-center size-16 rounded-2xl bg-muted mb-4">
+                  <MagnifyingGlassIcon className="size-7 text-muted-foreground" />
+                </div>
+                <p className="text-lg font-semibold text-foreground mb-1">No matching songs</p>
+                <p className="text-base text-muted-foreground">Try a different search term</p>
+              </div>
+            ) : (
+              // Nothing here yet: show the ways in rather than a blank panel.
+              <div className="py-16 max-w-lg mx-auto text-center">
+                <div className="inline-flex items-center justify-center size-16 rounded-2xl bg-muted mb-5">
+                  <MusicNotesIcon className="size-7 text-loop" />
+                </div>
+                <p className="text-2xl font-semibold text-foreground text-balance">
+                  {activeFolder ? "Build the set for this folder" : "Add your first song"}
+                </p>
+                <p className="mt-2 text-base text-muted-foreground text-pretty">
+                  Shreddy finds the key, tempo and sections, so you can loop the hard parts straight away.
+                </p>
+                <div className="mt-8 grid grid-cols-3 gap-3">
+                  {[
+                    { label: "YouTube link", hint: "Paste or search", icon: <LinkIcon className="size-6" />, onClick: () => { setYoutubeDialogOpen(true); setYoutubeError(null); setYoutubeUrl(""); setAnalyzeSections(analyzeDefault); } },
+                    { label: "Playlist", hint: "Import every track", icon: <PlaylistIcon className="size-6" />, onClick: () => setPlaylistDialogOpen(true) },
+                    { label: "Upload", hint: "MP3 or MP4", icon: <UploadSimpleIcon className="size-6" />, onClick: () => document.getElementById("file-upload")?.click() },
+                  ].map((o) => (
+                    <button
+                      key={o.label}
+                      onClick={o.onClick}
+                      className="rounded-2xl border border-border bg-card px-3 py-4 grid justify-items-center gap-2 text-sm font-semibold text-foreground hover:bg-muted active:scale-[0.97] transition-all"
+                    >
+                      <span className="text-muted-foreground">{o.icon}</span>
+                      {o.label}
+                      <span className="text-xs font-normal text-muted-foreground">{o.hint}</span>
+                    </button>
+                  ))}
+                </div>
+                {activeFolder && (
+                  <p className="mt-4 text-sm text-muted-foreground">
+                    Or swipe a song left in All songs and tap Move.
+                  </p>
                 )}
               </div>
-              <p className="text-base font-medium text-foreground mb-1">
-                {searchQuery
-                  ? "No matching songs"
-                  : activeFolder
-                  ? "No songs in this folder"
-                  : "No songs yet"}
-              </p>
-              <p className="text-sm text-muted-foreground">
-                {searchQuery
-                  ? "Try a different search term"
-                  : "Upload an MP3 or MP4 to get started"}
-              </p>
-            </div>
+            )
           ) : (
-            <div className="bg-card border border-border rounded-xl overflow-hidden">
+            <div className="space-y-4">
               {pinnedSongs.length > 0 && (
-                <>
-                  <div className="px-3 pt-2.5 pb-1">
-                    <h2 className="text-[11px] font-semibold text-muted-foreground uppercase tracking-widest">
-                      Pinned
-                    </h2>
-                  </div>
-                  <ul className="divide-y divide-border/50">
-                    {pinnedSongs.map(renderSong)}
-                  </ul>
-                  {unpinnedSongs.length > 0 && <div className="border-t border-border" />}
-                </>
+                <section>
+                  <h3 className="px-1 pb-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Pinned</h3>
+                  <ul className="flex flex-col gap-2">{pinnedSongs.map(renderSong)}</ul>
+                </section>
               )}
-
               {unpinnedSongs.length > 0 && (
-                <>
+                <section>
                   {pinnedSongs.length > 0 && (
-                    <div className="px-3 pt-2.5 pb-1">
-                      <h2 className="text-[11px] font-semibold text-muted-foreground uppercase tracking-widest">
-                        Library
-                      </h2>
-                    </div>
+                    <h3 className="px-1 pb-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Library</h3>
                   )}
-                  <ul className="divide-y divide-border/50">
-                    {unpinnedSongs.map(renderSong)}
-                  </ul>
-                </>
+                  <ul className="flex flex-col gap-2">{unpinnedSongs.map(renderSong)}</ul>
+                </section>
               )}
-
-              <div className="px-3 py-2 border-t border-border">
-                <p className="text-[11px] text-muted-foreground/50">
-                  {sortedSongs.length} song{sortedSongs.length !== 1 ? "s" : ""}
-                  {activeFolder ? " in folder" : ""}
-                </p>
-              </div>
             </div>
           )}
         </>
@@ -902,7 +1067,7 @@ function LibraryPage() {
                       onChange={() => toggleSelectedFolder(folder.id)}
                       className="size-4 rounded"
                     />
-                    <FolderOpen className="size-4 text-muted-foreground" />
+                    <FolderOpenIcon className="size-4 text-muted-foreground" />
                     <span className="flex-1">{folder.name}</span>
                   </label>
                 );
@@ -920,6 +1085,12 @@ function LibraryPage() {
           </div>
         </DialogContent>
       </Dialog>
+
+      <PlaylistImportDialog
+        open={playlistDialogOpen}
+        onOpenChange={setPlaylistDialogOpen}
+        onImported={() => { fetchSongs(); fetchFolders(); }}
+      />
 
       {/* YouTube import dialog */}
       <Dialog
@@ -968,7 +1139,7 @@ function LibraryPage() {
               <Button onClick={handleYoutubeImport} disabled={youtubeImporting || !youtubeUrl.trim()}>
                 {youtubeImporting ? (
                   <>
-                    <Loader2 className="size-4 animate-spin mr-1.5" />
+                    <CircleNotchIcon className="size-4 animate-spin mr-1.5" />
                     Importing...
                   </>
                 ) : (
@@ -980,5 +1151,6 @@ function LibraryPage() {
         </DialogContent>
       </Dialog>
     </main>
+    </AppShell>
   );
 }

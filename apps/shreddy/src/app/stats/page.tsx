@@ -1,7 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { Clock, Flame, Music, TrendingUp, Loader2 } from "lucide-react";
+import {
+  CircleNotchIcon,
+  ClockIcon,
+  FireIcon,
+  MusicNotesIcon,
+  TrendUpIcon,
+} from "@phosphor-icons/react";
 import { BackToHome } from "@music-apps/shared/back-to-home";
 import useSWR from "swr";
 
@@ -58,7 +64,7 @@ export default function StatsPage() {
           <h1 className="text-xl font-semibold text-foreground">Practice Stats</h1>
         </div>
         <div className="flex items-center justify-center py-12">
-          <Loader2 className="size-6 animate-spin text-muted-foreground" />
+          <CircleNotchIcon className="size-6 animate-spin text-muted-foreground" />
         </div>
       </main>
     );
@@ -79,7 +85,7 @@ export default function StatsPage() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
         <div className="bg-card border border-border rounded-xl p-4">
           <div className="flex items-center gap-2 mb-1">
-            <Clock className="size-4 text-blue-500" />
+            <ClockIcon className="size-4 text-blue-500" />
             <span className="text-xs text-muted-foreground">Today</span>
           </div>
           <p className="text-2xl font-bold text-foreground">{formatDuration(stats.today.durationSec)}</p>
@@ -88,7 +94,7 @@ export default function StatsPage() {
 
         <div className="bg-card border border-border rounded-xl p-4">
           <div className="flex items-center gap-2 mb-1">
-            <TrendingUp className="size-4 text-emerald-500" />
+            <TrendUpIcon className="size-4 text-emerald-500" />
             <span className="text-xs text-muted-foreground">This Week</span>
           </div>
           <p className="text-2xl font-bold text-foreground">{formatDuration(stats.week.durationSec)}</p>
@@ -97,7 +103,7 @@ export default function StatsPage() {
 
         <div className="bg-card border border-border rounded-xl p-4">
           <div className="flex items-center gap-2 mb-1">
-            <Flame className="size-4 text-orange-500" />
+            <FireIcon className="size-4 text-orange-500" />
             <span className="text-xs text-muted-foreground">Streak</span>
           </div>
           <p className="text-2xl font-bold text-foreground">{stats.streak}</p>
@@ -106,7 +112,7 @@ export default function StatsPage() {
 
         <div className="bg-card border border-border rounded-xl p-4">
           <div className="flex items-center gap-2 mb-1">
-            <Music className="size-4 text-violet-500" />
+            <MusicNotesIcon className="size-4 text-violet-500" />
             <span className="text-xs text-muted-foreground">All Time</span>
           </div>
           <p className="text-2xl font-bold text-foreground">{formatDuration(stats.allTime.durationSec)}</p>
@@ -174,7 +180,7 @@ export default function StatsPage() {
       {stats.allTime.sessions === 0 && (
         <div className="text-center py-12">
           <div className="inline-flex items-center justify-center size-14 rounded-full bg-muted mb-4">
-            <Music className="size-6 text-muted-foreground" />
+            <MusicNotesIcon className="size-6 text-muted-foreground" />
           </div>
           <p className="text-base font-medium text-foreground mb-1">No practice sessions yet</p>
           <p className="text-sm text-muted-foreground">Start practicing to see your stats here.</p>

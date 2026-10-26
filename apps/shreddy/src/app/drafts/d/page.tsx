@@ -5,8 +5,18 @@ import Link from "next/link";
 import { Badge } from "@music-apps/ui";
 import { Slider } from "@music-apps/ui";
 import {
-  ArrowLeft, Play, Pause, SkipBack, Repeat, Repeat2, Star, Disc3, Volume2, StickyNote, Clock,
-} from "lucide-react";
+  ArrowLeftIcon,
+  ArrowsClockwiseIcon,
+  ClockIcon,
+  NoteIcon,
+  PauseIcon,
+  PlayIcon,
+  RepeatIcon,
+  SkipBackIcon,
+  SpeakerHighIcon,
+  StarIcon,
+  VinylRecordIcon,
+} from "@phosphor-icons/react";
 import { mockSong, mockSections, sectionColors, sectionDotColors, formatTime } from "../mock-data";
 
 const TEMPO_VALUES = [0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2];
@@ -27,7 +37,7 @@ export default function DraftD() {
       {/* Nav */}
       <div className="flex items-center justify-between mb-2">
         <Link href="/drafts" className="text-muted-foreground hover:text-foreground">
-          <ArrowLeft className="size-5" />
+          <ArrowLeftIcon className="size-5" />
         </Link>
         <Badge variant="outline" className="text-xs">Option D: Studio Mixer</Badge>
       </div>
@@ -43,9 +53,9 @@ export default function DraftD() {
           <span>{mockSong.genre}</span>
           <span className="tabular-nums">{formatTime(duration)}</span>
           <span className="flex items-center gap-1 text-muted-foreground/50">
-            <Clock className="size-3" /> 2:45
+            <ClockIcon className="size-3" /> 2:45
           </span>
-          <button className="p-1 text-muted-foreground hover:text-foreground"><StickyNote className="size-4" /></button>
+          <button className="p-1 text-muted-foreground hover:text-foreground"><NoteIcon className="size-4" /></button>
         </div>
       </div>
 
@@ -102,7 +112,7 @@ export default function DraftD() {
                   {widthPct > 4 && (
                     <div className="flex items-center gap-0.5">
                       {[1, 2, 3, 4, 5].map(star => (
-                        <Star
+                        <StarIcon
                           key={star}
                           className={`size-2 ${section.masteryRating && star <= section.masteryRating ? "text-yellow-400 fill-yellow-400" : "text-foreground/10"}`}
                         />
@@ -158,19 +168,19 @@ export default function DraftD() {
               loopSong ? "text-primary" : "text-muted-foreground/30"
             }`}
           >
-            <Repeat className="size-4" />
+            <RepeatIcon className="size-4" />
           </button>
           <button className="size-9 rounded-full flex items-center justify-center text-muted-foreground hover:text-foreground border border-border">
-            <SkipBack className="size-4" />
+            <SkipBackIcon className="size-4" />
           </button>
           <button
             className="size-14 rounded-full bg-primary text-primary-foreground flex items-center justify-center active:scale-95 transition-transform shadow-sm"
             onClick={() => setPlaying(!playing)}
           >
-            {playing ? <Pause className="size-6" /> : <Play className="size-6 ml-0.5" />}
+            {playing ? <PauseIcon className="size-6" /> : <PlayIcon className="size-6 ml-0.5" />}
           </button>
           <button className="size-9 rounded-full flex items-center justify-center text-muted-foreground hover:text-foreground border border-border">
-            <Repeat2 className="size-4" />
+            <ArrowsClockwiseIcon className="size-4" />
           </button>
         </div>
 
@@ -191,7 +201,7 @@ export default function DraftD() {
               metronomeOn ? "text-primary" : "text-muted-foreground/50"
             }`}
           >
-            <Disc3 className={`size-3.5 ${metronomeOn ? "animate-spin" : ""}`} />
+            <VinylRecordIcon className={`size-3.5 ${metronomeOn ? "animate-spin" : ""}`} />
             METRONOME
           </button>
           {metronomeOn && (
@@ -203,7 +213,7 @@ export default function DraftD() {
                 ))}
               </div>
               <div className="flex items-center gap-1.5 min-w-[100px]">
-                <Volume2 className="size-3 text-muted-foreground" />
+                <SpeakerHighIcon className="size-3 text-muted-foreground" />
                 <Slider min={0} max={1} step={0.05} value={[0.5]} className="flex-1" />
               </div>
             </>
@@ -212,7 +222,7 @@ export default function DraftD() {
         <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
           {selectedIds.length > 0 && (
             <span className="flex items-center gap-1 text-blue-400 font-mono">
-              <Repeat className="size-3" />
+              <RepeatIcon className="size-3" />
               {mockSections.filter(s => selectedIds.includes(s.id)).map(s => s.name).join(" + ")}
             </span>
           )}

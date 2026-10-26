@@ -10,7 +10,7 @@
 //   touch the button edge.
 
 import { useEffect, useRef, useState } from "react";
-import { ChevronDown, Loader2 } from "lucide-react";
+import { CaretDownIcon, CircleNotchIcon } from "@phosphor-icons/react";
 
 interface TempoSelectProps {
   value: number;
@@ -49,24 +49,26 @@ export function TempoSelect({ value, values, onChange, busy }: TempoSelectProps)
       <button
         onClick={() => setOpen((o) => !o)}
         disabled={busy}
-        className={`h-10 sm:h-11 px-3 rounded-lg text-sm font-semibold flex items-center gap-1.5 transition-colors active:scale-95 ${
+        className={`h-12 px-4 rounded-full text-base font-semibold flex items-center gap-1.5 transition-all duration-200 ease-spring active:scale-95 ${
           open
             ? "bg-primary text-primary-foreground"
-            : "bg-muted text-foreground hover:bg-accent"
+            : value !== 1
+            ? "bg-loop/15 text-loop"
+            : "text-foreground hover:bg-foreground/5"
         } disabled:opacity-50`}
         aria-haspopup="listbox"
         aria-expanded={open}
         title="Tempo"
       >
-        {busy ? <Loader2 className="size-3.5 animate-spin" /> : null}
+        {busy ? <CircleNotchIcon className="size-3.5 animate-spin" /> : null}
         <span className="tabular-nums">{fmtTempo(value)}</span>
-        <ChevronDown className={`size-3.5 transition-transform ${open ? "rotate-180" : ""}`} />
+        <CaretDownIcon className={`size-3.5 transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
 
       {open && (
         <div
           role="listbox"
-          className="absolute bottom-full left-0 mb-2 z-50 bg-card border border-border rounded-xl shadow-lg p-1.5 grid grid-cols-4 gap-1 min-w-[14rem]"
+          className="absolute bottom-full left-0 mb-3 z-50 bg-popover border border-border rounded-2xl shadow-lg p-2 grid grid-cols-4 gap-1 min-w-[16rem]"
         >
           {values.map((v) => (
             <button
@@ -77,7 +79,7 @@ export function TempoSelect({ value, values, onChange, busy }: TempoSelectProps)
                 onChange(v);
                 setOpen(false);
               }}
-              className={`h-10 rounded-md text-sm font-semibold tabular-nums transition-colors active:scale-95 ${
+              className={`h-11 rounded-lg text-sm font-semibold tabular-nums transition-colors active:scale-95 ${
                 v === value
                   ? "bg-primary text-primary-foreground"
                   : "text-muted-foreground hover:bg-muted"

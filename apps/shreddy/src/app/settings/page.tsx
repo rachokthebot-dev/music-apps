@@ -3,7 +3,16 @@
 import { useEffect, useState } from "react";
 import { Button } from "@music-apps/ui";
 import { BackToHome } from "@music-apps/shared/back-to-home";
-import { Save, Loader2, Moon, Sun, Activity, CheckCircle2, XCircle, AlertTriangle } from "lucide-react";
+import {
+  CheckCircleIcon,
+  CircleNotchIcon,
+  FloppyDiskIcon,
+  MoonIcon,
+  PulseIcon,
+  SunIcon,
+  WarningIcon,
+  XCircleIcon,
+} from "@phosphor-icons/react";
 
 interface DepStatus {
   name: string;
@@ -69,7 +78,7 @@ export default function SettingsPage() {
   if (loading) {
     return (
       <main className="flex-1 flex items-center justify-center">
-        <Loader2 className="size-6 animate-spin text-muted-foreground" />
+        <CircleNotchIcon className="size-6 animate-spin text-muted-foreground" />
       </main>
     );
   }
@@ -85,7 +94,7 @@ export default function SettingsPage() {
         {/* Dark mode toggle */}
         <div className="flex items-center justify-between p-4 bg-card rounded-xl border border-border">
           <div className="flex items-center gap-3">
-            {darkMode ? <Moon className="size-5 text-muted-foreground" /> : <Sun className="size-5 text-muted-foreground" />}
+            {darkMode ? <MoonIcon className="size-5 text-muted-foreground" /> : <SunIcon className="size-5 text-muted-foreground" />}
             <div>
               <p className="text-sm font-medium text-foreground">Dark Mode</p>
               <p className="text-xs text-muted-foreground">Switch between light and dark themes</p>
@@ -104,23 +113,23 @@ export default function SettingsPage() {
         {/* System Health */}
         <div className="p-4 bg-card rounded-xl border border-border">
           <div className="flex items-center gap-2 mb-3">
-            <Activity className="size-4 text-muted-foreground" />
+            <PulseIcon className="size-4 text-muted-foreground" />
             <p className="text-sm font-medium text-foreground">System Dependencies</p>
           </div>
           {depsLoading ? (
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Loader2 className="size-4 animate-spin" /> Checking...
+              <CircleNotchIcon className="size-4 animate-spin" /> Checking...
             </div>
           ) : (
             <div className="space-y-2">
               {deps.map((dep) => (
                 <div key={dep.name} className="flex items-start gap-2">
                   {dep.installed ? (
-                    <CheckCircle2 className="size-4 mt-0.5 text-green-500 shrink-0" />
+                    <CheckCircleIcon className="size-4 mt-0.5 text-green-500 shrink-0" />
                   ) : dep.required ? (
-                    <XCircle className="size-4 mt-0.5 text-red-500 shrink-0" />
+                    <XCircleIcon className="size-4 mt-0.5 text-red-500 shrink-0" />
                   ) : (
-                    <AlertTriangle className="size-4 mt-0.5 text-yellow-500 shrink-0" />
+                    <WarningIcon className="size-4 mt-0.5 text-yellow-500 shrink-0" />
                   )}
                   <div className="min-w-0">
                     <span className="text-sm text-foreground">
@@ -203,7 +212,7 @@ export default function SettingsPage() {
               <>Saved!</>
             ) : (
               <>
-                <Save className="size-4" />
+                <FloppyDiskIcon className="size-4" />
                 Save
               </>
             )}

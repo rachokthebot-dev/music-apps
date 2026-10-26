@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ChevronLeft } from "lucide-react";
+import { CaretLeftIcon } from "@phosphor-icons/react";
 
 /**
  * Per-page sandbox chrome.
@@ -28,7 +28,7 @@ export function SandboxHeader({ technique, requirementId }: SandboxHeaderProps) 
           href="/sandbox"
           className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground active:scale-95 transition"
         >
-          <ChevronLeft className="size-4" />
+          <CaretLeftIcon className="size-4" />
           Sandbox
         </Link>
         <div className="text-[10px] uppercase tracking-[0.18em] text-[var(--sandbox-accent)] font-mono">

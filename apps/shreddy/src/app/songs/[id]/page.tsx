@@ -15,19 +15,20 @@ import {
   DialogTitle,
 } from "@music-apps/ui";
 import {
-  ArrowRightLeft,
-  Play,
-  Pause,
-  SkipBack,
-  Repeat,
-  X,
-  Pencil,
-  Loader2,
-  Clock,
-  RefreshCw,
-  Search,
-  Share2,
-} from "lucide-react";
+  ArrowClockwiseIcon,
+  ArrowsLeftRightIcon,
+  BrainIcon,
+  CircleNotchIcon,
+  ClockIcon,
+  MagnifyingGlassIcon,
+  PauseIcon,
+  PencilSimpleIcon,
+  PlayIcon,
+  RepeatIcon,
+  ShareNetworkIcon,
+  SkipBackIcon,
+  XIcon,
+} from "@phosphor-icons/react";
 import { useMetronome } from "@/hooks/useMetronome";
 import { usePitchShifter } from "@/hooks/usePitchShifter";
 import { useTempoStretch } from "@/hooks/useTempoStretch";
@@ -43,9 +44,9 @@ import { CueOverlay } from "@/components/CueOverlay";
 import { DistractionOverlay } from "@/components/DistractionOverlay";
 import { StemMixer } from "@/components/StemMixer";
 import { TempoSelect } from "@/components/TempoSelect";
+import { MoreMenu } from "@/components/MoreMenu";
 import { useStemsEngine } from "@/hooks/useStemsEngine";
 import { STEM_NAMES, type StemName } from "@/lib/stems-engine";
-import { Brain } from "lucide-react";
 
 interface Section {
   id: string;
@@ -126,10 +127,19 @@ function PracticeSkeleton() {
 
 export default function PracticePage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }) {
   const { id } = use(params);
+  // The library carries the folder you were browsing into this URL, so Back
+  // returns to that folder instead of dropping you in the full library.
+  const folderParam = use(searchParams).folder;
+  const backHref =
+    typeof folderParam === "string" && folderParam
+      ? `/?folder=${encodeURIComponent(folderParam)}`
+      : "/";
   const [song, setSong] = useState<Song | null>(null);
   const [playing, setPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
@@ -556,36 +566,42 @@ export default function PracticePage({
   // R5 stems: pre-decode in the background as soon as the server reports
   // stems ready, so the dropdown's checkboxes apply with no perceptible
   // latency. Trades ~250MB of decoded audio for instant interaction.
-  const stems = useStemsEngine({ songId: song?.id ?? null, eager: true });
-  const stemsActive = !!stems.engine;
+  const stems = useStemsEngine({ songId: song?.id ?? null, eager: true, pitch });
   const anyStemMuted = useMemo(
     () => Object.values(stems.muted).some(Boolean),
     [stems.muted]
   );
+  // Decoded is not the same as driving. Eager preload means the engine exists
+  // from page load on every song with stems, but it only becomes the audible
+  // output once a stem is actually muted — otherwise it would mute the audio
+  // element and silently discard the pitch-shifted source loaded into it.
+  const stemsDriving = !!stems.engine && anyStemMuted;
 
   // R3 Silent + R5 stems: keep audio.muted in sync. The audio element is
   // recreated when normalizedAudioPath swaps (pitch / tempo render), so this
-  // effect re-applies after a swap. When the stems engine is active the
+  // effect re-applies after a swap. While the stems engine is driving, the
   // audible output comes from it; the audio element stays muted but keeps
   // playing so currentTime / loops / bookmark logic still work unchanged.
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio) return;
-    audio.muted = silent || stemsActive;
-  }, [silent, stemsActive, song?.normalizedAudioPath]);
+    audio.muted = silent || stemsDriving;
+  }, [silent, stemsDriving, song?.normalizedAudioPath]);
 
   // Mirror play/pause/tempo from the audio element into the stems engine.
   // Seek is mirrored explicitly at each user-seek call site (see seek()).
+  // A decoded-but-idle engine must stay paused — if it played alongside the
+  // unmuted audio element you would hear the song twice.
   useEffect(() => {
     const engine = stems.engine;
     const audio = audioRef.current;
     if (!engine || !audio) return;
-    if (playing) {
+    if (playing && stemsDriving) {
       engine.play(audio.currentTime, tempo);
     } else {
       engine.pause();
     }
-  }, [playing, stems.engine]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [playing, stems.engine, stemsDriving]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     stems.engine?.setPlaybackRate(tempo);
@@ -719,7 +735,8 @@ export default function PracticePage({
     tempo, pitch, audioRef, onPause: pausePlayback,
   });
 
-  const transportBusy = pitchProcessing || tempoProcessing;
+  // stems.pitching covers the muted-stem mix re-rendering at a new transpose.
+  const transportBusy = pitchProcessing || tempoProcessing || stems.pitching;
 
   function togglePlay() {
     const audio = audioRef.current;
@@ -997,10 +1014,10 @@ export default function PracticePage({
   if (loadError) {
     return (
       <main className="flex-1 max-w-2xl mx-auto w-full px-4 py-8">
-        <BackToHome label="Library" className="mb-6" />
+        <BackToHome label="Library" href={backHref} className="mb-6" />
         <div className="text-center py-12">
           <div className="inline-flex items-center justify-center size-14 rounded-full bg-destructive/10 mb-4">
-            <X className="size-6 text-destructive" />
+            <XIcon className="size-6 text-destructive" />
           </div>
           <p className="text-base font-medium text-foreground mb-1">Failed to load song</p>
           <p className="text-sm text-muted-foreground mb-4">{loadError}</p>
@@ -1017,10 +1034,10 @@ export default function PracticePage({
   if (song.processingStatus !== "ready") {
     return (
       <main className="flex-1 max-w-2xl mx-auto w-full px-4 py-8">
-        <BackToHome label="Library" className="mb-6" />
+        <BackToHome label="Library" href={backHref} className="mb-6" />
         <h1 className="text-xl font-semibold mb-4 text-foreground">{song.title}</h1>
         <div className="flex items-center gap-2 text-muted-foreground">
-          <Loader2 className="size-4 animate-spin" />
+          <CircleNotchIcon className="size-4 animate-spin" />
           <span>Song is {song.processingStatus}...</span>
         </div>
       </main>
@@ -1108,51 +1125,40 @@ export default function PracticePage({
   if (song.year) metaParts.push(song.year);
 
   return (
-    <main className="flex-1 w-full px-3 sm:px-4 lg:px-8 py-3 sm:py-4 max-w-7xl mx-auto">
+    <main className="flex-1 w-full px-3 sm:px-4 lg:px-8 pt-4 sm:pt-6 pb-40 max-w-7xl mx-auto">
       {/* ===== TOP: Header + Player (full width) ===== */}
       <div className="mb-4">
-        {/* Header row: back + title + metadata */}
-        <div className="flex items-start gap-3 mb-4">
-          <BackToHome label="" className="mt-0.5 shrink-0" />
+        {/* Header: title and a plain metadata line on the left; the toggles
+            you use while playing on the right; once-a-session actions in ⋯. */}
+        <div className="flex items-center gap-3 mb-5">
+          <BackToHome label="" href={backHref} className="shrink-0" />
           <div className="flex-1 min-w-0">
             <h1
-              className="text-xl font-semibold truncate text-foreground cursor-pointer hover:text-foreground/80 transition-colors group inline-flex items-center"
+              className="text-2xl font-semibold truncate text-foreground cursor-pointer active:opacity-70 transition-opacity"
               onClick={openMetadataDialog}
               title="Edit title / artist / album / year"
             >
-              <span className="truncate">{song.title}</span>
-              <Pencil className="size-3.5 ml-2 opacity-0 group-hover:opacity-40 transition-opacity shrink-0" />
+              {song.title}
             </h1>
-            {/* Metadata pills row */}
-            <div className="flex items-center gap-2 mt-1 flex-wrap">
-              {metaParts.length > 0 ? (
-                <button
-                  onClick={openMetadataDialog}
-                  className="text-[13px] text-muted-foreground hover:text-foreground transition-colors text-left"
-                  title="Edit title / artist / album / year"
-                >
-                  {metaParts.join(" · ")}
-                </button>
-              ) : (
-                <button
-                  onClick={openMetadataDialog}
-                  className="text-[13px] text-muted-foreground/60 hover:text-foreground transition-colors italic"
-                  title="Add artist, album, year"
-                >
-                  Add artist…
-                </button>
-              )}
-              {song.genre && (
-                <span className="text-[11px] bg-muted text-muted-foreground px-2 py-0.5 rounded-full">{song.genre}</span>
-              )}
-              {song.musicalKey && (
-                <span className="text-[11px] bg-muted text-muted-foreground px-2 py-0.5 rounded-full">
-                  {pitch !== 0 ? transposeKey(song.musicalKey, pitch) : song.musicalKey}
-                </span>
-              )}
-              {song.bpm && (
-                <span className="text-[11px] bg-muted text-muted-foreground px-2 py-0.5 rounded-full">{Math.round(song.bpm)} BPM</span>
-              )}
+            <div className="flex items-center gap-x-2 mt-0.5 flex-wrap text-sm text-muted-foreground">
+              <button
+                onClick={openMetadataDialog}
+                className="hover:text-foreground transition-colors text-left"
+                title="Edit title / artist / album / year"
+              >
+                {metaParts.length > 0 ? metaParts.join(" · ") : "Add artist…"}
+              </button>
+              {[
+                song.genre,
+                song.musicalKey && (pitch !== 0 ? transposeKey(song.musicalKey, pitch) : song.musicalKey),
+                song.bpm && `${Math.round(song.bpm)} BPM`,
+              ]
+                .filter(Boolean)
+                .map((part) => (
+                  <span key={String(part)} className="before:content-['·'] before:mr-2 before:text-muted-foreground/50">
+                    {part}
+                  </span>
+                ))}
               <button
                 onClick={async () => {
                   const next = song.timeSignature === 4 ? 3 : song.timeSignature === 3 ? 6 : 4;
@@ -1163,70 +1169,64 @@ export default function PracticePage({
                   });
                   fetchSong();
                 }}
-                className="text-[11px] bg-muted text-muted-foreground px-2 py-0.5 rounded-full hover:bg-accent transition-colors"
-                title="Click to change time signature"
+                className="before:content-['·'] before:mr-2 before:text-muted-foreground/50 hover:text-foreground transition-colors"
+                title="Tap to change time signature"
               >
                 {song.timeSignature === 6 ? "6/8" : `${song.timeSignature}/4`}
               </button>
               {song.durationSec && (
-                <span className="text-[11px] bg-muted text-muted-foreground px-2 py-0.5 rounded-full">{formatTime(song.durationSec)}</span>
+                <span className="tabular-nums before:content-['·'] before:mr-2 before:text-muted-foreground/50">
+                  {formatTime(song.durationSec)}
+                </span>
               )}
-              <button
-                onClick={handleReanalyze}
-                disabled={reanalyzing}
-                className="text-[11px] bg-muted text-muted-foreground px-2 py-0.5 rounded-full hover:bg-accent transition-colors flex items-center gap-1"
-                title="Re-analyze sections and BPM"
-              >
-                <RefreshCw className={`size-3 ${reanalyzing ? "animate-spin" : ""}`} />
-                {reanalyzing ? "Analyzing..." : "Re-analyze"}
-              </button>
-              {song.normalizedAudioPath && (
-                <button
-                  onClick={handleShare}
-                  disabled={sharing}
-                  className="text-[11px] bg-muted text-muted-foreground px-2 py-0.5 rounded-full hover:bg-accent transition-colors flex items-center gap-1"
-                  title="Share audio file"
-                >
-                  {sharing ? <Loader2 className="size-3 animate-spin" /> : <Share2 className="size-3" />}
-                  {sharing ? "Sharing..." : "Share"}
-                </button>
-              )}
-              {/* Deep link into the Tone Search app, same query shape the
-                  Setlists wizard uses: "<title> <artist>". */}
-              <a
-                href={`/tones/?q=${encodeURIComponent([song.title, song.artist].filter(Boolean).join(" "))}`}
-                target="_blank"
-                rel="noreferrer"
-                className="text-[11px] bg-muted text-muted-foreground px-2 py-0.5 rounded-full hover:bg-accent transition-colors flex items-center gap-1"
-                title="Search the indexed Helix preset catalog for this song"
-              >
-                <Search className="size-3" />
-                Find tone
-              </a>
-              <SilentToggle silent={silent} onToggle={() => setSilent((s) => !s)} />
-              <button
-                onClick={() => setDistractionOpen((d) => !d)}
-                className={`text-[11px] px-2 py-0.5 rounded-full transition-colors flex items-center gap-1 ${
-                  distractionOpen
-                    ? "bg-foreground text-background"
-                    : "bg-muted text-muted-foreground hover:bg-accent"
-                }`}
-                title={
-                  distractionOpen
-                    ? "Distraction practice on"
-                    : "Add dual-task distractions (advanced — R6)"
-                }
-              >
-                <Brain className="size-3" />
-                Distract
-              </button>
               {activePlayTime > 0 && (
-                <span className="text-[11px] text-muted-foreground/60 flex items-center gap-1 ml-auto">
-                  <Clock className="size-3" />
-                  Session: {formatPracticeTime(activePlayTime)}
+                <span className="flex items-center gap-1 before:content-['·'] before:mr-1 before:text-muted-foreground/50">
+                  <ClockIcon className="size-3.5" />
+                  {formatPracticeTime(activePlayTime)} this session
                 </span>
               )}
             </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <SilentToggle silent={silent} onToggle={() => setSilent((s) => !s)} />
+            <button
+              onClick={() => setDistractionOpen((d) => !d)}
+              className={`h-11 px-4 rounded-full border text-sm font-semibold transition-all active:scale-95 flex items-center gap-2 ${
+                distractionOpen
+                  ? "bg-foreground text-background border-foreground"
+                  : "bg-card border-border text-foreground hover:bg-muted"
+              }`}
+              title={distractionOpen ? "Distraction practice on" : "Add dual-task distractions (advanced — R6)"}
+            >
+              <BrainIcon className="size-4" />
+              <span className="hidden md:inline">Distract</span>
+            </button>
+            <MoreMenu
+              items={[
+                {
+                  label: reanalyzing ? "Analyzing…" : "Re-analyze sections",
+                  icon: <ArrowClockwiseIcon className={`size-4 ${reanalyzing ? "animate-spin" : ""}`} />,
+                  onSelect: handleReanalyze,
+                  disabled: reanalyzing,
+                },
+                ...(song.normalizedAudioPath
+                  ? [{
+                      label: sharing ? "Sharing…" : "Share audio",
+                      icon: sharing ? <CircleNotchIcon className="size-4 animate-spin" /> : <ShareNetworkIcon className="size-4" />,
+                      onSelect: handleShare,
+                      disabled: sharing,
+                    }]
+                  : []),
+                // Deep link into the Tone Search app, same query shape the
+                // Setlists wizard uses: "<title> <artist>".
+                {
+                  label: "Find tone",
+                  icon: <MagnifyingGlassIcon className="size-4" />,
+                  href: `/tones/?q=${encodeURIComponent([song.title, song.artist].filter(Boolean).join(" "))}`,
+                },
+                { label: "Edit details", icon: <PencilSimpleIcon className="size-4" />, onSelect: openMetadataDialog },
+              ]}
+            />
           </div>
         </div>
 
@@ -1261,7 +1261,7 @@ export default function PracticePage({
             <div className="relative">
               {abLoop && duration > 0 && (
                 <div
-                  className="absolute z-0 pointer-events-none rounded-sm bg-orange-200 dark:bg-orange-800"
+                  className="absolute z-0 pointer-events-none rounded-sm bg-loop/50"
                   style={{
                     left: `${(abLoop.a / duration) * 100}%`,
                     width: `${((abLoop.b - abLoop.a) / duration) * 100}%`,
@@ -1289,162 +1289,101 @@ export default function PracticePage({
           />
         )}
 
-        {/* === UNIFIED TRANSPORT BAR === */}
-        <div className="sticky bottom-2 z-30 bg-card/95 backdrop-blur border border-border rounded-2xl p-3 mb-3 shadow-lg shadow-black/5">
-          {/* Top row: tempo + (desktop-only transport) + stems + pitch.
-              Tempo and stems use compact dropdowns so the whole row fits on
-              iPhone width without horizontal scroll. */}
-          <div className="flex md:items-center md:justify-between gap-2 mb-2 md:mb-0 flex-wrap md:flex-nowrap">
-            {/* Tempo dropdown — single button + grid popover */}
+        {/* === TRANSPORT ISLAND ===
+            Floats at the bottom of the screen, where thumbs are when the
+            iPad sits on a stand. Wraps to two rows on a phone. */}
+        <div className="fixed left-1/2 -translate-x-1/2 bottom-[max(1rem,env(safe-area-inset-bottom))] z-30 w-max max-w-[calc(100%-1.5rem)]">
+          <div className="flex flex-wrap items-center justify-center gap-1 p-2 rounded-[2rem] bg-card/80 backdrop-blur-2xl backdrop-saturate-150 border border-foreground/10 shadow-2xl shadow-black/30">
             <TempoSelect
               value={tempo}
               values={TEMPO_VALUES}
               onChange={(t) => { pausePlayback(); setTempo(t); }}
               busy={tempoProcessing}
             />
-
-            {/* Center: Transport controls — hidden on phone, shown on md+ */}
-            <div className="hidden md:flex items-center gap-2">
+            <div className="w-px h-8 bg-foreground/10 mx-1 hidden sm:block" />
+            <div className="flex items-center gap-1">
               <button
                 onClick={() => setLoopSong(!loopSong)}
-                className={`size-11 rounded-full flex items-center justify-center active:scale-90 transition-all ${
-                  loopSong ? "text-primary" : "text-muted-foreground/30"
+                className={`size-12 rounded-full flex items-center justify-center active:scale-90 transition-all ${
+                  loopSong ? "text-foreground" : "text-muted-foreground/40"
                 }`}
                 title={loopSong ? "Song will loop" : "Song will stop at end"}
               >
-                <Repeat className="size-5" />
+                <RepeatIcon className="size-5" />
               </button>
-              <Button variant="outline" size="icon" onClick={jumpToStart} className="size-11 active:scale-90">
-                <SkipBack className="size-5" />
-              </Button>
               <button
-                className="size-16 rounded-full bg-primary text-primary-foreground flex items-center justify-center active:scale-95 transition-transform shadow-sm disabled:opacity-50"
+                onClick={jumpToStart}
+                className="size-12 rounded-full flex items-center justify-center text-foreground hover:bg-foreground/5 active:scale-90 transition-all"
+                title="Back to start"
+              >
+                <SkipBackIcon className="size-5" />
+              </button>
+              <button
+                className={`relative size-16 rounded-full bg-primary text-primary-foreground flex items-center justify-center active:scale-95 transition-transform disabled:opacity-50 ${
+                  playing && !transportBusy ? "play-pulse" : ""
+                }`}
                 onClick={togglePlay}
                 disabled={transportBusy}
               >
-                {transportBusy ? <Loader2 className="size-7 animate-spin" /> : playing ? <Pause className="size-7" /> : <Play className="size-7 ml-0.5" />}
+                {transportBusy ? <CircleNotchIcon className="size-7 animate-spin" /> : playing ? <PauseIcon weight="fill" className="size-7" /> : <PlayIcon weight="fill" className="size-7 ml-0.5" />}
               </button>
-              <Button
-                variant="outline"
-                size="icon"
+              <button
                 onClick={setA}
-                className={`size-11 text-sm font-bold active:scale-90 ${
-                  pendingA !== null || abLoop ? "bg-orange-500 text-white border-orange-500 hover:bg-orange-600 hover:text-white" : ""
+                className={`size-12 rounded-full text-base font-semibold active:scale-90 transition-all disabled:opacity-30 ${
+                  pendingA !== null || abLoop ? "bg-loop text-loop-foreground" : "text-foreground hover:bg-foreground/5"
                 }`}
                 title={abLoop ? `A: ${formatTime(abLoop.a)}` : pendingA !== null ? `A: ${formatTime(pendingA)}` : "Set A point"}
               >
                 A
-              </Button>
-              <Button
-                variant="outline"
-                size="icon"
+              </button>
+              <button
                 onClick={() => setB(currentTime)}
                 disabled={pendingA === null}
-                className={`size-11 text-sm font-bold active:scale-90 ${
-                  abLoop ? "bg-orange-500 text-white border-orange-500 hover:bg-orange-600 hover:text-white" : ""
+                className={`size-12 rounded-full text-base font-semibold active:scale-90 transition-all disabled:opacity-30 ${
+                  abLoop ? "bg-loop text-loop-foreground" : "text-foreground hover:bg-foreground/5"
                 }`}
                 title={abLoop ? `B: ${formatTime(abLoop.b)}` : "Set B point"}
               >
                 B
-              </Button>
+              </button>
               {(pendingA !== null || abLoop) && (
-                <Button
-                  variant="ghost"
-                  size="icon"
+                <button
                   onClick={clearABLoop}
-                  className="size-11 text-muted-foreground hover:text-destructive active:scale-90"
+                  className="size-12 rounded-full flex items-center justify-center text-muted-foreground hover:text-destructive active:scale-90 transition-all"
                   title="Clear A-B loop"
                 >
-                  <X className="size-5" />
-                </Button>
+                  <XIcon className="size-5" />
+                </button>
               )}
             </div>
-
-            {/* Stems dropdown — single button + checkbox menu */}
+            <div className="w-px h-8 bg-foreground/10 mx-1 hidden sm:block" />
             <StemMixer
               state={stems.state}
               muted={stems.muted}
               onMuteToggle={handleStemMuteToggle}
             />
-
-            {/* Pitch — compact on phone (no label, smaller buttons), full on desktop */}
-            <div className="flex items-center gap-1 shrink-0 ml-auto md:ml-0">
-              <span className="hidden md:inline text-xs text-muted-foreground whitespace-nowrap mr-1">Pitch</span>
+            <div className="flex items-center gap-0.5">
               <button
                 onClick={() => { pausePlayback(); setPitch(Math.max(-6, pitch - 1)); }}
                 disabled={pitch <= -6}
-                className="size-9 md:size-11 rounded-lg border border-border flex items-center justify-center text-base font-medium active:scale-90 transition-transform disabled:opacity-30"
+                className="size-12 rounded-full flex items-center justify-center text-lg font-medium hover:bg-foreground/5 active:scale-90 transition-all disabled:opacity-30"
                 title="Pitch down"
               >
                 −
               </button>
-              <span className="text-sm font-medium tabular-nums w-8 text-center">{pitch > 0 ? `+${pitch}` : pitch}</span>
+              <span className={`text-base font-semibold tabular-nums min-w-12 text-center ${pitch !== 0 ? "text-loop" : ""}`} title="Pitch (semitones)">
+                <span className="block text-xs font-medium text-muted-foreground leading-none mb-0.5">Key</span>
+                {pitch > 0 ? `+${pitch}` : pitch}
+              </span>
               <button
                 onClick={() => { pausePlayback(); setPitch(Math.min(6, pitch + 1)); }}
                 disabled={pitch >= 6}
-                className="size-9 md:size-11 rounded-lg border border-border flex items-center justify-center text-base font-medium active:scale-90 transition-transform disabled:opacity-30"
+                className="size-12 rounded-full flex items-center justify-center text-lg font-medium hover:bg-foreground/5 active:scale-90 transition-all disabled:opacity-30"
                 title="Pitch up"
               >
                 +
               </button>
             </div>
-          </div>
-
-          {/* Bottom row on phone: transport controls centered. Hidden on md+ (shown in row above) */}
-          <div className="flex md:hidden items-center justify-center gap-3">
-            <button
-              onClick={() => setLoopSong(!loopSong)}
-              className={`size-11 rounded-full flex items-center justify-center active:scale-90 transition-all ${
-                loopSong ? "text-primary" : "text-muted-foreground/30"
-              }`}
-              title={loopSong ? "Song will loop" : "Song will stop at end"}
-            >
-              <Repeat className="size-5" />
-            </button>
-            <Button variant="outline" size="icon" onClick={jumpToStart} className="size-11 active:scale-90">
-              <SkipBack className="size-5" />
-            </Button>
-            <button
-              className="size-16 rounded-full bg-primary text-primary-foreground flex items-center justify-center active:scale-95 transition-transform shadow-sm disabled:opacity-50"
-              onClick={togglePlay}
-              disabled={pitchProcessing}
-            >
-              {pitchProcessing ? <Loader2 className="size-7 animate-spin" /> : playing ? <Pause className="size-7" /> : <Play className="size-7 ml-0.5" />}
-            </button>
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={setA}
-              className={`size-11 text-sm font-bold active:scale-90 ${
-                pendingA !== null || abLoop ? "bg-orange-500 text-white border-orange-500 hover:bg-orange-600 hover:text-white" : ""
-              }`}
-              title={abLoop ? `A: ${formatTime(abLoop.a)}` : pendingA !== null ? `A: ${formatTime(pendingA)}` : "Set A point"}
-            >
-              A
-            </Button>
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={() => setB(currentTime)}
-              disabled={pendingA === null}
-              className={`size-11 text-sm font-bold active:scale-90 ${
-                abLoop ? "bg-orange-500 text-white border-orange-500 hover:bg-orange-600 hover:text-white" : ""
-              }`}
-              title={abLoop ? `B: ${formatTime(abLoop.b)}` : "Set B point"}
-            >
-              B
-            </Button>
-            {(pendingA !== null || abLoop) && (
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={clearABLoop}
-                className="size-11 text-muted-foreground hover:text-destructive active:scale-90"
-                title="Clear A-B loop"
-              >
-                <X className="size-5" />
-              </Button>
-            )}
           </div>
         </div>
 
@@ -1458,13 +1397,13 @@ export default function PracticePage({
                   ? `Stop looping ${transitionFrom.name} → ${transitionTo.name}`
                   : `Loop the ±${TRANSITION_BARS}-bar transition: ${transitionFrom.name} → ${transitionTo.name}`
               }
-              className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors active:scale-95 ${
+              className={`inline-flex items-center gap-2 h-11 px-4 rounded-full text-sm font-semibold transition-all active:scale-95 ${
                 transitionActive
-                  ? "bg-orange-500 text-white hover:bg-orange-600"
-                  : "bg-muted text-foreground hover:bg-accent border border-border"
+                  ? "bg-loop text-loop-foreground"
+                  : "bg-card text-foreground hover:bg-muted border border-border"
               }`}
             >
-              <ArrowRightLeft className="size-3" />
+              <ArrowsLeftRightIcon className="size-4" />
               {transitionActive ? "Looping" : "Transition"}: {transitionFrom.name} → {transitionTo.name}
             </button>
           </div>
@@ -1472,34 +1411,34 @@ export default function PracticePage({
         {(loopEnabled && loopRange) || abLoop || (pendingA !== null && !abLoop) ? (
           <div className="space-y-1.5 mb-3">
             {loopEnabled && loopRange && (
-              <div className="flex items-center justify-center gap-2 px-3 py-1.5 bg-blue-50 dark:bg-blue-950 rounded-lg">
-                <Repeat className="size-3 text-blue-500 shrink-0" />
-                <span className="text-xs text-blue-600 dark:text-blue-400 font-medium">
+              <div className="flex items-center justify-center gap-2 pl-4 pr-3 py-1 bg-loop/10 rounded-full w-fit mx-auto">
+                <RepeatIcon className="size-4 text-loop shrink-0" />
+                <span className="text-sm text-loop font-semibold">
                   {loopRange.names.join(" + ")} ({formatTime(loopRange.startSec)} – {formatTime(loopRange.endSec)})
                 </span>
-                <button onClick={clearLoop} className="p-1.5 -mr-1 rounded-lg text-blue-400 hover:text-blue-600 active:scale-90 transition-all">
-                  <X className="size-4" />
+                <button onClick={clearLoop} className="size-9 grid place-items-center -mr-2 rounded-full text-loop/70 hover:text-loop active:scale-90 transition-all">
+                  <XIcon className="size-4" />
                 </button>
               </div>
             )}
             {abLoop && (
-              <div className="flex items-center justify-center gap-2 px-3 py-1.5 bg-orange-50 dark:bg-orange-950 rounded-lg">
-                <Repeat className="size-3 text-orange-500 shrink-0" />
-                <span className="text-xs text-orange-600 dark:text-orange-400 font-medium">
+              <div className="flex items-center justify-center gap-2 pl-4 pr-3 py-1 bg-loop/10 rounded-full w-fit mx-auto">
+                <RepeatIcon className="size-4 text-loop shrink-0" />
+                <span className="text-sm text-loop font-semibold">
                   A-B Loop: {formatTime(abLoop.a)} – {formatTime(abLoop.b)}
                 </span>
-                <button onClick={clearABLoop} className="p-1.5 -mr-1 rounded-lg text-orange-400 hover:text-orange-600 active:scale-90 transition-all">
-                  <X className="size-4" />
+                <button onClick={clearABLoop} className="size-9 grid place-items-center -mr-2 rounded-full text-loop/70 hover:text-loop active:scale-90 transition-all">
+                  <XIcon className="size-4" />
                 </button>
               </div>
             )}
             {pendingA !== null && !abLoop && (
-              <div className="flex items-center justify-center gap-2 px-3 py-1.5 bg-orange-50 dark:bg-orange-950 rounded-lg">
-                <span className="text-xs text-orange-600 dark:text-orange-400">
+              <div className="flex items-center justify-center gap-2 pl-4 pr-3 py-1 bg-loop/10 rounded-full w-fit mx-auto">
+                <span className="text-sm text-loop">
                   Point A at {formatTime(pendingA)} — navigate to B and press B
                 </span>
-                <button onClick={clearABLoop} className="p-1.5 -mr-1 rounded-lg text-orange-400 hover:text-orange-600 active:scale-90 transition-all">
-                  <X className="size-4" />
+                <button onClick={clearABLoop} className="size-9 grid place-items-center -mr-2 rounded-full text-loop/70 hover:text-loop active:scale-90 transition-all">
+                  <XIcon className="size-4" />
                 </button>
               </div>
             )}

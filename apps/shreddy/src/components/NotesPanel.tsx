@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { StickyNote, ChevronDown, ChevronUp } from "lucide-react";
+import { CaretDownIcon, CaretUpIcon, NoteIcon } from "@phosphor-icons/react";
 
 interface NotesPanelProps {
   notesDraft: string;
@@ -17,7 +17,7 @@ export function NotesPanel({ notesDraft, onNotesChange }: NotesPanelProps) {
         onClick={() => setNotesOpen(!notesOpen)}
         className="flex items-center gap-2 text-sm font-semibold text-foreground w-full"
       >
-        <StickyNote className="size-4 text-muted-foreground" />
+        <NoteIcon className="size-4 text-muted-foreground" />
         Notes
         {notesDraft && !notesOpen && (
           <span className="text-xs text-muted-foreground font-normal truncate flex-1 text-left ml-1">
@@ -25,9 +25,9 @@ export function NotesPanel({ notesDraft, onNotesChange }: NotesPanelProps) {
           </span>
         )}
         {notesOpen ? (
-          <ChevronUp className="size-4 text-muted-foreground ml-auto" />
+          <CaretUpIcon className="size-4 text-muted-foreground ml-auto" />
         ) : (
-          <ChevronDown className="size-4 text-muted-foreground ml-auto" />
+          <CaretDownIcon className="size-4 text-muted-foreground ml-auto" />
         )}
       </button>
       {notesOpen && (

@@ -6,9 +6,23 @@ import { Button } from "@music-apps/ui";
 import { Badge } from "@music-apps/ui";
 import { Slider } from "@music-apps/ui";
 import {
-  ArrowLeft, Play, Pause, SkipBack, Repeat, Repeat2, Star, Pencil, Trash2,
-  Plus, StickyNote, ChevronDown, Disc3, Volume2, RotateCw, Clock,
-} from "lucide-react";
+  ArrowClockwiseIcon,
+  ArrowLeftIcon,
+  ArrowsClockwiseIcon,
+  CaretDownIcon,
+  ClockIcon,
+  NoteIcon,
+  PauseIcon,
+  PencilSimpleIcon,
+  PlayIcon,
+  PlusIcon,
+  RepeatIcon,
+  SkipBackIcon,
+  SpeakerHighIcon,
+  StarIcon,
+  TrashIcon,
+  VinylRecordIcon,
+} from "@phosphor-icons/react";
 import { mockSong, mockSections, sectionColors, sectionDotColors, formatTime } from "../mock-data";
 
 const TEMPO_VALUES = [0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2];
@@ -30,7 +44,7 @@ export default function DraftA() {
       {/* Nav */}
       <div className="flex items-center justify-between mb-3">
         <Link href="/drafts" className="flex items-center gap-2 text-muted-foreground hover:text-foreground">
-          <ArrowLeft className="size-5" />
+          <ArrowLeftIcon className="size-5" />
         </Link>
         <Badge variant="outline" className="text-xs">Option A: Cinema Transport</Badge>
       </div>
@@ -43,7 +57,7 @@ export default function DraftA() {
           <span className="text-[11px] bg-muted text-muted-foreground px-2 py-0.5 rounded-full">{mockSong.genre}</span>
           <span className="text-[11px] bg-muted text-muted-foreground px-2 py-0.5 rounded-full">{mockSong.bpm} BPM</span>
           <span className="text-[11px] text-muted-foreground/60 flex items-center gap-1 ml-auto">
-            <Clock className="size-3" />
+            <ClockIcon className="size-3" />
             Session: 2m 45s
           </span>
         </div>
@@ -142,19 +156,19 @@ export default function DraftA() {
                 loopSong ? "text-primary" : "text-muted-foreground/40"
               }`}
             >
-              <Repeat className="size-4" />
+              <RepeatIcon className="size-4" />
             </button>
             <Button variant="outline" size="icon" className="size-9">
-              <SkipBack className="size-4" />
+              <SkipBackIcon className="size-4" />
             </Button>
             <button
               className="size-14 rounded-full bg-primary text-primary-foreground flex items-center justify-center active:scale-95 transition-transform shadow-sm"
               onClick={() => setPlaying(!playing)}
             >
-              {playing ? <Pause className="size-6" /> : <Play className="size-6 ml-0.5" />}
+              {playing ? <PauseIcon className="size-6" /> : <PlayIcon className="size-6 ml-0.5" />}
             </button>
             <Button variant="outline" size="icon" className="size-9">
-              <Repeat2 className="size-4" />
+              <ArrowsClockwiseIcon className="size-4" />
             </Button>
           </div>
 
@@ -174,7 +188,7 @@ export default function DraftA() {
           <div className="bg-card border border-border rounded-xl p-3">
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-2">
-                <Disc3 className={`size-4 ${metronomeOn ? "animate-spin text-primary" : "text-muted-foreground"}`} />
+                <VinylRecordIcon className={`size-4 ${metronomeOn ? "animate-spin text-primary" : "text-muted-foreground"}`} />
                 <span className="text-sm font-semibold text-foreground">Metronome</span>
                 {metronomeOn && <span className="text-xs text-muted-foreground">{mockSong.bpm} BPM</span>}
               </div>
@@ -193,7 +207,7 @@ export default function DraftA() {
                   ))}
                 </div>
                 <div className="flex items-center gap-2">
-                  <Volume2 className="size-3.5 text-muted-foreground" />
+                  <SpeakerHighIcon className="size-3.5 text-muted-foreground" />
                   <Slider min={0} max={1} step={0.05} value={[0.5]} className="flex-1" />
                 </div>
               </div>
@@ -202,9 +216,9 @@ export default function DraftA() {
 
           <div className="bg-card border border-border rounded-xl p-3">
             <button className="flex items-center gap-2 text-sm font-semibold text-foreground w-full">
-              <StickyNote className="size-4 text-muted-foreground" />
+              <NoteIcon className="size-4 text-muted-foreground" />
               Notes
-              <ChevronDown className="size-4 text-muted-foreground ml-auto" />
+              <CaretDownIcon className="size-4 text-muted-foreground ml-auto" />
             </button>
           </div>
         </div>
@@ -214,7 +228,7 @@ export default function DraftA() {
           <div className="flex items-center justify-between mb-2">
             <h2 className="text-sm font-semibold text-foreground">Sections</h2>
             <Button variant="outline" size="sm" className="gap-1 h-8 text-xs">
-              <Plus className="size-3.5" /> Add
+              <PlusIcon className="size-3.5" /> Add
             </Button>
           </div>
           <ul className="space-y-1 max-h-[40vh] overflow-y-auto">
@@ -247,7 +261,7 @@ export default function DraftA() {
                       </span>
                       <span className="flex items-center -ml-0.5">
                         {[1, 2, 3, 4, 5].map(star => (
-                          <Star
+                          <StarIcon
                             key={star}
                             className={`size-3.5 ${section.masteryRating && star <= section.masteryRating ? "text-yellow-400 fill-yellow-400" : "text-muted-foreground/20"}`}
                           />
@@ -256,8 +270,8 @@ export default function DraftA() {
                     </div>
                   </div>
                   <div className="flex items-center gap-0">
-                    <button className="p-2 rounded-lg text-muted-foreground/40 hover:text-foreground"><Pencil className="size-3.5" /></button>
-                    <button className="p-2 rounded-lg text-muted-foreground/40 hover:text-destructive"><Trash2 className="size-3.5" /></button>
+                    <button className="p-2 rounded-lg text-muted-foreground/40 hover:text-foreground"><PencilSimpleIcon className="size-3.5" /></button>
+                    <button className="p-2 rounded-lg text-muted-foreground/40 hover:text-destructive"><TrashIcon className="size-3.5" /></button>
                   </div>
                 </li>
               );

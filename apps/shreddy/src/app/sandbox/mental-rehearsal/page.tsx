@@ -8,7 +8,7 @@
 // to build — no audio, just a metronome and a scrolling timeline.
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Play, Pause, RotateCcw } from "lucide-react";
+import { ArrowCounterClockwiseIcon, PauseIcon, PlayIcon } from "@phosphor-icons/react";
 import { useMetronome } from "@/hooks/useMetronome";
 import { defaultStub, type StubSection } from "@/app/sandbox/mock-data";
 import { SandboxHeader } from "@/app/sandbox/_components/SandboxHeader";
@@ -210,7 +210,7 @@ export default function MentalRehearsalPage() {
             className="size-9 md:size-11 rounded-full border border-border bg-card flex items-center justify-center active:scale-90 transition"
             aria-label="Reset"
           >
-            <RotateCcw className="size-4" />
+            <ArrowCounterClockwiseIcon className="size-4" />
           </button>
           <button
             onClick={togglePlay}
@@ -218,9 +218,9 @@ export default function MentalRehearsalPage() {
             aria-label={playing ? "Pause" : "Play"}
           >
             {playing ? (
-              <Pause className="size-6" />
+              <PauseIcon className="size-6" />
             ) : (
-              <Play className="size-6 ml-0.5" />
+              <PlayIcon className="size-6 ml-0.5" />
             )}
           </button>
           <div className="size-9 md:size-11" aria-hidden />

@@ -61,6 +61,37 @@ export async function downloadAudio(
   });
 }
 
+// YouTube sometimes rejects the signed media URL the instant we fetch it — a
+// 403 two seconds into the job, with the same video downloading fine a minute
+// later. The retry has to re-run yt-dlp rather than re-request the URL: only a
+// fresh extraction gets a fresh signature, so retrying the dead URL just 403s
+// again.
+const DOWNLOAD_ATTEMPTS = 3;
+const RETRY_BASE_DELAY_MS = 3000;
+
+async function downloadWithRetry(
+  songId: string,
+  url: string,
+  onProgress: (percent: number) => void
+): Promise<string> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await downloadAudio(songId, url, onProgress);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "";
+      // A missing yt-dlp is a broken install, not a flaky network — waiting
+      // nine seconds to say so again helps nobody.
+      if (attempt >= DOWNLOAD_ATTEMPTS || message.includes("yt-dlp is not installed")) throw err;
+
+      await prisma.importJob.update({
+        where: { songId },
+        data: { progressMessage: `Download failed — retrying (${attempt}/${DOWNLOAD_ATTEMPTS - 1})...` },
+      }).catch(() => {});
+      await new Promise((resolve) => setTimeout(resolve, RETRY_BASE_DELAY_MS * attempt));
+    }
+  }
+}
+
 export async function downloadAndProcess(
   songId: string,
   url: string,
@@ -76,7 +107,7 @@ export async function downloadAndProcess(
     });
 
     // Download with progress updates
-    const filePath = await downloadAudio(songId, url, async (percent) => {
+    const filePath = await downloadWithRetry(songId, url, async (percent) => {
       // Update progress every ~10%
       if (Math.floor(percent) % 10 === 0) {
         await prisma.importJob.update({

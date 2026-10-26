@@ -3,7 +3,9 @@ import { prisma } from "@/lib/prisma";
 
 export async function GET() {
   const folders = await prisma.folder.findMany({
-    orderBy: { orderIndex: "asc" },
+    // Most recently created or changed first. A folder counts as changed when
+    // it is renamed or a song joins, leaves or moves within it.
+    orderBy: { updatedAt: "desc" },
     include: { _count: { select: { songFolders: true } } },
   });
   return NextResponse.json(folders);

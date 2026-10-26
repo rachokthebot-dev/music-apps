@@ -1,6 +1,6 @@
 "use client";
 
-import { Disc3, Volume2, Play } from "lucide-react";
+import { PlayIcon, SpeakerHighIcon, VinylRecordIcon } from "@phosphor-icons/react";
 import { Label, Slider, Button } from "@music-apps/ui";
 
 interface MetronomePanelProps {
@@ -46,7 +46,7 @@ export function MetronomePanel({
     <div className="bg-card border border-border rounded-xl p-3">
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-2">
-          <Disc3 className={`size-4 ${active ? "animate-spin text-primary" : "text-muted-foreground"}`} />
+          <VinylRecordIcon className={`size-4 ${active ? "animate-spin text-primary" : "text-muted-foreground"}`} />
           <Label className="text-sm font-semibold text-foreground">Metronome</Label>
           {enabled && baseBpm > 0 && (
             <span className="text-xs text-muted-foreground">
@@ -77,7 +77,7 @@ export function MetronomePanel({
             ))}
           </div>
           <div className="flex items-center gap-2">
-            <Volume2 className="size-3.5 text-muted-foreground shrink-0" />
+            <SpeakerHighIcon className="size-3.5 text-muted-foreground shrink-0" />
             <Slider min={0} max={1} step={0.05} value={[volume]} onValueChange={(v) => onVolumeChange(Array.isArray(v) ? v[0] : v)} className="flex-1" />
           </div>
           <div className="flex items-center gap-1.5 flex-wrap">
@@ -87,7 +87,7 @@ export function MetronomePanel({
             )}
             {!playing && baseBpm > 0 && (
               <Button variant="outline" size="sm" className="text-xs h-7 gap-1" onClick={onCountInPlay}>
-                <Play className="size-3" /> Count-in
+                <PlayIcon className="size-3" /> Count-in
               </Button>
             )}
             <Button variant={standalone ? "secondary" : "outline"} size="sm" className="text-xs h-7" onClick={onStandaloneToggle}>Solo</Button>

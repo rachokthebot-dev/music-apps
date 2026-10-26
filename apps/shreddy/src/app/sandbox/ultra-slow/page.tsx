@@ -8,7 +8,7 @@
 // rubberband filter, cached on disk).
 
 import { useCallback, useRef, useState } from "react";
-import { Play, Pause } from "lucide-react";
+import { PauseIcon, PlayIcon } from "@phosphor-icons/react";
 import { useStubPlayer } from "@/hooks/useStubPlayer";
 import { defaultStub } from "@/app/sandbox/mock-data";
 import { SandboxHeader } from "@/app/sandbox/_components/SandboxHeader";
@@ -154,9 +154,9 @@ export default function UltraSlowPage() {
             aria-label={playing ? "Pause" : "Play"}
           >
             {playing ? (
-              <Pause className="size-6" />
+              <PauseIcon className="size-6" />
             ) : (
-              <Play className="size-6 ml-0.5" />
+              <PlayIcon className="size-6 ml-0.5" />
             )}
           </button>
           <div className="size-9 md:size-11" aria-hidden />

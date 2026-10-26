@@ -38,6 +38,10 @@ interface UseStemsEngineOptions {
    *  ready. Trades ~250MB of audio buffer memory for instant mute toggles
    *  (no decode latency on first interaction). */
   eager?: boolean;
+  /** Semitones of transpose the mix should follow. Web Audio can't shift
+   *  pitch, so a non-zero value means loading server-rendered pitched stem
+   *  files instead of the originals. */
+  pitch?: number;
 }
 
 interface UseStemsEngineResult {
@@ -55,13 +59,15 @@ interface UseStemsEngineResult {
   activate: () => Promise<StemsEngine | null>;
   /** Mute setter — ramps gain and updates muted state. */
   setMute: (stem: StemName, m: boolean) => void;
+  /** True while pitched stem renders are being fetched and decoded. */
+  pitching: boolean;
 }
 
 // Status polling cadence while pipeline is processing. Cheap query (single
 // row SELECT) so 4s feels live enough without spamming.
 const POLL_INTERVAL_MS = 4000;
 
-export function useStemsEngine({ songId, eager = false }: UseStemsEngineOptions): UseStemsEngineResult {
+export function useStemsEngine({ songId, eager = false, pitch = 0 }: UseStemsEngineOptions): UseStemsEngineResult {
   const [status, setStatus] = useState<StemsStatusResponse | null>(null);
   const [engine, setEngine] = useState<StemsEngine | null>(null);
   const [muted, setMutedState] = useState<Record<StemName, boolean>>(() =>
@@ -73,6 +79,12 @@ export function useStemsEngine({ songId, eager = false }: UseStemsEngineOptions)
   statusRef.current = status;
   const engineRef = useRef<StemsEngine | null>(null);
   engineRef.current = engine;
+  const pitchRef = useRef(pitch);
+  pitchRef.current = pitch;
+  const [pitching, setPitching] = useState(false);
+  // Which pitch the currently decoded buffers were rendered at. Starts
+  // deliberately out of band so the first load always runs.
+  const loadedPitchRef = useRef<number | null>(null);
 
   // Poll for stems readiness. Stops once state="ready" or "error".
   useEffect(() => {
@@ -112,12 +124,45 @@ export function useStemsEngine({ songId, eager = false }: UseStemsEngineOptions)
     };
   }, [songId]);
 
+  // Resolve the 4 URLs to decode for a given transpose. Pitch 0 is the
+  // originals; anything else is a server render, which the route caches on
+  // disk so repeat visits to the same semitone are immediate.
+  const stemUrlsFor = useCallback(async (semitones: number, signal?: AbortSignal): Promise<StemUrls | null> => {
+    const s = statusRef.current;
+    if (!s || s.state !== "ready" || !s.stems) return null;
+    if (semitones === 0) return s.stems;
+
+    const res = await fetch(`/shreddy/api/songs/${songId}/stems/pitch`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ semitones }),
+      signal,
+    });
+    if (!res.ok) throw new Error(`pitched stems ${res.status}`);
+    const json = (await res.json()) as { stems: StemUrls };
+    return json.stems;
+  }, [songId]);
+
   const activate = useCallback(async (): Promise<StemsEngine | null> => {
     if (engineRef.current) return engineRef.current;
     const s = statusRef.current;
     if (!s || s.state !== "ready" || !s.stems) return null;
+    const semitones = pitchRef.current;
+    let urls: StemUrls | null;
+    try {
+      setPitching(semitones !== 0);
+      urls = await stemUrlsFor(semitones);
+    } catch {
+      // Pitched renders failed — fall back to the originals rather than
+      // leaving the mixer dead. The transpose is wrong, not the playback.
+      urls = s.stems;
+    } finally {
+      setPitching(false);
+    }
+    if (!urls) return null;
     const newEngine = createStemsEngine();
-    await newEngine.load(s.stems);
+    await newEngine.load(urls);
+    loadedPitchRef.current = semitones;
     // Replay any mute state the user toggled before activation finished.
     for (const stem of STEM_NAMES) {
       if (muted[stem]) newEngine.setMute(stem, true);
@@ -128,7 +173,7 @@ export function useStemsEngine({ songId, eager = false }: UseStemsEngineOptions)
     // muted is intentionally read once at activation — runtime mute changes
     // go through setMute() below, which calls engine.setMute() directly.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [stemUrlsFor]);
 
   // Eager preload: as soon as the server reports state="ready", decode the
   // 4 stems in the background so the first mute toggle is instant. The
@@ -143,6 +188,43 @@ export function useStemsEngine({ songId, eager = false }: UseStemsEngineOptions)
     void activate();
   }, [eager, status?.state, activate]);
 
+  // Follow the pitch control. The engine decodes fixed buffers, so a
+  // transpose means swapping all 4 of them for server-rendered shifted
+  // files. The caller pauses playback on any pitch change, so the new
+  // buffers are picked up by the next play() rather than mid-phrase.
+  useEffect(() => {
+    const engine = engineRef.current;
+    if (!engine) return;
+    if (loadedPitchRef.current === pitch) return;
+    if (statusRef.current?.state !== "ready") return;
+
+    const controller = new AbortController();
+    let cancelled = false;
+    setPitching(true);
+
+    (async () => {
+      try {
+        const urls = await stemUrlsFor(pitch, controller.signal);
+        if (cancelled || !urls) return;
+        await engine.load(urls, controller.signal);
+        if (cancelled) return;
+        loadedPitchRef.current = pitch;
+      } catch {
+        // Keep whatever is already decoded. Playback continues at the old
+        // transpose rather than dropping out entirely.
+      } finally {
+        if (!cancelled) setPitching(false);
+      }
+    })();
+
+    return () => {
+      // A newer pitch superseded this one — drop the in-flight render so
+      // buffers can't land out of order and leave the mix a step off.
+      cancelled = true;
+      controller.abort();
+    };
+  }, [pitch, engine, stemUrlsFor]);
+
   const setMute = useCallback((stem: StemName, m: boolean) => {
     setMutedState((prev) => (prev[stem] === m ? prev : { ...prev, [stem]: m }));
     engineRef.current?.setMute(stem, m);
@@ -155,5 +237,6 @@ export function useStemsEngine({ songId, eager = false }: UseStemsEngineOptions)
     muted,
     activate,
     setMute,
+    pitching,
   };
 }

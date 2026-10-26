@@ -1,7 +1,16 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Pencil, Plus, Trash2, RotateCw, Share2, Copy, Download, Check } from "lucide-react";
+import {
+  ArrowClockwiseIcon,
+  CheckIcon,
+  CopyIcon,
+  DownloadSimpleIcon,
+  PencilSimpleIcon,
+  PlusIcon,
+  ShareNetworkIcon,
+  TrashIcon,
+} from "@phosphor-icons/react";
 import { Button } from "@music-apps/ui";
 
 interface Section {
@@ -124,24 +133,24 @@ export function SectionStrip({
   };
 
   return (
-    <div className="mb-3">
-      <div className="flex items-center gap-2 mb-2 px-1">
-        <h2 className="text-sm font-semibold text-foreground">Sections</h2>
-        <span className="text-[11px] text-muted-foreground">Tap to loop</span>
+    <div className="mb-4">
+      <div className="flex items-center gap-3 mb-3 px-1">
+        <h2 className="text-lg font-semibold text-foreground">Sections</h2>
+        <span className="hidden sm:inline text-sm text-muted-foreground">Tap to loop</span>
         <div className="flex items-center gap-1.5 ml-auto">
           {sections.length > 1 && (
             <Button
               variant={editMode ? "default" : "outline"}
               size="sm"
               onClick={onEditModeToggle}
-              className="gap-1 h-7 text-xs"
+              className="gap-1.5 h-10 px-3 text-sm"
             >
-              <Pencil className="size-3" />
+              <PencilSimpleIcon className="size-3" />
               {editMode ? "Done" : "Edit"}
             </Button>
           )}
-          <Button variant="outline" size="sm" onClick={onAddSection} className="gap-1 h-7 text-xs">
-            <Plus className="size-3" /> Add
+          <Button variant="outline" size="sm" onClick={onAddSection} className="gap-1.5 h-10 px-3 text-sm">
+            <PlusIcon className="size-4" /> Add
           </Button>
           {sections.length > 0 && (
             <div className="relative" ref={exportRef}>
@@ -149,25 +158,25 @@ export function SectionStrip({
                 variant="outline"
                 size="sm"
                 onClick={() => setExportOpen(!exportOpen)}
-                className="gap-1 h-7 text-xs"
+                className="h-10 w-10 p-0"
                 title="Export structure"
               >
-                <Share2 className="size-3" />
+                <ShareNetworkIcon className="size-4" />
               </Button>
               {exportOpen && (
                 <div className="absolute right-0 top-full mt-1 z-40 bg-card border border-border rounded-lg shadow-lg py-1 min-w-[160px]">
                   <button
                     onClick={handleCopyText}
-                    className="flex items-center gap-2 w-full px-3 py-2 text-xs text-foreground hover:bg-muted transition-colors"
+                    className="flex items-center gap-2 w-full px-3 py-2.5 text-sm text-foreground hover:bg-muted transition-colors"
                   >
-                    {copied ? <Check className="size-3.5 text-emerald-500" /> : <Copy className="size-3.5" />}
+                    {copied ? <CheckIcon className="size-3.5 text-emerald-500" /> : <CopyIcon className="size-3.5" />}
                     {copied ? "Copied!" : "Copy as text"}
                   </button>
                   <button
                     onClick={handleSaveImage}
-                    className="flex items-center gap-2 w-full px-3 py-2 text-xs text-foreground hover:bg-muted transition-colors"
+                    className="flex items-center gap-2 w-full px-3 py-2.5 text-sm text-foreground hover:bg-muted transition-colors"
                   >
-                    <Download className="size-3.5" />
+                    <DownloadSimpleIcon className="size-3.5" />
                     Save as image
                   </button>
                 </div>
@@ -181,56 +190,56 @@ export function SectionStrip({
           <p className="text-sm text-muted-foreground">No sections yet. Add one to start looping.</p>
         </div>
       ) : (
-        <div className="flex gap-2 overflow-x-auto pb-2 -mx-1 px-1 snap-x">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
           {sections.map((section, idx) => {
             const isSelected = selectedSectionIds.includes(section.id);
             const isPlaying = currentTime >= section.startSec && currentTime < section.endSec;
             return (
               <div
                 key={section.id}
-                className={`shrink-0 snap-start w-[120px] sm:w-[140px] p-2.5 sm:p-3 rounded-xl border transition-all cursor-pointer active:scale-[0.97] relative ${
+                className={`min-w-0 px-4 py-3 rounded-2xl border transition-all duration-200 ease-spring cursor-pointer active:scale-[0.97] relative ${
                   isSelected
-                    ? "bg-blue-50 dark:bg-blue-950 border-blue-300 dark:border-blue-700 shadow-sm"
+                    ? "bg-loop/10 border-loop ring-1 ring-inset ring-loop"
                     : isPlaying
                     ? "bg-card border-primary/30 shadow-sm"
                     : "bg-card border-border hover:border-ring/30"
                 }`}
                 onClick={() => onSelectSection(section)}
               >
-                <div className="flex items-center gap-1.5 mb-1">
-                  <div className={`size-2.5 rounded-full ${SECTION_DOT_COLORS[idx % SECTION_DOT_COLORS.length]} ${isPlaying ? "animate-pulse" : ""}`} />
-                  <span className="text-sm font-medium text-foreground truncate">{section.name}</span>
+                <div className="flex items-center gap-2 mb-0.5">
+                  <div className={`size-2.5 shrink-0 rounded-full ${SECTION_DOT_COLORS[idx % SECTION_DOT_COLORS.length]} ${isPlaying ? "animate-pulse" : ""}`} />
+                  <span className="text-base font-semibold text-foreground truncate">{section.name}</span>
                 </div>
-                <span className="text-[11px] text-muted-foreground tabular-nums block">
+                <span className={`text-sm tabular-nums block ${isSelected ? "text-loop" : "text-muted-foreground"}`}>
                   {formatTime(section.startSec)} – {formatTime(section.endSec)}
                 </span>
                 {(() => {
                   const bars = getBarCount(section, beatTimestamps, timeSignature);
                   return bars !== null ? (
-                    <span className="text-[10px] text-muted-foreground/70 block mb-1">~{bars} {bars === 1 ? "bar" : "bars"}</span>
-                  ) : <span className="mb-1 block" />;
+                    <span className="text-xs text-muted-foreground block">~{bars} {bars === 1 ? "bar" : "bars"}</span>
+                  ) : null;
                 })()}
                 {editMode && (
-                  <div className="flex items-center justify-end">
+                  <div className="flex items-center justify-end -mr-2 -mb-1">
                     <div className="flex items-center gap-0">
                       <button
                         onClick={(e) => { e.stopPropagation(); onEditSection(section); }}
-                        className="p-1 rounded text-muted-foreground/60 hover:text-foreground"
+                        className="size-10 grid place-items-center rounded-lg text-muted-foreground hover:text-foreground"
                       >
-                        <Pencil className="size-3" />
+                        <PencilSimpleIcon className="size-4" />
                       </button>
                       <button
                         onClick={(e) => { e.stopPropagation(); onDeleteSection(section.id); }}
-                        className="p-1 rounded text-muted-foreground/60 hover:text-destructive"
+                        className="size-10 grid place-items-center rounded-lg text-muted-foreground hover:text-destructive"
                       >
-                        <Trash2 className="size-3" />
+                        <TrashIcon className="size-4" />
                       </button>
                     </div>
                   </div>
                 )}
                 {(loopCounts[section.id] ?? 0) > 0 && (
-                  <span className="text-[10px] text-muted-foreground flex items-center gap-0.5 mt-1">
-                    <RotateCw className="size-2.5" />
+                  <span className="text-xs text-loop font-medium flex items-center gap-1 mt-1">
+                    <ArrowClockwiseIcon className="size-3" />
                     {loopCounts[section.id]} loops
                   </span>
                 )}

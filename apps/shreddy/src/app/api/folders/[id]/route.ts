@@ -22,6 +22,12 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  await prisma.folder.delete({ where: { id } });
+  // Only the folder and its memberships go — the songs stay in the library.
+  // Explicit rather than trusting the schema's cascade, which needs SQLite's
+  // foreign_keys pragma to be on.
+  await prisma.$transaction([
+    prisma.songFolder.deleteMany({ where: { folderId: id } }),
+    prisma.folder.delete({ where: { id } }),
+  ]);
   return NextResponse.json({ ok: true });
 }
