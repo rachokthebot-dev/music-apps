@@ -16,6 +16,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { DEFAULT_LEVELS } from "./levelDoc";
 import { PRESET_DIR } from "./masterStore";
 
 export interface SoundpathSettings {
@@ -43,6 +44,18 @@ export interface SoundpathSettings {
    * block useless for fixing a quiet preset works in our favour here.
    */
   recordOffsetDb: number;
+  /**
+   * dB over clean for each role, for Quick level — it measures whatever is on
+   * the pedal, so there's no gig or preset to keep these in. Gigs and presets
+   * keep their own.
+   */
+  roleOffsets: RoleOffsetSettings;
+}
+
+export interface RoleOffsetSettings {
+  rhythmOffsetDb: number;
+  chorusOffsetDb: number;
+  soloOffsetDb: number;
 }
 
 /**
@@ -62,6 +75,11 @@ export const DEFAULT_SETTINGS: SoundpathSettings = {
   headroomDb: 6,
   // Zero by default: it only earns its keep when something actually clips.
   recordOffsetDb: 0,
+  roleOffsets: {
+    rhythmOffsetDb: DEFAULT_LEVELS.rhythmOffsetDb,
+    chorusOffsetDb: DEFAULT_LEVELS.chorusOffsetDb,
+    soloOffsetDb: DEFAULT_LEVELS.soloOffsetDb,
+  },
 };
 
 const FILE = join(PRESET_DIR, "soundpath-settings.json");

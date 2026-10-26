@@ -2,7 +2,7 @@ import { SidebarMenuButton } from "@music-apps/shared/app-shell";
 import { Shell } from "@/components/Shell";
 
 /**
- * Recording guide for levelling a gig.
+ * Recording guide: every view, in plain steps.
  *
  * Written from what actually went wrong doing this for real: clipped takes, a
  * preset silent because it wanted a Variax, one long recording that couldn't be
@@ -23,320 +23,264 @@ export default function Help() {
           <h1 className="text-2xl font-semibold tracking-tight">Recording guide</h1>
         </div>
         <p className="text-sm text-muted-foreground mt-1">
-          Record your presets, and the gig gets levelled from what they really sound like.
+          SoundPath makes your Helix sounds sit at the right volume next to each other. You play,
+          it listens, and it tells you — or writes into the preset — how much to turn each one up
+          or down.
         </p>
       </header>
 
-      <Section title="The short version">
+      <Section title="The four views">
+        <ul>
+          <li>
+            <strong>Library</strong>{" "}— every setlist and preset stored here, plus presets sent over
+            from HelAIx. Open one to work on it.
+          </li>
+          <li>
+            <strong>Quick level</strong>{" "}— check whatever is on the Helix right now. Nothing to
+            load, nothing saved.
+          </li>
+          <li>
+            <strong>Preset</strong>{" "}— level one <code>.hlx</code>{" "}on its own. Download the levelled
+            file when you&apos;re done.
+          </li>
+          <li>
+            <strong>Setlist</strong>{" "}— level a whole gig (<code>.hls</code>) so nothing jumps
+            between songs.
+          </li>
+        </ul>
+      </Section>
+
+      <Section title="Before you record">
+        <ul>
+          <li>Connect the Helix by USB. It acts as the audio interface — no input gain to set.</li>
+          <li>
+            Use <strong>Chrome</strong>, on <code>localhost</code>{" "}or https. Safari gives mono,
+            which reads a few dB wrong; a plain LAN address can&apos;t use the microphone at all.
+          </li>
+          <li>
+            Set macOS <strong>Mic Mode</strong>{" "}(Control Center) to <em>Standard</em>, not Voice
+            Isolation.
+          </li>
+          <li>
+            Check you&apos;ve got the Helix: the meter should move when you play, not when you
+            talk, and it should say <strong>2 channels</strong>.
+          </li>
+        </ul>
+      </Section>
+
+      <Section title="Playing a take">
+        <ul>
+          <li>Press record, wait a second, then play one chord.</li>
+          <li>
+            Let it ring out to silence before stopping. The quiet before and after is how the app
+            checks nothing is adding gain.
+          </li>
+          <li>Same chord, same fret, same picking strength every time.</li>
+        </ul>
+        <TakeDiagram />
+        <p>
+          The shaded band is the part that&apos;s measured — just after the pick attack, so it
+          measures the patch rather than your right hand. Drag either edge if it landed in the
+          wrong place. A take that <strong>clipped</strong>{" "}is refused: turn the level down and play
+          it again.
+        </p>
+      </Section>
+
+      <Section title="Quick level — check one sound">
+        <ol>
+          <li>Open <strong>Quick level</strong>, enable the input, record one take.</li>
+          <li>
+            The table shows clean, rhythm, chorus and solo, each with how many dB to add to the
+            Output block Level for this sound to land there.
+          </li>
+          <li>
+            Pick the row for what this sound is meant to be, change the Output block by that much,
+            record again. It should now read close to zero.
+          </li>
+        </ol>
+        <p>
+          The Rhythm / Chorus / Solo steppers set how far above clean each role sits. They&apos;re
+          remembered for Quick level; gigs and presets keep their own.
+        </p>
+      </Section>
+
+      <Section title="Level one preset">
         <ol>
           <li>
-            Download <strong>original .hls</strong> (or the version you want to build on) and load
-            it onto the Helix.
+            Open <strong>Preset</strong>{" "}and upload a <code>.hlx</code>, or pick one from the
+            Library (HelAIx presets land there).
           </li>
           <li>
-            Set <strong>On the Helix right now</strong> to match what you just loaded. Everything
-            depends on this.
+            Download <strong>original .hlx</strong>{" "}and load it onto the Helix. Check{" "}
+            <strong>On the Helix right now</strong>{" "}says the same — see below.
           </li>
-          <li><strong>Connect Helix</strong>. Check it says 2 channels.</li>
-          <li><strong>Reset recordings</strong>, then <strong>record</strong> every snapshot.</li>
-          <li><strong>Confirm levels</strong> → a new version. Download it and load it.</li>
+          <li><strong>Connect Helix</strong>, then record each snapshot.</li>
+          <li>
+            <strong>Confirm</strong> → a new version. Download it and load it onto the Helix.
+          </li>
         </ol>
         <LoopDiagram />
         <p>
-          Sounds wrong? Set the baseline to the version you just loaded, reset, record again,
-          confirm. Each pass corrects what&apos;s left, so it converges.
+          Still something off? Record again through the version you just loaded and confirm again.
+          Each pass fixes what&apos;s left.
         </p>
       </Section>
 
-      <Section title="The baseline — the one that bites">
+      <Section title="Level a whole gig">
         <p>
-          A reading only means something next to the gain that produced it. Correcting a snapshot
-          means moving it from where it <em>was</em>, so the app needs the level that was actually
-          in force while you played.
+          The same steps as a preset, for a whole setlist: open it in <strong>Setlist</strong>{" "}
+          (<strong>Upload .hls</strong>, or one sent from the Setlists app), load the{" "}
+          <strong>original .hls</strong>, record every snapshot of every song, confirm, load the
+          new version.
         </p>
         <p>
-          That is why <strong>On the Helix right now</strong> exists, and it is the only setting
-          that is invisible when wrong. Load a levelled file, forget to say so, and the app reasons
-          from the original preset instead — applying a correction on top of a correction. Nothing
-          looks broken. The numbers stay plausible. The file is just wrong, by however much the
-          loaded version had already moved things.
-        </p>
-        <p>
-          Doing exactly that produced an <strong>11 dB error</strong>: one preset far too loud,
-          another far too quiet, everything else fine. If a preset sounds badly off after a pass,
-          suspect this before anything else.
-        </p>
-        <BaselineDiagram />
-        <p>
-          Downloading any version sets it for you, since that&apos;s the moment you&apos;re about to
-          load it. If you download something and <em>don&apos;t</em> load it, set it back by hand.
+          One song changed? <strong>level on its own ↗</strong>{" "}on its row opens it in Preset. Once
+          it&apos;s recorded there, the row shows <em>readings ready</em>{" "}—{" "}
+          <strong>use them</strong>{" "}and you don&apos;t have to re-record the whole gig. That needs
+          the gig to have a fixed target level (next section).
         </p>
       </Section>
 
-      <Section title="What LUFS means">
+      <Section title="Roles and the target">
         <p>
-          <strong>LUFS</strong> — Loudness Units relative to Full Scale — is the standard for
-          measuring how loud something actually <em>sounds</em>. It&apos;s what streaming services
-          use to stop one track blasting you after another.
-        </p>
-        <p>It differs from a normal meter in two ways:</p>
-        <ul>
-          <li>
-            It weights frequencies the way ears do. We hear midrange as louder than bass or treble,
-            so a mid-forward patch is scored as louder than a scooped one at the same meter reading.
-          </li>
-          <li>
-            It averages over time and ignores silence, so a sustained chord and a short stab are
-            compared fairly.
-          </li>
-        </ul>
-        <p>
-          Values are always negative — 0 LUFS is the loudest a digital signal can be. Streaming sits
-          around −14. <strong>Only the differences matter here</strong>: your absolute numbers depend
-          on how loud you recorded, but the gap between two presets is real.
+          Every snapshot is <strong>clean</strong>, <strong>rhythm</strong>, <strong>chorus</strong>{" "}
+          or <strong>solo</strong>. Roles are guessed from snapshot names — check them, and fix any
+          that are wrong in the table. What you set stays set, and follows the patch into other
+          gigs.
         </p>
         <p>
-          Why not just use a peak meter? A compressed lead and a clean tone can peak identically and
-          sound nothing alike. Peaks measure the signal; LUFS measures what you hear.
-        </p>
-      </Section>
-
-      <Section title="Why recordings, not a calculation">
-        <p>
-          You can&apos;t work out how loud a preset is by reading its file. Amps and pedals are
-          non-linear, and loudness depends on the shape of the sound, not on adding up gain
-          settings.
-        </p>
-        <p>
-          This app used to try. It reported a gig as perfectly level while{" "}
-          <strong>one preset sat 30 dB below another</strong>. Now every number comes from a real
-          recording.
-        </p>
-      </Section>
-
-      <Section title="Set the trim first">
-        <p>
-          Your loudest preset will clip long before the quiet ones are usable. A clipped chord
-          measures <em>quieter</em> than it is, so it gets pushed the wrong way.
-        </p>
-        <ol>
-          <li>
-            Set <strong>New takes at</strong> to something like <code>-20</code> dB and download the{" "}
-            <code>.hls</code>. Every preset drops by the same amount, so the differences between
-            them — the only thing measured — don&apos;t change.
-          </li>
-          <li>Load it into HX Edit.</li>
-          <li>
-            Play your loudest patch and watch the meter. Well clear of red? Good. Still clipping?
-            Increase the trim — at 24-bit a quiet recording is still miles above the noise floor.
-          </li>
-        </ol>
-        <p>
-          Each reading remembers the trim it was made at, so takes at different trims stay correct.
-          But the value has to match what you really recorded through — get it wrong and everything
-          lands off by that much.
-        </p>
-      </Section>
-
-      <Section title="Recording — live, or from files">
-        <p>
-          <strong>record</strong> on a preset row captures straight off the Helix, one take per
-          snapshot. Play the chord, let it ring out, stop — the reading is stored the moment you
-          stop, and re-recording replaces it. Nothing to confirm.
-        </p>
-        <TakeDiagram />
-        <p>
-          Each take shows its waveform with the measured region shaded. The green line over it is
-          momentary loudness, which is what makes the shape legible: where the note starts, whether
-          it has decayed. Drag either edge to overrule the region and the reading updates.
-        </p>
-        <p>
-          <strong>upload .wav</strong> is the other path: one file per preset with every snapshot
-          played in order, a pause between. Useful if you&apos;d rather track in a DAW. It has to
-          find exactly as many chords as the preset has snapshots, and refuses the whole file if it
-          finds one too few — which on a quiet patch happens often. Live capture has no such
-          failure, which is why it&apos;s the default.
-        </p>
-        <p>
-          A single long take of the whole gig doesn&apos;t work either way: across a 50 dB setlist,
-          the hiss between chords on a loud patch is louder than the actual notes on a quiet one, so
-          there&apos;s no telling where one preset ends.
-        </p>
-      </Section>
-
-      <Section title="Recording setup">
-        <p>Over USB the Helix is an audio interface. Its main output is USB 1/2.</p>
-        <p>For live capture in the browser:</p>
-        <ul>
-          <li>
-            <strong>Use Chrome.</strong> It reports whether the input is being processed and gives
-            you both channels. Safari hands back mono, and a mono downmix loses 3 dB on a dry patch
-            but 6 dB on a wide one — so the error rides on how much stereo each snapshot has and
-            doesn&apos;t cancel between them. The header says <code>mono ⚠</code> if this happens.
-          </li>
-          <li>
-            <strong>https or localhost.</strong> Browsers refuse the microphone on a plain LAN
-            address. On the machine running the app, <code>localhost</code> is simplest.
-          </li>
-          <li>
-            <strong>Check Mic Mode in Control Center</strong> is <em>Standard</em>, not Voice
-            Isolation. macOS applies that upstream of the browser, so the panel can&apos;t see it.
-          </li>
-          <li>
-            Watch the meter to confirm you&apos;ve got the Helix and not the built-in mic: if it
-            moves when you <em>talk</em>, it&apos;s the room.
-          </li>
-        </ul>
-        <p>If you&apos;d rather record in a DAW and upload files:</p>
-        <ul>
-          <li>
-            <strong>GarageBand:</strong> Settings → Audio/MIDI → Input Device →{" "}
-            <code>HELIX Audio</code>. New track → <strong>Mic or Line</strong> (not Guitar or Bass —
-            that adds GarageBand&apos;s own amps) → Input <strong>1 + 2</strong>, stereo.
-          </li>
-          <li>
-            Turn off every plug-in on the track <em>and</em> the Master. GarageBand puts a Limiter
-            and Compressor on the Master by default, and a limiter quietly squashes your loud
-            snapshots toward the quiet ones — faking the alignment you&apos;re trying to measure.
-          </li>
-          <li><strong>Noise Gate off.</strong> It cuts chord tails and changes every reading.</li>
-          <li>Export as uncompressed WAV.</li>
-        </ul>
-        <p>
-          There&apos;s no input gain to set — USB is digital, so the level arrives fixed from the
-          Helix, and nothing on the computer can drift between sessions.
-        </p>
-      </Section>
-
-      <Section title="Playing the take">
-        <ul>
-          <li>Same chord, same fret, same picking force every time. That consistency is the measurement.</li>
-          <li>Let it ring ~4 seconds, mute the strings, pause, switch, next.</li>
-          <li>Pauses can be any length.</li>
-          <li>Fumbled one? Play it again straight away without pausing, or re-record that preset.</li>
-        </ul>
-      </Section>
-
-      <Section title="Roles">
-        <p>
-          Each snapshot is <strong>clean</strong>, <strong>rhythm</strong>, <strong>chorus</strong>{" "}
-          or <strong>solo</strong>. Clean is the reference; the steppers set how far above it the
-          others sit.
-        </p>
-        <p>
-          Roles are guessed from snapshot names and are often wrong — &ldquo;OD Wah Wah&rdquo; reads
-          as neither, and a preset&apos;s &ldquo;Main&rdquo; might be its loudest sound. Fix them in
-          the table. Anything you set by hand stays set.
+          <strong>Target level</strong>{" "}is where clean lands, in LUFS. Leave it fixed (−18 by
+          default) so every gig and preset ends up at the same volume. The steppers set how far
+          above clean the other roles sit.
         </p>
         <ReferenceDiagram />
         <p>
-          The <code>.hls</code> is rebuilt every time you download it, so changes are already in the
-          next file. There&apos;s no apply button.
+          The Output block can only go up to +12 dB. If a snapshot can&apos;t reach its target it&apos;s
+          flagged ⚠ rather than quietly left short — lower the target, or turn that preset up at the
+          amp.
         </p>
+      </Section>
+
+      <Section title="On the Helix right now">
+        <p>
+          Tell the app which file is on the pedal while you record: the original, or a version you
+          confirmed. The correction is worked out from that, so if it&apos;s wrong, the result is
+          wrong by the same amount — and nothing looks broken.
+        </p>
+        <BaselineDiagram />
+        <p>
+          Downloading a file sets this for you. If you download something and <em>don&apos;t</em>{" "}
+          load it, set it back by hand. If a preset sounds badly off after a pass, check this first.
+        </p>
+      </Section>
+
+      <Section title="Presets too hot to record">
+        <p>
+          If your loudest presets clip on the way in, turn the whole gig down before recording: set
+          the offset next to the <strong>original</strong>{" "}download (e.g. −20 dB), tick{" "}
+          <em>in the loaded file</em>, and download again. Every preset drops by the same amount.
+        </p>
+        <p>
+          It doesn&apos;t change the result — the app adds the offset straight back when it works
+          out the correction.
+        </p>
+      </Section>
+
+      <Section title="Versions, reset and replace">
+        <ul>
+          <li>
+            <strong>Confirm</strong>{" "}freezes the current levels as v1, v2… A version keeps its own
+            copy of the presets, so it can always be downloaded again. The number is in the setlist
+            name, so the Helix shows which one is loaded.
+          </li>
+          <li>
+            Before you confirm, the download is a <strong>preview</strong>{" "}— it changes whenever a
+            reading does. You can confirm a partly recorded gig; it&apos;s marked partial.
+          </li>
+          <li>
+            <strong>Reset recordings</strong>{" "}clears every reading for a fresh pass. Versions stay.
+          </li>
+          <li>
+            <strong>Replace from .hls</strong>{" "}— you changed presets on the pedal. It swaps in the
+            new presets and clears the readings, but keeps roles, settings and version history.
+          </li>
+        </ul>
       </Section>
 
       <Section title="Where the level is changed">
         <p>
-          In the <strong>output block</strong> — the last thing before the jacks, after the amp, cab
-          and effects. It changes volume without touching tone.
+          Always the <strong>Output block</strong>{" "}— the last block, after amp, cab and effects.
+          It changes volume without changing the tone.
         </p>
         <ChainDiagram />
         <p>
-          Not Channel Volume, which sits inside the amp and changes how hard it&apos;s driven. And
-          not a gain block in a free slot — free slots are usually <em>before</em> the amp, where
-          gain changes distortion instead of level. That mistake once took 14 dB off a high-gain
-          preset and left it just as loud.
+          Not Channel Volume or a gain block before the amp: those change how hard the amp is
+          driven, so the distortion changes and the volume barely does.
+        </p>
+      </Section>
+
+      <Section title="Recording in a DAW instead">
+        <p>
+          Prefer GarageBand or similar? Record one file per preset — every snapshot in order, a
+          pause between — and use <strong>upload .wav</strong>{" "}on that preset.
+        </p>
+        <ul>
+          <li>Input <code>HELIX Audio</code>{" "}1 + 2, stereo, on a Mic or Line track.</li>
+          <li>
+            Turn off every plug-in, including the Limiter and Compressor GarageBand puts on the
+            Master, and the Noise Gate.
+          </li>
+          <li>Export uncompressed WAV.</li>
+        </ul>
+        <p>
+          It must find exactly one chord per snapshot, and quiet patches often confuse it — live
+          recording is the more reliable path.
         </p>
       </Section>
 
       <Section title="If something looks wrong">
         <ul>
           <li>
-            <strong>&ldquo;Found N chords but the preset has M snapshots&rdquo;</strong> — a missed
-            or doubled chord. Re-record that preset.
+            <strong>Clipped</strong>{" "}— turn down (Output block, or the record offset) and record
+            again.
           </li>
           <li>
-            <strong>&ldquo;Clipped at 0 dBFS&rdquo;</strong> — increase the trim, redo that one.
+            <strong>Silence</strong>{" "}— check the preset&apos;s input block. One was set to Variax
+            and made no sound on a normal guitar.
           </li>
           <li>
-            <strong>Silence.</strong> Check the preset&apos;s input block. One patch here was set to{" "}
-            <strong>Variax</strong> and made no sound at all on a normal guitar.
+            <strong>⚠ on a change</strong>{" "}— the Output block can&apos;t go that high. Lower the
+            target or fix the preset.
           </li>
           <li>
-            <strong>⚠ on a correction</strong> — the output block stops at +12 dB and can&apos;t
-            reach. Fix that preset at the source instead.
+            <strong>Input checks warn</strong>{" "}— something is adding gain. Check Mic Mode, then try
+            Chrome.
+          </li>
+          <li>
+            <strong>A whole pass sounds off</strong>{" "}— check <em>On the Helix right now</em>.
+          </li>
+          <li>
+            <strong>&ldquo;Found N chords but the preset has M snapshots&rdquo;</strong>{" "}— a missed
+            or doubled chord in an uploaded .wav. Record it again.
           </li>
         </ul>
       </Section>
 
-      <Section title="Versions">
+      <Section title="Why it works this way">
         <p>
-          <strong>Confirm levels</strong> freezes the current plan as a numbered version. Until you
-          do, a download is only a preview — re-record one song and the file you took to the gig
-          would have quietly meant something else.
+          <strong>LUFS</strong>{" "}measures how loud something <em>sounds</em>, weighting frequencies
+          the way ears do — unlike a peak meter, where a compressed lead and a clean tone can read
+          the same and sound nothing alike. Numbers are negative; closer to 0 is louder.
         </p>
         <p>
-          A version keeps its own finished presets, so it stays downloadable no matter what happens
-          to the live ones afterwards. The number goes in the setlist name as well as the filename,
-          so the Helix itself shows which pass is loaded — mid-gig that&apos;s the only place you
-          can check.
+          And it&apos;s measured from real playing, not calculated from the preset file. Amps are
+          non-linear: an older version of this app worked it out from the file and called a gig
+          level while one song sat 30 dB below another.
         </p>
         <p>
-          Numbers are chronological. Confirming always gives you the next one up, whichever version
-          you measured through.
-        </p>
-        <p>
-          Confirming needs every snapshot recorded. The reference is averaged across the whole gig,
-          so a half-measured setlist doesn&apos;t give you a half-answer — it gives you a reference
-          computed from whichever songs happened to be done, and moves every gain.
-        </p>
-      </Section>
-
-      <Section title="When the pedal is ahead of the app">
-        <p>
-          You changed a patch at soundcheck, or between songs, and the Helix no longer matches what
-          the app has. Export from HX Edit and use <strong>Replace presets from .hls</strong> on the
-          setlist.
-        </p>
-        <p>
-          The gig keeps its identity, its role settings and its version history. The presets are
-          replaced and <strong>every reading is cleared</strong> — they measured patches that no
-          longer exist. Earlier versions stay downloadable, because each one carries its own copy.
-        </p>
-        <p>
-          A gig that has nothing to do with this one belongs on the Library page instead, where{" "}
-          <strong>Upload .hls</strong> starts its own session.
-        </p>
-      </Section>
-
-      <Section title="Reset recordings">
-        <p>
-          Clears every reading so the next pass starts clean. Confirmed versions are untouched and
-          stay downloadable — it starts the next pass, it doesn&apos;t retract the last one.
-        </p>
-        <p>
-          It&apos;s all-or-nothing on purpose. Levelling assumes every reading came from one sitting
-          with nothing on the Helix touched in between, so a half-replaced set is exactly the
-          mixture that produces wrong levels with nothing visibly amiss.
-        </p>
-      </Section>
-
-      <Section title="One pass, one sitting">
-        <p>
-          Record the whole gig in one go, without changing anything on the Helix — no volume knob,
-          no global settings, no swapping guitars. The reference is an average across every reading,
-          so anything that shifts the level partway through tilts everything recorded before it.
-        </p>
-        <p>
-          Readings don&apos;t travel between setlists. The same patch in another gig gets recorded
-          again, because a number taken on a different day through a setup the app can&apos;t see is
-          exactly the stale input this is meant to exclude. Roles do carry over — those are a
-          labelling decision about the song, not a measurement.
-        </p>
-        <p>
-          Bear in mind what&apos;s actually being measured: a recording of <em>you playing</em>
-          {" "}through the patch. Play a chord on one snapshot and a single note on the next and the
-          reading will say the second is quieter, because for that input it was.
+          It measures <em>you</em>{" "}playing through the patch, so keep the playing the same — a
+          chord on one snapshot and a single note on the next will read as a level difference.
+          Don&apos;t touch the Helix volume knob or global settings mid-pass.
         </p>
       </Section>
 
@@ -547,7 +491,7 @@ function TakeDiagram() {
         wait a beat
       </text>
       <text x={265} y={128} textAnchor="middle" className="fill-violet-500 text-[11px] font-semibold">
-        measured region — 3 s from the onset
+        measured region — just after the attack
       </text>
       <text x={545} y={128} textAnchor="middle" className="fill-current opacity-60 text-[11px]">
         let it decay, then stop
@@ -594,7 +538,7 @@ function ReferenceDiagram() {
   const rows: Array<[string, number, number, boolean]> = [
     ["clean", 250, 0, true],
     ["rhythm", 470, 1.5, true],
-    ["solo", 300, 3, true],
+    ["solo", 300, 5, true],
     ["wet", 90, 1.5, false],
   ];
   const px = (db: number) => REF + db * 26;

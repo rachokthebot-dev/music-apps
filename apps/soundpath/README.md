@@ -95,9 +95,9 @@ A gig and a single preset are the same document, so the two route trees mirror e
 | `GET /api/presets`, `/api/presets/[id]`, `/api/presets/[id]/download` | Read the presets library |
 | `POST /api/presets/ingest` | External ingest (HelAIx) |
 
-## Bench
+## Quick level
 
-`/soundpath/measure` is a standalone bench: record takes, watch the proposed region, drag it, and check the input path isn't adding gain of its own. Nothing there is saved.
+`/soundpath/measure` levels whatever is on the Helix without loading anything: record one take and it lists, for clean, rhythm, chorus and solo, how many dB to move the Output block to hit that role's target (global −18 LUFS for clean; rhythm/chorus +1.5, solo +5). Nothing is saved. The bench diagnostics — input checks, the draggable window, peak/crest/floor — sit folded underneath it.
 
 ## License
 

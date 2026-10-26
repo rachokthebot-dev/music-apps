@@ -110,7 +110,7 @@ export interface LevelSettings {
 export const DEFAULT_LEVELS: LevelSettings = {
   rhythmOffsetDb: 1.5,
   chorusOffsetDb: 1.5,
-  soloOffsetDb: 3.0,
+  soloOffsetDb: 5.0,
   measurementTrimDb: 0,
 };
 

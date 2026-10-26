@@ -22,12 +22,14 @@ import { AppShell, SidebarItem, SidebarSection } from "@music-apps/shared/app-sh
  */
 const VIEWS = [
   { href: "/", label: "Library", icon: SquaresFourIcon },
+  // Smallest to largest: one sound off the pedal, one preset, a whole gig.
+  // Quick level has the bench's diagnostics folded underneath it.
+  { href: "/measure", label: "Quick level", icon: GaugeIcon },
   { href: "/level", label: "Preset", icon: SlidersHorizontalIcon },
   { href: "/setlist", label: "Setlist", icon: ListNumbersIcon },
 ] as const;
 
 const TOOLS = [
-  { href: "/measure", label: "Measure bench", icon: GaugeIcon },
   { href: "/help", label: "Recording guide", icon: BookOpenIcon },
 ] as const;
 

@@ -26,12 +26,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { SidebarMenuButton } from "@music-apps/shared/app-shell";
 import { Shell } from "@/components/Shell";
+import { RoleOffsets, type Plan } from "@/components/levelUi";
 import {
   floorFromTrace,
   measureRegion,
   peakDbfsOver,
   proposeChordRegion,
-  type FloorCheck,
 } from "@music-apps/gain-estimator/src/loudness/analyze";
 import {
   momentaryTrace,
@@ -44,6 +44,9 @@ const MAX_SEC = 30;
 const WAVE_BUCKETS = 900;
 /** A floor this much higher after the note than before it is not the guitar. */
 const FLOOR_RISE_ALARM = 3;
+
+type Role = "clean" | "rhythm" | "chorus" | "solo";
+const ROLES: Role[] = ["clean", "rhythm", "chorus", "solo"];
 
 // Inline AudioWorklet, delivered as a Blob URL so there's no public/ file and
 // no basePath coupling. It reports a peak ~20×/s always, and posts raw frames
@@ -136,7 +139,6 @@ function summarise(mono: Float32Array): { peaks: Array<[number, number]>; peakAb
 }
 
 export default function MeasureBench() {
-  const [count, setCount] = useState(4);
   // The region is capped at this from the onset, which is why a proposal stops
   // partway through a still-ringing chord. Fixed rather than "however long it
   // rang" so a sustaining snapshot and a short one are averaged over the same
@@ -150,6 +152,36 @@ export default function MeasureBench() {
   const [elapsed, setElapsed] = useState(0);
   const [takes, setTakes] = useState<Record<number, Take>>({});
   const [error, setError] = useState<string | null>(null);
+  // The global target and the role offsets a new gig starts with, so a check
+  // here lands where a levelled gig would put the same snapshot.
+  const [aim, setAim] = useState<{ targetLufs: number | null; levels: Plan["levels"] } | null>(
+    null
+  );
+
+  useEffect(() => {
+    fetch("/soundpath/api/settings")
+      .then((r) => r.json())
+      .then((d) => setAim({ targetLufs: d.settings.targetLufs, levels: d.levels }))
+      .catch(() => setAim(null));
+  }, []);
+
+  const setOffsets = useCallback(async (patch: Record<string, number>) => {
+    setAim((a) => (a ? { ...a, levels: { ...a.levels, ...patch } } : a));
+    await fetch("/soundpath/api/settings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    });
+  }, []);
+
+  const offsetFor = (role: Role) =>
+    !aim || role === "clean"
+      ? 0
+      : role === "rhythm"
+        ? aim.levels.rhythmOffsetDb
+        : role === "chorus"
+          ? aim.levels.chorusOffsetDb
+          : aim.levels.soloOffsetDb;
 
   const audio = useRef<{
     ctx: AudioContext;
@@ -382,27 +414,28 @@ export default function MeasureBench() {
     [measureSec, recordRegion]
   );
 
-  const rows = Array.from({ length: count }, (_, i) => i);
-
-  // Everything is relative to the first measured snapshot — the absolute LUFS
-  // depends on the Helix's output trim, the differences don't.
-  const results = useMemo(
-    () =>
-      rows
-        .map((i) => {
-          const t = takes[i];
-          if (!t) return null;
-          const m = measureRegion(t.channels, t.sampleRate, t.startSec, t.endSec);
-          return { index: i, ...m, floor: floorFromTrace(t.trace, t.startSec, t.endSec, m.lufs) };
-        })
-        .filter(Boolean) as Array<
-        { index: number; floor: FloorCheck } & ReturnType<typeof measureRegion>
-      >,
-    // rows is derived from count, and its identity changes every render.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [takes, count]
-  );
-  const reference = results[0]?.lufs ?? null;
+  // One take, always index 0 — the machinery below is keyed by row so the
+  // archive and region handling stay as they were.
+  const results = useMemo(() => {
+    const t = takes[0];
+    if (!t) return [];
+    const m = measureRegion(t.channels, t.sampleRate, t.startSec, t.endSec);
+    // Same attack-inclusive clip check as the row: a Change worked out from a
+    // clipped take would push it further into the ceiling.
+    const peakDbfs = Math.max(
+      m.peakDbfs,
+      peakDbfsOver(t.channels, t.sampleRate, Math.max(0, t.startSec - 0.35), t.startSec)
+    );
+    return [
+      {
+        ...m,
+        peakDbfs,
+        clipped: peakDbfs >= -0.1,
+        floor: floorFromTrace(t.trace, t.startSec, t.endSec, m.lufs),
+      },
+    ];
+  }, [takes]);
+  const take = results[0] ?? null;
 
   // One verdict from every take that could offer evidence, so a single noisy
   // one doesn't decide it either way.
@@ -417,21 +450,13 @@ export default function MeasureBench() {
         ? ("clean" as const)
         : null;
 
-  /**
-   * Second, independent evidence, and the one that works on takes with no
-   * silence in them: automatic gain control exists to pull levels together.
-   * If takes recorded at very different levels stay far apart, and each keeps
-   * the same peak-to-loudness ratio, nothing is riding the gain.
-   */
-  const linearity = useMemo(() => {
-    if (results.length < 2) return null;
-    const lufs = results.map((r) => r.lufs);
-    const crests = results.map((r) => r.crestDb);
-    const span = Math.max(...lufs) - Math.min(...lufs);
-    const crestSpread = Math.max(...crests) - Math.min(...crests);
-    if (span < 6) return null;
-    return { span, crestSpread, takes: results.length };
-  }, [results]);
+  const inputSuspect =
+    verdict === "suspect" ||
+    (applied !== null &&
+      (applied.channelCount < 2 ||
+        applied.autoGainControl === true ||
+        applied.echoCancellation === true ||
+        applied.noiseSuppression === true));
 
   return (
     <Shell>
@@ -439,16 +464,15 @@ export default function MeasureBench() {
       <header className="mb-4">
         <div className="flex items-center gap-1">
           <SidebarMenuButton />
-          <h1 className="text-2xl font-semibold tracking-tight">Measure bench</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">Quick level</h1>
         </div>
         <p className="text-sm text-muted-foreground mt-1">
-          One recording per snapshot, straight off the Helix. Nothing here changes a preset — this
-          is to find out whether the capture path is honest. Takes are archived to{" "}
-          <code className="font-mono">takes/</code> in your presets folder, so the window can be
-          tuned against them.{" "}
-          <Link href="/" className="underline hover:text-foreground">
-            Back to library
+          Play whatever is on the Helix and see how far to move its Output block to land on
+          clean, rhythm, chorus or solo. Nothing is loaded or saved — for a whole gig, use{" "}
+          <Link href="/setlist" className="underline hover:text-foreground">
+            Setlist
           </Link>
+          .
         </p>
       </header>
 
@@ -470,8 +494,7 @@ export default function MeasureBench() {
       <section className="mb-6 rounded-xl border border-border p-4">
         <h2 className="text-[15px] font-semibold mb-1">1 · Input</h2>
         <p className="text-xs text-muted-foreground mb-3">
-          Connect the Helix by USB first, then enable. Device names are hidden until you&apos;ve
-          granted permission once, so the list fills in after the first tap.
+          Connect the Helix by USB, then enable. Device names fill in after the first tap.
         </p>
 
         <div className="flex flex-wrap items-center gap-2">
@@ -499,8 +522,23 @@ export default function MeasureBench() {
         </div>
 
         {applied && (
-          <>
-            <dl className="mt-4 grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-2 text-[11.5px]">
+          // Folded away while the path looks honest; opens itself when it doesn't,
+          // since a reading through AGC or a mono downmix is wrong by several dB.
+          <details
+            open={inputSuspect || undefined}
+            className="mt-3 text-[12px] [&_summary]:cursor-pointer"
+          >
+            <summary className="text-muted-foreground select-none">
+              Input checks —{" "}
+              <span
+                className={
+                  inputSuspect ? "text-amber-600 dark:text-amber-400 font-semibold" : undefined
+                }
+              >
+                {inputSuspect ? "something needs a look" : "looks clean"}
+              </span>
+            </summary>
+            <dl className="mt-3 grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-2 text-[11.5px]">
               <Fact label="Device" value={applied.label} />
               <Fact label="Sample rate" value={`${applied.sampleRate} Hz`} />
               <Fact
@@ -527,17 +565,23 @@ export default function MeasureBench() {
               verdict={verdict}
               rises={rises}
               climbs={climbs}
-              linearity={linearity}
             />
-          </>
+          </details>
         )}
       </section>
 
       <section className="mb-6 rounded-xl border border-border p-4">
         <div className="flex items-baseline justify-between gap-4 mb-1">
-          <h2 className="text-[15px] font-semibold">2 · Snapshots</h2>
-          <div className="flex items-center gap-4">
-            <label className="text-[11.5px] text-muted-foreground flex items-center gap-2">
+          <h2 className="text-[15px] font-semibold">2 · Play</h2>
+        </div>
+        <p className="text-xs text-muted-foreground mb-3">
+          Record, wait a second, play the chord, then <strong>let it ring out to silence before
+          stopping</strong>. The shaded band is what&apos;s measured; drag either edge to move it.
+        </p>
+        <details className="mb-3 text-[11.5px] [&_summary]:cursor-pointer">
+          <summary className="text-muted-foreground select-none">Measurement window</summary>
+          <div className="mt-2 flex items-center gap-4">
+            <label className="text-muted-foreground flex items-center gap-2">
               Window
               <input
                 type="number"
@@ -551,99 +595,111 @@ export default function MeasureBench() {
                 title="Seconds measured from the onset. Fixed so a sustaining snapshot and a short one are averaged over the same span; 3 s matches the setlist path."
                 className="w-16 px-2 py-1 rounded-md border border-border bg-background tabular-nums"
               />
-            </label>
-            <label className="text-[11.5px] text-muted-foreground flex items-center gap-2">
-              How many
-              <input
-                type="number"
-                min={1}
-                max={8}
-                value={count}
-                onChange={(e) => setCount(Math.max(1, Math.min(8, Number(e.target.value) || 1)))}
-                className="w-14 px-2 py-1 rounded-md border border-border bg-background tabular-nums"
-              />
+              s from the onset
             </label>
           </div>
-        </div>
-        <p className="text-xs text-muted-foreground mb-3">
-          Start recording, wait a second or two, play the chord, then <strong>let it decay all the
-          way to silence before stopping</strong>. The quiet at both ends is what proves nothing is
-          adding gain — a take that never goes quiet gives no verdict. The shaded band is the
-          proposed region; drag either edge to overrule it.
-        </p>
+          <p className="mt-1 text-muted-foreground">
+            The quiet before and after the note is also what the input checks read — a take that
+            never goes quiet gives them nothing.
+          </p>
+        </details>
 
-        <div className="flex flex-col gap-3">
-          {rows.map((i) => (
-            <SnapshotRow
-              key={i}
-              index={i}
-              take={takes[i]}
-              armed={Boolean(applied)}
-              recording={recording === i}
-              otherRecording={recording !== null && recording !== i}
-              elapsed={elapsed}
-              onStart={() => start(i)}
-              onStop={stop}
-              onRegion={(a, b) => setRegion(i, a, b)}
-              onReAuto={() => reAuto(i)}
-            />
-          ))}
-        </div>
+        <SnapshotRow
+          index={0}
+          take={takes[0]}
+          armed={Boolean(applied)}
+          recording={recording === 0}
+          otherRecording={false}
+          elapsed={elapsed}
+          onStart={() => start(0)}
+          onStop={stop}
+          onRegion={(a, b) => setRegion(0, a, b)}
+          onReAuto={() => reAuto(0)}
+        />
       </section>
 
-      {results.length > 0 && (
+      {take && (
         <section className="rounded-xl border border-border p-4">
-          <h2 className="text-[15px] font-semibold mb-1">3 · Readings</h2>
+          <h2 className="text-[15px] font-semibold mb-1">3 · What to change</h2>
           <p className="text-xs text-muted-foreground mb-3">
-            Δ is against snapshot {results[0].index + 1} — that difference is what alignment acts
-            on, and unlike the absolute LUFS it doesn&apos;t depend on the Helix&apos;s output trim.
+            Measured <strong className="text-foreground">{take.lufs.toFixed(2)} LUFS</strong>.
+            {aim?.targetLufs == null
+              ? " No global target is set, so there's nothing absolute to aim at — set one on a setlist's plan."
+              : " Move the Output block by the amount for the role you want this sound to be."}
           </p>
-          <div className="overflow-x-auto">
-            <table className="w-full text-[12px] tabular-nums">
-              <thead className="text-[11px] uppercase tracking-wider text-muted-foreground">
-                <tr className="text-right">
-                  <th className="text-left font-medium pb-2">Snapshot</th>
-                  <th className="font-medium pb-2">LUFS</th>
-                  <th className="font-medium pb-2">Δ</th>
-                  <th className="font-medium pb-2">Peak</th>
-                  <th className="font-medium pb-2">Crest</th>
-                  <th className="font-medium pb-2">Floor before → after</th>
-                </tr>
-              </thead>
-              <tbody>
-                {results.map((r) => (
-                  <tr key={r.index} className="border-t border-border text-right">
-                    <td className="text-left py-1.5">{r.index + 1}</td>
-                    <td>{r.lufs.toFixed(2)}</td>
-                    <td>
-                      {reference === null || r.index === results[0].index
-                        ? "—"
-                        : `${r.lufs - reference >= 0 ? "+" : ""}${(r.lufs - reference).toFixed(2)}`}
-                    </td>
-                    <td className={r.clipped ? "text-destructive font-semibold" : ""}>
-                      {r.peakDbfs.toFixed(1)}
-                    </td>
-                    <td>{r.crestDb.toFixed(1)}</td>
-                    <td
-                      className={
-                        r.floor.riseDb !== null && r.floor.riseDb >= FLOOR_RISE_ALARM
-                          ? "text-amber-600 dark:text-amber-400 font-semibold"
-                          : "text-muted-foreground"
-                      }
-                    >
-                      {r.floor.riseDb === null ? (
-                        <span className="text-muted-foreground/60 font-normal text-[11px]">
-                          {r.floor.reason ?? "no verdict"}
-                        </span>
-                      ) : (
-                        `${r.floor.beforeDb} → ${r.floor.afterDb}  (${r.floor.riseDb >= 0 ? "+" : ""}${r.floor.riseDb})`
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          {aim && <RoleOffsets levels={aim.levels} onChange={setOffsets} />}
+          {take.clipped ? (
+            <p className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-[12.5px] text-destructive">
+              Clipped — a clipped take reads quieter than the patch is, so any change worked out
+              from it would push it further into the ceiling. Turn the Output block down and record
+              again.
+            </p>
+          ) : (
+            aim?.targetLufs != null && (
+              <div className="overflow-x-auto">
+                <table className="w-full text-[12px] tabular-nums whitespace-nowrap [&_td]:px-1.5 [&_th]:px-1.5">
+                  <thead className="text-[11px] uppercase tracking-wider text-muted-foreground">
+                    <tr className="text-right">
+                      <th className="text-left font-medium pb-2">Role</th>
+                      <th className="font-medium pb-2">Target</th>
+                      <th className="font-medium pb-2">Change</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {ROLES.map((role) => {
+                      const target = (aim.targetLufs as number) + offsetFor(role);
+                      const change = target - take.lufs;
+                      return (
+                        <tr key={role} className="border-t border-border text-right">
+                          <td className="text-left py-2">
+                            <span className="capitalize">{role}</span>
+                            {role !== "clean" && (
+                              <span className="ml-1.5 text-muted-foreground">
+                                +{offsetFor(role)} dB
+                              </span>
+                            )}
+                          </td>
+                          <td className="text-muted-foreground">{target.toFixed(1)} LUFS</td>
+                          <td className="text-[15px] font-semibold">
+                            {`${change >= 0 ? "+" : ""}${change.toFixed(1)} dB`}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )
+          )}
+          <p className="mt-3 text-xs text-muted-foreground">
+            Add <strong>Change</strong>{" "}to the Output block Level, then record again — it should
+            read close to zero. The block stops at +12 dB. Only valid through the USB tap.
+          </p>
+
+          <details className="mt-3 text-[12px] [&_summary]:cursor-pointer">
+            <summary className="text-muted-foreground select-none">Details</summary>
+            <dl className="mt-2 grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-2 text-[11.5px] tabular-nums">
+              <Fact
+                label="Peak"
+                value={`${take.peakDbfs.toFixed(1)} dBFS`}
+                warn={take.clipped ? "Clipped" : undefined}
+              />
+              <Fact label="Crest" value={`${take.crestDb.toFixed(1)} dB`} />
+              <Fact
+                label="Floor before → after"
+                value={
+                  take.floor.riseDb === null
+                    ? take.floor.reason ?? "no verdict"
+                    : `${take.floor.beforeDb} → ${take.floor.afterDb} (${take.floor.riseDb >= 0 ? "+" : ""}${take.floor.riseDb})`
+                }
+                warn={
+                  take.floor.riseDb !== null && take.floor.riseDb >= FLOOR_RISE_ALARM
+                    ? "Floor rose after the note"
+                    : undefined
+                }
+              />
+            </dl>
+          </details>
         </section>
       )}
     </main>
@@ -699,30 +755,18 @@ function ProcessingVerdict({
   verdict,
   rises,
   climbs,
-  linearity,
 }: {
   verdict: "clean" | "suspect" | null;
   rises: number[];
   climbs: number[];
-  linearity: { span: number; crestSpread: number; takes: number } | null;
 }) {
   if (verdict === null) {
     return (
-      <>
-        {linearity && (
-          <p className="mt-3 text-[11.5px] text-emerald-700 dark:text-emerald-300">
-            <strong>Nothing is riding the gain.</strong> Across {linearity.takes} takes the
-            loudness spans {linearity.span.toFixed(1)} dB while the crest factor varies by only{" "}
-            {linearity.crestSpread.toFixed(1)} dB. Automatic gain control exists to close a gap
-            like that, and it hasn&apos;t been closed.
-          </p>
-        )}
-        <p className="mt-3 text-[11.5px] text-muted-foreground">
-          The noise-floor check needs a take that <em>starts</em> and <em>ends</em> in silence:
+      <p className="mt-3 text-[11.5px] text-muted-foreground">
+          The noise-floor check needs a take that <em>starts</em>{" "}and <em>ends</em>{" "}in silence:
           record a second or two before the chord, then let it decay all the way out before
           stopping. Without that there&apos;s no floor to compare, only the note.
-        </p>
-      </>
+      </p>
     );
   }
   return (
@@ -744,7 +788,7 @@ function ProcessingVerdict({
         </>
       ) : (
         <>
-          <strong>Input path looks passive.</strong> The noise floor moved at most{" "}
+          <strong>Input path looks passive.</strong>{" "}The noise floor moved at most{" "}
           {Math.max(...rises.map(Math.abs)).toFixed(1)} dB between before and after the note across{" "}
           {rises.length} take{rises.length === 1 ? "" : "s"}, and held steady within each — which is
           what a path with no gain control does.
@@ -834,7 +878,7 @@ function SnapshotRow({
   return (
     <div className="rounded-lg border border-border p-3">
       <div className="flex items-center gap-3 flex-wrap">
-        <span className="text-[13px] font-medium">Snapshot {index + 1}</span>
+        <span className="text-[13px] font-medium">Take</span>
         <button
           onClick={recording ? onStop : onStart}
           disabled={!armed || otherRecording}
