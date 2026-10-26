@@ -43,7 +43,7 @@ export default function RootLayout({
             basePath, so the app works behind the music-apps proxy at /metronome. */}
         <script dangerouslySetInnerHTML={{ __html: basepathShimSource("/metronome") }} />
       </head>
-      <body className="h-svh flex flex-col bg-background text-foreground font-[family-name:var(--font-geist-sans)] overflow-hidden">
+      <body className="min-h-svh flex flex-col bg-background text-foreground font-[family-name:var(--font-geist-sans)]">
         {children}
       </body>
     </html>
