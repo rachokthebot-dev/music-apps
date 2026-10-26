@@ -2,6 +2,7 @@ import { execFile } from "child_process";
 import { readFileSync, writeFileSync, unlinkSync } from "fs";
 import path from "path";
 import { fetchChapters } from "@music-apps/shared";
+import { startAutoLicks } from "./auto-licks";
 import { SOURCES_DIR } from "./paths";
 import { prisma } from "./prisma";
 
@@ -187,6 +188,12 @@ export async function analyzeSource(
       })),
     }),
   ]);
+
+  // Every detected block is worth a lick on its own — cut them in the
+  // background rather than making someone re-select each one by hand. Chapters
+  // are exact; the model's labels are approximate, but its boundaries are
+  // reliable and a lick can be renamed in the library.
+  startAutoLicks(sourceId);
 
   return sections.length;
 }

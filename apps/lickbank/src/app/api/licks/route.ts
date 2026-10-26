@@ -4,18 +4,30 @@ import { extractClip } from "@/lib/extract-clip";
 
 export async function GET() {
   try {
-    const licks = await prisma.lick.findMany({
-      orderBy: { createdAt: "desc" },
-      include: {
-        source: { select: { id: true, title: true, artist: true, thumbnailUrl: true } },
-        folders: {
-          orderBy: { orderIndex: "asc" },
-          include: { folder: { select: { id: true, name: true } } },
+    const [licks, practiced] = await Promise.all([
+      prisma.lick.findMany({
+        orderBy: { createdAt: "desc" },
+        include: {
+          source: { select: { id: true, title: true, artist: true, thumbnailUrl: true, durationSec: true } },
+          folders: {
+            orderBy: { orderIndex: "asc" },
+            include: { folder: { select: { id: true, name: true } } },
+          },
         },
-      },
-    });
+      }),
+      // Opening a lick starts a session, so only ones with play time count as
+      // practice — that drives the library's Continue card and Recent list.
+      prisma.practiceSession.groupBy({
+        by: ["lickId"],
+        where: { durationSec: { gt: 0 } },
+        _max: { startedAt: true },
+      }),
+    ]);
 
-    return NextResponse.json(licks);
+    const lastPracticed = new Map(practiced.map((p) => [p.lickId, p._max.startedAt]));
+    return NextResponse.json(
+      licks.map((l) => ({ ...l, lastPracticedAt: lastPracticed.get(l.id) ?? null }))
+    );
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to list licks";
     return NextResponse.json({ error: message }, { status: 500 });

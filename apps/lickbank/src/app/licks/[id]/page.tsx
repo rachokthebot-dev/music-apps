@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { Fragment, useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import {
   Button,
@@ -12,6 +12,8 @@ import {
   DialogFooter,
 } from "@music-apps/ui";
 import { BackToHome } from "@music-apps/shared/back-to-home";
+import { ArrowRightIcon, CornersInIcon, CornersOutIcon, PlusIcon, XIcon } from "@phosphor-icons/react";
+import { PracticeControls, ViewSwitch, CROP_PRESETS, type CropValue } from "@/components/PracticeControls";
 
 function formatTime(sec: number): string {
   const m = Math.floor(sec / 60);
@@ -32,22 +34,37 @@ const SECTION_COLORS = [
   { bg: "bg-cyan-500/40", active: "bg-cyan-500/60", text: "text-cyan-300", border: "border-cyan-500/50" },
 ];
 
-const SPEED_OPTIONS = [0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2];
-
-const CROP_PRESETS = [
-  { label: "Full", value: "full", style: {} },
-  { label: "Top", value: "top", style: { objectFit: "cover" as const, objectPosition: "top" } },
-  { label: "Center", value: "center", style: { objectFit: "cover" as const, objectPosition: "center" } },
-  { label: "Bottom", value: "bottom", style: { objectFit: "cover" as const, objectPosition: "bottom" } },
-] as const;
-
-type CropValue = typeof CROP_PRESETS[number]["value"];
 
 interface Source {
   id: string;
   title: string;
   artist: string | null;
   thumbnailUrl: string | null;
+  durationSec: number | null;
+  waveformData: string | null;
+}
+
+const WAVE_BARS = 160;
+
+/** This lick's slice of the song's waveform peaks, resampled to WAVE_BARS. */
+function lickPeaks(lick: { startSec: number; endSec: number; source: Source }): number[] {
+  const { waveformData, durationSec } = lick.source;
+  if (!waveformData || !durationSec) return [];
+  let peaks: number[];
+  try {
+    peaks = JSON.parse(waveformData);
+  } catch {
+    return [];
+  }
+  const from = (lick.startSec / durationSec) * peaks.length;
+  const to = (lick.endSec / durationSec) * peaks.length;
+  if (to - from < 1) return [];
+  const step = (to - from) / WAVE_BARS;
+  return Array.from({ length: WAVE_BARS }, (_, i) => {
+    const a = Math.floor(from + i * step);
+    const b = Math.max(a + 1, Math.floor(from + (i + 1) * step));
+    return Math.max(...peaks.slice(a, b));
+  });
 }
 
 interface Section {
@@ -74,6 +91,15 @@ interface Lick {
   notes: string | null;
   source: Source;
   sections: Section[];
+}
+
+/** One entry in the practice sequence — its own clip, played back to back. */
+interface QueueItem {
+  id: string;
+  name: string;
+  videoClipPath: string | null;
+  durationSec: number;
+  startSec: number;
 }
 
 interface SectionLog {
@@ -118,18 +144,113 @@ export default function PracticePage({
   // Crop
   const [crop, setCrop] = useState<CropValue>("full");
 
-  // A-B loop
+  // Full screen: the video fills the display with the transport floating on
+  // top. The page asks the browser for real full screen to hide its chrome,
+  // but the layout itself is CSS, so it also works where the Fullscreen API
+  // doesn't (iPhone) and the loop, count-in and controls keep running —
+  // unlike the video element's native player.
+  const [fullscreen, setFullscreen] = useState(false);
+
+  const enterFullscreen = () => {
+    setFullscreen(true);
+    const el = document.documentElement as HTMLElement & { webkitRequestFullscreen?: () => void };
+    if (el.requestFullscreen) el.requestFullscreen().catch(() => {});
+    else el.webkitRequestFullscreen?.();
+  };
+
+  const exitFullscreen = () => {
+    setFullscreen(false);
+    const doc = document as Document & { webkitFullscreenElement?: Element; webkitExitFullscreen?: () => void };
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+    else if (doc.webkitFullscreenElement) doc.webkitExitFullscreen?.();
+  };
+
+  // Leaving browser full screen another way (Esc, the system gesture) leaves
+  // ours too; Esc also closes it where the API isn't available.
+  useEffect(() => {
+    if (!fullscreen) return;
+    const doc = document as Document & { webkitFullscreenElement?: Element };
+    const onChange = () => {
+      if (!document.fullscreenElement && !doc.webkitFullscreenElement) setFullscreen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setFullscreen(false);
+    };
+    document.addEventListener("fullscreenchange", onChange);
+    document.addEventListener("webkitfullscreenchange", onChange);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("fullscreenchange", onChange);
+      document.removeEventListener("webkitfullscreenchange", onChange);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [fullscreen]);
+
+  // A-B loop. In a sequence the points carry the clip they were set on, so the
+  // span can cover several licks instead of being trapped in one.
   const [abA, setAbA] = useState<number | null>(null);
   const [abB, setAbB] = useState<number | null>(null);
+  const [abAIndex, setAbAIndex] = useState(0);
+  const [abBIndex, setAbBIndex] = useState(0);
 
   // Countdown timer
   const [countdown, setCountdown] = useState<number | null>(null);
-  const [countdownDuration, setCountdownDuration] = useState(4);
+  // 0 = off; otherwise Play counts in this many seconds first.
+  const [countdownDuration, setCountdownDuration] = useState(0);
   const [countdownOnLoop, setCountdownOnLoop] = useState(false);
   const countdownOnLoopRef = useRef(false);
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const isCountingDownRef = useRef(false);
   const wasMutedBeforeCountdown = useRef(false);
+
+  // Practice sequence — licks from this song played one after another, each
+  // still its own clip. Session-only: it's a drill you rebuild as you improve.
+  const [queue, setQueue] = useState<QueueItem[]>([]);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [songLicks, setSongLicks] = useState<QueueItem[]>([]);
+  const [addToQueueOpen, setAddToQueueOpen] = useState(false);
+  const autoPlayNextRef = useRef(false);
+  const pendingSeekRef = useRef<number | null>(null);
+  const countdownAfterLoadRef = useRef(false);
+
+  const chainMode = queue.length > 1;
+  const activeClip = queue[activeIndex] ?? queue[0] ?? null;
+
+  // A lick already in the sequence isn't offered again — repeating one is a
+  // loop, which the loop button already does.
+  const queuedIds = new Set(queue.map((q) => q.id));
+  const queueableLicks = songLicks.filter(
+    (l) => !queuedIds.has(l.id) && l.videoClipPath
+  );
+
+  const addToQueue = (item: QueueItem) => {
+    setQueue((prev) => [...prev, item]);
+    setAddToQueueOpen(false);
+  };
+
+  const removeFromQueue = (index: number) => {
+    // Dropping the lick that is playing hands the slot to the next one — keep
+    // the drill running rather than stopping it dead.
+    if (index === activeIndex && !videoRef.current?.paused) {
+      autoPlayNextRef.current = true;
+    }
+    setQueue((prev) => prev.filter((_, i) => i !== index));
+    // Keep playing whatever is on screen: shift the pointer if the removed
+    // entry sat before it, and never point past the end.
+    setActiveIndex((prev) => {
+      const next = index < prev ? prev - 1 : prev;
+      return Math.min(next, queue.length - 2);
+    });
+    // The A-B anchors name a position in the queue, so removing an entry moves
+    // them. Dropping the very lick an anchor sits on leaves it meaningless —
+    // clear the loop rather than silently pointing it at a different lick.
+    if (abAIndex === index || abBIndex === index) {
+      clearABLoop();
+      return;
+    }
+    if (abAIndex > index) setAbAIndex((i) => i - 1);
+    if (abBIndex > index) setAbBIndex((i) => i - 1);
+  };
 
   // Add section dialog
   const [addSectionOpen, setAddSectionOpen] = useState(false);
@@ -154,6 +275,16 @@ export default function PracticePage({
       setLick(data);
       setSpeed(data.lastTempo);
       setPitch(data.lastPitch ?? 0);
+      setQueue([
+        {
+          id: data.id,
+          name: data.name,
+          videoClipPath: data.videoClipPath,
+          durationSec: data.durationSec,
+          startSec: data.startSec,
+        },
+      ]);
+      setActiveIndex(0);
     } catch {
       setError("Failed to load lick");
     } finally {
@@ -164,6 +295,28 @@ export default function PracticePage({
   useEffect(() => {
     fetchLick();
   }, [fetchLick]);
+
+  // The pool to build a sequence from: everything clipped out of this song,
+  // in the order it happens in the song.
+  useEffect(() => {
+    const sourceId = lick?.sourceId;
+    if (!sourceId) return;
+    fetch(`/lickbank/api/sources/${sourceId}`)
+      .then((r) => r.json())
+      .then((data) => {
+        const licks: QueueItem[] = (data.licks ?? [])
+          .map((l: QueueItem) => ({
+            id: l.id,
+            name: l.name,
+            videoClipPath: l.videoClipPath,
+            durationSec: l.durationSec,
+            startSec: l.startSec,
+          }))
+          .sort((a: QueueItem, b: QueueItem) => a.startSec - b.startSec);
+        setSongLicks(licks);
+      })
+      .catch(() => {});
+  }, [lick?.sourceId]);
 
   // Create practice session on mount, end on unmount
   useEffect(() => {
@@ -251,7 +404,7 @@ export default function PracticePage({
   // Pitch processing: mute video, play pitched audio
   useEffect(() => {
     const video = videoRef.current;
-    if (!video || !lickId) return;
+    if (!video || !activeClip) return;
 
     if (pitch !== prevPitchRef.current) {
       video.pause();
@@ -273,7 +426,7 @@ export default function PracticePage({
     const controller = new AbortController();
     setPitchProcessing(true);
 
-    fetch(`/lickbank/api/licks/${lickId}/pitch`, {
+    fetch(`/lickbank/api/licks/${activeClip.id}/pitch`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ semitones: pitch }),
@@ -299,13 +452,16 @@ export default function PracticePage({
         audio.currentTime = v.currentTime;
         audio.playbackRate = speed;
         audio.preservesPitch = true;
+        // The sequence hands over mid-playback, so the video's "play" event has
+        // already fired — nothing else would start this clip's audio.
+        if (!v.paused) audio.play().catch(() => {});
       })
       .catch((err) => {
         if (err?.name !== "AbortError") setPitchProcessing(false);
       });
 
     return () => { controller.abort(); };
-  }, [pitch, lickId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [pitch, activeClip?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Sync pitched audio with video playback
   useEffect(() => {
@@ -403,6 +559,54 @@ export default function PracticePage({
     }, 1000);
   }, [countdownDuration]);
 
+
+  /**
+   * Seek to a point in the sequence, changing clip if the point lives in
+   * another one. The seek is deferred to the new clip's metadata event, since
+   * currentTime means nothing until it has loaded.
+   */
+  const jumpToSequencePoint = useCallback(
+    (index: number, time: number, autoPlay: boolean, countIn = false) => {
+      const video = videoRef.current;
+      if (!video) return;
+      if (index === activeIndex) {
+        if (countIn) startCountdownAt(time);
+        else video.currentTime = time;
+        return;
+      }
+      pendingSeekRef.current = time;
+      autoPlayNextRef.current = autoPlay;
+      countdownAfterLoadRef.current = countIn;
+      setActiveIndex(index);
+    },
+    [activeIndex, startCountdownAt]
+  );
+
+  /**
+   * Move to the next clip in the sequence. Wraps to the top when loop is on,
+   * otherwise the run just ends — the point is to rehearse the parts in order,
+   * not to be trapped in them.
+   */
+  const advanceChain = useCallback(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    setActiveIndex((prev) => {
+      const next = prev + 1;
+      if (next < queue.length) {
+        autoPlayNextRef.current = true;
+        return next;
+      }
+      if (loopEnabled) {
+        autoPlayNextRef.current = true;
+        // The sequence starting over is the loop — count it in like one.
+        countdownAfterLoadRef.current = countdownOnLoopRef.current;
+        return 0;
+      }
+      video.pause();
+      return prev;
+    });
+  }, [queue.length, loopEnabled]);
+
   // Sync playhead + section looping
   useEffect(() => {
     const video = videoRef.current;
@@ -417,6 +621,29 @@ export default function PracticePage({
       if (isCountingDownRef.current) {
         if (countdownSeekTarget.current !== null) {
           video.currentTime = countdownSeekTarget.current;
+        }
+        rafRef.current = requestAnimationFrame(update);
+        return;
+      }
+
+      // A sequence owns the end of the clip: hand over to the next lick rather
+      // than looping this one. A-B and section loops stay for a single lick.
+      if (chainMode) {
+        if (abA !== null && abB !== null) {
+          const pastB =
+            activeIndex > abBIndex || (activeIndex === abBIndex && ct >= abB - 0.05);
+          const beforeA =
+            activeIndex < abAIndex || (activeIndex === abAIndex && ct < abA - 0.1);
+          if (pastB || beforeA) {
+            jumpToSequencePoint(abAIndex, abA, !video.paused, countdownOnLoopRef.current);
+            loopStartTimeRef.current = Date.now();
+            rafRef.current = requestAnimationFrame(update);
+            return;
+          }
+        }
+        // Clips inside the span still hand over normally at their end.
+        if (duration > 0 && ct >= duration - 0.05) {
+          advanceChain();
         }
         rafRef.current = requestAnimationFrame(update);
         return;
@@ -461,7 +688,7 @@ export default function PracticePage({
     rafRef.current = requestAnimationFrame(update);
 
     return () => cancelAnimationFrame(rafRef.current);
-  }, [loopEnabled, selectedSections, lick, duration, abA, abB, startCountdownAt]);
+  }, [loopEnabled, selectedSections, lick, duration, abA, abB, startCountdownAt, chainMode, advanceChain, activeIndex, abAIndex, abBIndex, jumpToSequencePoint]);
 
   // Track active play time (only when video is playing)
   useEffect(() => {
@@ -472,10 +699,37 @@ export default function PracticePage({
     return () => clearInterval(timer);
   }, [isPlaying]);
 
+  // Stops a count-in where it stands: video paused, sound back on.
+  const cancelCountdown = () => {
+    if (countdownRef.current) clearInterval(countdownRef.current);
+    countdownRef.current = null;
+    isCountingDownRef.current = false;
+    countdownSeekTarget.current = null;
+    setCountdown(null);
+    const v = videoRef.current;
+    if (v) {
+      v.pause();
+      v.muted = wasMutedBeforeCountdown.current;
+    }
+    if (pitchAudioRef.current) pitchAudioRef.current.muted = false;
+  };
+
   const handlePlayPause = () => {
     const video = videoRef.current;
     if (!video) return;
+    // Pause during a count-in calls the take off rather than leaving the
+    // video frozen and muted.
+    if (isCountingDownRef.current) {
+      cancelCountdown();
+      return;
+    }
     if (video.paused) {
+      // With a count-in set, Play counts in from where the playhead sits.
+      // startCountdownAt starts the video itself, inside this tap's gesture.
+      if (countdownDuration > 0) {
+        startCountdownAt();
+        return;
+      }
       video.play().then(() => {
         loopStartTimeRef.current = Date.now();
       }).catch(() => {
@@ -489,6 +743,12 @@ export default function PracticePage({
   const handleRewind = () => {
     const video = videoRef.current;
     if (!video) return;
+    // In a sequence, "back to the top" means the top of the drill — the first
+    // lick — not the top of whichever clip happens to be playing.
+    if (chainMode) {
+      jumpToSequencePoint(abA !== null ? abAIndex : 0, abA ?? 0, !video.paused);
+      return;
+    }
     if (abA !== null) {
       video.currentTime = abA;
     } else if (loopEnabled && lick && selectedSections.size > 0) {
@@ -503,20 +763,11 @@ export default function PracticePage({
     }
   };
 
-  const startCountdown = () => {
-    const video = videoRef.current;
-    if (!video) return;
-    // Ensure video is playing (for Safari gesture chain)
-    if (video.paused) {
-      video.play().catch(() => {});
-    }
-    handleRewind();
-    setTimeout(() => startCountdownAt(), 0);
-  };
-
   const clearABLoop = () => {
     setAbA(null);
     setAbB(null);
+    setAbAIndex(0);
+    setAbBIndex(0);
   };
 
   // Cleanup countdown on unmount
@@ -620,15 +871,40 @@ export default function PracticePage({
   }
 
   const playheadPct = duration > 0 ? (currentTime / duration) * 100 : 0;
+  // The waveform belongs to this lick; a clip the chain handed over has its own.
+  const peaks = activeClip?.id === lick.id ? lickPeaks(lick) : [];
+
+  // What is looping right now, as a span of the clip on screen: an A-B span
+  // (or this clip's slice of one), else the selected sections, else the lick.
+  let region: { from: number; to: number; ab: boolean } | null = null;
+  if (duration > 0) {
+    if (abA !== null && abB !== null && activeIndex >= abAIndex && activeIndex <= abBIndex) {
+      region = {
+        from: activeIndex === abAIndex ? abA : 0,
+        to: activeIndex === abBIndex ? abB : duration,
+        ab: true,
+      };
+    } else if (loopEnabled && !chainMode && abA === null) {
+      const active = lick.sections.filter((s) => selectedSections.has(s.id));
+      region = active.length > 0
+        ? { from: Math.min(...active.map((s) => s.startSec)), to: Math.max(...active.map((s) => s.endSec)), ab: false }
+        : { from: 0, to: duration, ab: false };
+    }
+  }
+  // The loop fills like a progress bar, so you can see how far through the
+  // pass you are without reading times.
+  const regionFill = region
+    ? Math.max(0, Math.min(100, ((currentTime - region.from) / (region.to - region.from)) * 100))
+    : 0;
 
   return (
     <div className="flex flex-col h-screen">
       {/* Header */}
-      <header className="flex items-center gap-3 px-4 py-2 border-b border-border bg-card">
+      <header className="flex items-center gap-3 px-4 lg:px-6 py-3">
         <BackToHome label="Library" />
         <div className="flex-1 min-w-0">
-          <h1 className="text-sm font-medium truncate">{lick.name}</h1>
-          <p className="text-xs text-muted-foreground truncate">
+          <h1 className="text-xl md:text-2xl font-semibold tracking-tight truncate">{lick.name}</h1>
+          <p className="text-sm text-muted-foreground truncate">
             <a
               href={`/sources/${lick.sourceId}`}
               className="hover:text-foreground hover:underline transition-colors"
@@ -639,19 +915,26 @@ export default function PracticePage({
             >
               {lick.source.title}
             </a>
-            {lick.source.artist && ` - ${lick.source.artist}`}
+            {lick.source.artist && ` · ${lick.source.artist}`}
           </p>
         </div>
+        <ViewSwitch crop={crop} onCrop={setCrop} />
       </header>
 
       <div className="flex-1 min-h-0 flex flex-col overflow-y-auto">
-        <div className="max-w-5xl mx-auto w-full flex flex-col flex-1 min-h-0 px-4 lg:px-6 pt-2 gap-2 relative">
+        <div className="max-w-5xl mx-auto w-full flex flex-col flex-1 min-h-0 px-4 lg:px-6 pt-1 pb-36 gap-3 relative">
           {/* Video Player */}
-          {lick.videoClipPath && (
-            <div className="flex-1 min-h-0 max-h-[40vh] md:max-h-[55vh] rounded-xl overflow-hidden bg-black">
+          {activeClip?.videoClipPath && (
+            <div
+              className={
+                fullscreen
+                  ? "fixed inset-0 z-40 bg-black"
+                  : "relative flex-1 min-h-0 max-h-[40vh] md:max-h-[55vh] rounded-3xl overflow-hidden bg-black"
+              }
+            >
               <video
                 ref={videoRef}
-                src={`/lickbank/api/media/${lick.videoClipPath}`}
+                src={`/lickbank/api/media/${activeClip.videoClipPath}`}
                 className="w-full h-full object-contain"
                 style={crop !== "full" ? CROP_PRESETS.find((p) => p.value === crop)?.style : undefined}
                 onLoadedMetadata={() => {
@@ -659,8 +942,22 @@ export default function PracticePage({
                   if (video) {
                     setDuration(video.duration);
                     video.playbackRate = speed;
-                    if (lick.lastPositionSec > 0) {
+                    // Resume only the lick this page is for; a clip the
+                    // sequence just handed us starts at the top.
+                    if (activeClip.id === lick.id && !chainMode && lick.lastPositionSec > 0) {
                       video.currentTime = lick.lastPositionSec;
+                    }
+                    if (pendingSeekRef.current !== null) {
+                      video.currentTime = pendingSeekRef.current;
+                      pendingSeekRef.current = null;
+                    }
+                    if (autoPlayNextRef.current) {
+                      autoPlayNextRef.current = false;
+                      video.play().catch(() => {});
+                    }
+                    if (countdownAfterLoadRef.current) {
+                      countdownAfterLoadRef.current = false;
+                      startCountdownAt(video.currentTime);
                     }
                   }
                 }}
@@ -669,316 +966,264 @@ export default function PracticePage({
                 controls={false}
                 onClick={handlePlayPause}
               />
+              {/* Countdown overlay */}
+              {countdown !== null && (
+                <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/60">
+                  <div className="flex flex-col items-center gap-3">
+                    <span className="text-8xl font-bold text-white tabular-nums animate-pulse">{countdown}</span>
+                    <button
+                      className="h-11 px-5 rounded-full text-base font-medium text-white/80 bg-white/10 hover:bg-white/20 active:scale-95 transition-all"
+                      onClick={cancelCountdown}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
+              {fullscreen && (
+                // The timeline is hidden in full screen; this keeps your place.
+                <div className="absolute bottom-0 inset-x-0 z-20 h-1 bg-white/20 pointer-events-none">
+                  <div className="h-full bg-loop" style={{ width: `${playheadPct}%` }} />
+                </div>
+              )}
+              {fullscreen ? (
+                <div className="absolute top-0 inset-x-0 z-20 flex items-center justify-between gap-3 px-4 pt-[max(1rem,env(safe-area-inset-top))] pb-6 bg-gradient-to-b from-black/60 to-transparent">
+                  <ViewSwitch crop={crop} onCrop={setCrop} />
+                  <button
+                    onClick={exitFullscreen}
+                    className="size-12 shrink-0 rounded-full bg-black/50 text-white grid place-items-center backdrop-blur-md active:scale-90 transition-transform"
+                    aria-label="Exit full screen"
+                  >
+                    <CornersInIcon className="size-6" weight="bold" />
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={enterFullscreen}
+                  className="absolute top-3 right-3 z-20 size-11 rounded-full bg-black/50 text-white grid place-items-center backdrop-blur-md active:scale-90 transition-transform"
+                  aria-label="Full screen"
+                >
+                  <CornersOutIcon className="size-5" weight="bold" />
+                </button>
+              )}
             </div>
           )}
 
           {/* Timeline */}
-          <div
-            ref={timelineRef}
-            className="relative w-full h-11 shrink-0 bg-muted rounded-lg cursor-pointer select-none overflow-hidden touch-none"
-            onClick={handleTimelineClick}
-            onTouchMove={(e) => {
-              const timeline = timelineRef.current;
-              const video = videoRef.current;
-              if (!timeline || !video || duration === 0) return;
-              const touch = e.touches[0];
-              const rect = timeline.getBoundingClientRect();
-              const ratio = Math.max(0, Math.min(1, (touch.clientX - rect.left) / rect.width));
-              video.currentTime = ratio * duration;
-            }}
-          >
-            {/* Section blocks */}
-            {lick.sections.map((section, idx) => {
-              const color = SECTION_COLORS[idx % SECTION_COLORS.length];
-              const isSelected = selectedSections.has(section.id);
-              const leftPct = duration > 0 ? (section.startSec / duration) * 100 : 0;
-              const widthPct =
-                duration > 0
-                  ? ((section.endSec - section.startSec) / duration) * 100
-                  : 0;
-
-              return (
-                <div
-                  key={section.id}
-                  className={`absolute top-0 bottom-0 cursor-pointer transition-colors flex items-center justify-center ${
-                    isSelected ? color.active : color.bg
-                  }`}
-                  style={{ left: `${leftPct}%`, width: `${widthPct}%` }}
-                  onClick={(e) => handleSectionClick(section, e)}
-                >
-                  {widthPct > 8 && (
-                    <span className={`text-xs font-medium truncate px-1 ${color.text}`}>
-                      {section.name}
-                    </span>
-                  )}
-                </div>
-              );
-            })}
-
-            {/* A-B loop region */}
-            {abA !== null && abB !== null && duration > 0 && (
-              <div
-                className="absolute top-0 bottom-0 bg-amber-500/25 border-x-2 border-amber-500/60 pointer-events-none z-5"
-                style={{
-                  left: `${(abA / duration) * 100}%`,
-                  width: `${((abB - abA) / duration) * 100}%`,
-                }}
-              />
-            )}
-            {abA !== null && abB === null && duration > 0 && (
-              <div
-                className="absolute top-0 bottom-0 w-0.5 bg-amber-500 pointer-events-none z-5"
-                style={{ left: `${(abA / duration) * 100}%` }}
-              />
-            )}
-
-            {/* Playhead */}
+          <div>
             <div
-              className="absolute top-0 bottom-0 w-0.5 bg-white shadow-lg pointer-events-none z-10"
-              style={{ left: `${playheadPct}%` }}
-            />
+              ref={timelineRef}
+              className="relative w-full h-16 shrink-0 bg-muted rounded-2xl cursor-pointer select-none overflow-hidden touch-none"
+              onClick={handleTimelineClick}
+              onTouchMove={(e) => {
+                const timeline = timelineRef.current;
+                const video = videoRef.current;
+                if (!timeline || !video || duration === 0) return;
+                const touch = e.touches[0];
+                const rect = timeline.getBoundingClientRect();
+                const ratio = Math.max(0, Math.min(1, (touch.clientX - rect.left) / rect.width));
+                video.currentTime = ratio * duration;
+              }}
+            >
+              {/* Section blocks — hidden while a sequence is playing, since they
+                  describe this lick and not whichever clip is on screen */}
+              {(chainMode ? [] : lick.sections).map((section, idx) => {
+                const color = SECTION_COLORS[idx % SECTION_COLORS.length];
+                const isSelected = selectedSections.has(section.id);
+                const leftPct = duration > 0 ? (section.startSec / duration) * 100 : 0;
+                const widthPct =
+                  duration > 0
+                    ? ((section.endSec - section.startSec) / duration) * 100
+                    : 0;
 
-            {/* Time display */}
-            <div className="absolute bottom-1 left-2 text-xs text-muted-foreground pointer-events-none">
-              {formatTime(currentTime)}
-            </div>
-            <div className="absolute bottom-1 right-2 text-xs text-muted-foreground pointer-events-none">
-              {formatTime(duration)}
-            </div>
-          </div>
+                return (
+                  <div
+                    key={section.id}
+                    className={`absolute top-0 bottom-0 cursor-pointer transition-colors flex items-start justify-center pt-0.5 ${
+                      isSelected ? color.active : color.bg
+                    }`}
+                    style={{ left: `${leftPct}%`, width: `${widthPct}%` }}
+                    onClick={(e) => handleSectionClick(section, e)}
+                  >
+                    {widthPct > 8 && (
+                      <span className={`text-xs font-medium truncate px-1 ${color.text}`}>
+                        {section.name}
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
 
-          {/* Countdown overlay */}
-          {countdown !== null && (
-            <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/60 rounded-xl">
-              <div className="flex flex-col items-center gap-2">
-                <span className="text-7xl font-bold text-white tabular-nums animate-pulse">{countdown}</span>
-                <button
-                  className="text-sm text-white/60 hover:text-white"
-                  onClick={() => {
-                    if (countdownRef.current) clearInterval(countdownRef.current);
-                    countdownRef.current = null;
-                    setCountdown(null);
-                  }}
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Controls */}
-          <div className="shrink-0 flex flex-col gap-1.5 pb-4">
-            {/* Transport row — loop, A, B, rewind, play, countdown */}
-            <div className="flex items-center justify-center gap-1.5">
-              {/* Loop */}
-              <button
-                className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors ${
-                  loopEnabled
-                    ? "bg-primary text-primary-foreground"
-                    : "bg-muted text-muted-foreground hover:text-foreground"
-                }`}
-                onClick={() => setLoopEnabled(!loopEnabled)}
-                title="Toggle loop"
-              >
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <polyline points="17 1 21 5 17 9" />
-                  <path d="M3 11V9a4 4 0 0 1 4-4h14" />
-                  <polyline points="7 23 3 19 7 15" />
-                  <path d="M21 13v2a4 4 0 0 1-4 4H3" />
-                </svg>
-              </button>
-
-              {/* A */}
-              <button
-                className={`w-10 h-10 rounded-full text-sm font-bold transition-colors flex items-center justify-center ${
-                  abA !== null
-                    ? "bg-amber-500 text-white"
-                    : "bg-muted text-muted-foreground hover:text-foreground"
-                }`}
-                onClick={() => {
-                  if (abA === null) {
-                    setAbA(currentTime);
-                  }
-                }}
-                title={abA !== null ? `A: ${formatTime(abA)}` : "Set A point"}
-              >
-                A
-              </button>
-
-              {/* B */}
-              <button
-                className={`w-10 h-10 rounded-full text-sm font-bold transition-colors flex items-center justify-center ${
-                  abB !== null
-                    ? "bg-amber-500 text-white"
-                    : "bg-muted text-muted-foreground hover:text-foreground"
-                } ${abA === null ? "opacity-40 pointer-events-none" : ""}`}
-                onClick={() => {
-                  if (abB === null && abA !== null && currentTime > abA) {
-                    setAbB(currentTime);
-                  }
-                }}
-                title={abB !== null ? `B: ${formatTime(abB)}` : "Set B point"}
-              >
-                B
-              </button>
-
-              {/* Clear A-B */}
-              {abA !== null && (
-                <button
-                  className="w-10 h-10 rounded-full flex items-center justify-center bg-muted text-muted-foreground hover:text-destructive transition-colors"
-                  onClick={clearABLoop}
-                  title="Clear A-B loop"
-                >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M18 6L6 18M6 6l12 12" />
-                  </svg>
-                </button>
+              {/* Waveform — played bars brighten behind the playhead */}
+              {peaks.length > 0 && (
+                <div className="absolute inset-x-3 inset-y-2 flex items-center gap-px pointer-events-none">
+                  {peaks.map((p, i) => (
+                    <div
+                      key={i}
+                      className={`flex-1 rounded-full ${(i / peaks.length) * 100 < playheadPct ? "bg-foreground/70" : "bg-foreground/25"}`}
+                      style={{ height: `${Math.max(8, p * 100)}%` }}
+                    />
+                  ))}
+                </div>
               )}
 
-              {/* Rewind */}
-              <button
-                className="w-10 h-10 rounded-full bg-muted text-muted-foreground hover:text-foreground flex items-center justify-center transition-colors"
-                onClick={handleRewind}
-                title={abA !== null ? "Rewind to A point" : "Rewind to start"}
-              >
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <polygon points="11 19 2 12 11 5" fill="currentColor" stroke="none" />
-                  <polygon points="22 19 13 12 22 5" fill="currentColor" stroke="none" />
-                </svg>
-              </button>
-
-              {/* Play/Pause */}
-              <button
-                className="w-13 h-13 rounded-full bg-primary text-primary-foreground flex items-center justify-center hover:bg-primary/90 active:scale-95 transition-all shadow-lg"
-                onClick={handlePlayPause}
-              >
-                {isPlaying ? (
-                  <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor">
-                    <rect x="6" y="4" width="4" height="16" rx="1" />
-                    <rect x="14" y="4" width="4" height="16" rx="1" />
-                  </svg>
-                ) : (
-                  <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor">
-                    <polygon points="8,4 20,12 8,20" />
-                  </svg>
-                )}
-              </button>
-
-              {/* Countdown timer — tap to start, long-press or second tap toggles loop-countdown */}
-              <button
-                className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors relative ${
-                  countdownOnLoop
-                    ? "bg-primary text-primary-foreground"
-                    : "bg-muted text-muted-foreground hover:text-foreground"
-                }`}
-                onClick={startCountdown}
-                title={`Start with ${countdownDuration}s countdown`}
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <circle cx="12" cy="13" r="8" />
-                  <path d="M12 9v4l2 2" />
-                  <path d="M9 1h6" />
-                  <path d="M12 1v2" />
-                </svg>
-                <span className="absolute -bottom-0.5 -right-0.5 text-[9px] font-bold bg-muted-foreground text-background rounded-full w-4 h-4 flex items-center justify-center">{countdownDuration}</span>
-              </button>
-
-              {/* Countdown duration selector + loop toggle */}
-              <div className="flex flex-col items-center gap-0.5">
-                {[3, 4, 5].map((d) => (
-                  <button
-                    key={d}
-                    className={`w-5 h-3.5 rounded text-[9px] font-medium transition-colors ${
-                      countdownDuration === d
-                        ? "bg-primary/80 text-primary-foreground"
-                        : "bg-muted/50 text-muted-foreground/50 hover:text-muted-foreground"
-                    }`}
-                    onClick={() => setCountdownDuration(d)}
-                  >
-                    {d}
-                  </button>
-                ))}
-                <button
-                  className={`w-5 h-3.5 rounded text-[9px] font-medium transition-colors ${
-                    countdownOnLoop
-                      ? "bg-amber-500 text-white"
-                      : "bg-muted/50 text-muted-foreground/50 hover:text-muted-foreground"
-                  }`}
-                  onClick={() => { const next = !countdownOnLoop; setCountdownOnLoop(next); countdownOnLoopRef.current = next; }}
-                  title={countdownOnLoop ? "Countdown on every loop (on)" : "Countdown on every loop (off)"}
+              {/* Loop region */}
+              {region && (
+                <div
+                  className="absolute inset-y-1 rounded-xl border-2 border-loop overflow-hidden pointer-events-none z-5"
+                  style={{
+                    left: `${(region.from / duration) * 100}%`,
+                    width: `${((region.to - region.from) / duration) * 100}%`,
+                  }}
                 >
-                  {countdownOnLoop ? "ON" : "LP"}
-                </button>
-              </div>
+                  <div className="h-full bg-loop/25" style={{ width: `${regionFill}%` }} />
+                  {region.ab && activeIndex === abAIndex && (
+                    <span className="absolute left-1 top-1/2 -translate-y-1/2 size-5 rounded-md bg-loop text-loop-foreground text-xs font-bold grid place-items-center">A</span>
+                  )}
+                  {region.ab && activeIndex === abBIndex && (
+                    <span className="absolute right-1 top-1/2 -translate-y-1/2 size-5 rounded-md bg-loop text-loop-foreground text-xs font-bold grid place-items-center">B</span>
+                  )}
+                </div>
+              )}
+              {abA !== null && abB === null && duration > 0 && activeIndex === abAIndex && (
+                <div
+                  className="absolute top-0 bottom-0 w-0.5 bg-loop pointer-events-none z-5"
+                  style={{ left: `${(abA / duration) * 100}%` }}
+                />
+              )}
+
+              {/* Playhead */}
+              <div
+                className="absolute top-0 bottom-0 w-0.5 bg-foreground pointer-events-none z-10"
+                style={{ left: `${playheadPct}%` }}
+              />
             </div>
-
-            {/* Speed + Pitch + Crop — single row */}
-            <div className="flex items-center justify-center gap-1 flex-wrap">
-              {/* Speed buttons */}
-              {SPEED_OPTIONS.map((s) => (
-                <button
-                  key={s}
-                  className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
-                    speed === s
-                      ? "bg-primary text-primary-foreground"
-                      : "bg-muted hover:bg-muted/80 text-muted-foreground hover:text-foreground"
-                  }`}
-                  onClick={() => setSpeed(s)}
-                >
-                  {s}x
-                </button>
-              ))}
-
-              <div className="w-px h-5 bg-border mx-1" />
-
-              {/* Pitch */}
-              <button
-                className="w-7 h-7 rounded-full bg-muted hover:bg-muted/80 text-foreground flex items-center justify-center text-sm font-medium disabled:opacity-40"
-                onClick={() => setPitch((p) => Math.max(-12, p - 1))}
-                disabled={pitch <= -12 || pitchProcessing}
-              >
-                -
-              </button>
-              <button
-                className={`px-2 py-1 rounded-full text-xs font-medium transition-colors min-w-[2.5rem] text-center ${
-                  pitch === 0
-                    ? "bg-muted text-muted-foreground"
-                    : "bg-primary text-primary-foreground"
-                }`}
-                onClick={() => setPitch(0)}
-                disabled={pitchProcessing}
-              >
-                {pitchProcessing ? "..." : `${pitch >= 0 ? "+" : ""}${pitch}st`}
-              </button>
-              <button
-                className="w-7 h-7 rounded-full bg-muted hover:bg-muted/80 text-foreground flex items-center justify-center text-sm font-medium disabled:opacity-40"
-                onClick={() => setPitch((p) => Math.min(12, p + 1))}
-                disabled={pitch >= 12 || pitchProcessing}
-              >
-                +
-              </button>
-
-              <div className="w-px h-5 bg-border mx-1" />
-
-              {/* Crop */}
-              {CROP_PRESETS.map((preset) => (
-                <button
-                  key={preset.value}
-                  className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
-                    crop === preset.value
-                      ? "bg-primary text-primary-foreground"
-                      : "bg-muted hover:bg-muted/80 text-muted-foreground hover:text-foreground"
-                  }`}
-                  onClick={() => setCrop(preset.value)}
-                >
-                  {preset.label}
-                </button>
-              ))}
+            <div className="flex justify-between px-1 pt-1.5 text-sm font-mono text-muted-foreground">
+              <span>{formatTime(currentTime)}</span>
+              <span>{formatTime(duration)}</span>
             </div>
           </div>
 
+          {/* Practice sequence — the licks queued after this one, in order */}
+          <div className="shrink-0 flex items-center gap-2 flex-wrap">
+            <span className="text-sm text-muted-foreground mr-1">Chain</span>
+            {queue.map((item, i) => (
+              <Fragment key={`${item.id}-${i}`}>
+                {i > 0 && <ArrowRightIcon className="size-4 text-muted-foreground shrink-0" />}
+                <div
+                  className={`flex items-center h-11 rounded-xl border text-sm font-semibold transition-colors ${
+                    i === activeIndex
+                      ? "border-loop bg-loop/10 text-loop"
+                      : "border-transparent bg-muted text-foreground"
+                  }`}
+                >
+                  <button
+                    className="h-full pl-4 pr-3 flex items-center gap-2"
+                    onClick={() => jumpToSequencePoint(i, 0, isPlaying)}
+                    title={`Jump to ${item.name}`}
+                  >
+                    {item.name}
+                    <span className="font-mono text-xs opacity-60">{formatTime(item.durationSec)}</span>
+                  </button>
+                  {i > 0 && (
+                    <button
+                      className="size-11 -ml-2 grid place-items-center text-muted-foreground hover:text-destructive"
+                      onClick={() => removeFromQueue(i)}
+                      title={`Remove ${item.name} from the sequence`}
+                    >
+                      <XIcon className="size-4" />
+                    </button>
+                  )}
+                </div>
+              </Fragment>
+            ))}
+            {queueableLicks.length > 0 && (
+              <button
+                className="h-11 px-4 rounded-xl flex items-center gap-2 text-sm font-semibold text-muted-foreground hover:text-foreground border border-dashed border-border active:scale-95 transition-all"
+                onClick={() => setAddToQueueOpen(true)}
+                title="Add another lick from this song to practise in sequence"
+              >
+                <PlusIcon className="size-4" />
+                Add lick
+              </button>
+            )}
+          </div>
         </div>
       </div>
+
+      {/* Controls — shared with the clipper so practice works the same in both */}
+      <div className={`fixed left-1/2 -translate-x-1/2 bottom-[max(1rem,env(safe-area-inset-bottom))] w-max max-w-[calc(100vw-2rem)] ${fullscreen ? "z-50" : "z-30"}`}>
+        <PracticeControls
+          isPlaying={isPlaying}
+          onPlayPause={handlePlayPause}
+          loopEnabled={loopEnabled}
+          onToggleLoop={() => setLoopEnabled(!loopEnabled)}
+          abA={abA}
+          abB={abB}
+          onSetA={() => {
+            if (abA !== null) return;
+            setAbA(currentTime);
+            setAbAIndex(activeIndex);
+          }}
+          onSetB={() => {
+            if (abB !== null || abA === null) return;
+            // B must come after A — later in the sequence, or later in the
+            // same clip.
+            if (activeIndex > abAIndex || (activeIndex === abAIndex && currentTime > abA)) {
+              setAbB(currentTime);
+              setAbBIndex(activeIndex);
+            }
+          }}
+          onClearAB={clearABLoop}
+          onRewind={handleRewind}
+          speed={speed}
+          onSpeed={setSpeed}
+          pitch={pitch}
+          onPitch={setPitch}
+          pitchProcessing={pitchProcessing}
+          countdownDuration={countdownDuration}
+          onCountdownDuration={(d) => {
+            setCountdownDuration(d);
+            // "Every loop" means nothing without a count-in to repeat.
+            if (d === 0) { setCountdownOnLoop(false); countdownOnLoopRef.current = false; }
+          }}
+          countdownOnLoop={countdownOnLoop}
+          onToggleCountdownOnLoop={() => { const next = !countdownOnLoop; setCountdownOnLoop(next); countdownOnLoopRef.current = next; }}
+        />
+      </div>
+
+      {/* Add-to-sequence picker — this song's licks, in song order */}
+      <Dialog open={addToQueueOpen} onOpenChange={setAddToQueueOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add to practice sequence</DialogTitle>
+          </DialogHeader>
+          <div className="max-h-[50vh] overflow-y-auto space-y-1.5">
+            {queueableLicks.map((item) => (
+              <button
+                key={item.id}
+                className="w-full flex items-center justify-between gap-3 px-3 py-2 rounded-lg bg-muted hover:bg-accent transition-colors text-left"
+                onClick={() => addToQueue(item)}
+              >
+                <span className="text-sm font-medium truncate">{item.name}</span>
+                <span className="text-xs text-muted-foreground shrink-0">
+                  {formatTime(item.durationSec)}
+                </span>
+              </button>
+            ))}
+            {queueableLicks.length === 0 && (
+              <p className="text-sm text-muted-foreground py-4 text-center">
+                Every lick from this song is already in the sequence.
+              </p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setAddToQueueOpen(false)}>
+              Done
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Add Section Dialog -- kept for programmatic use */}
       <Dialog open={addSectionOpen} onOpenChange={setAddSectionOpen}>

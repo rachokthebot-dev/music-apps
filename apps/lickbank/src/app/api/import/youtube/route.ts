@@ -23,6 +23,32 @@ export async function POST(request: Request) {
     });
 
     if (existing) {
+      // A previous attempt that errored out shouldn't poison the URL forever —
+      // reset it and download again rather than handing back the stale failure.
+      if (existing.processingStatus === "error") {
+        const retried = await prisma.source.update({
+          where: { id: existing.id },
+          data: {
+            processingStatus: "processing",
+            importJob: {
+              update: {
+                status: "pending",
+                progressMessage: "Starting download...",
+                errorMessage: null,
+              },
+            },
+          },
+          include: { importJob: true },
+        });
+
+        downloadAndProcess(retried.id, url);
+
+        return NextResponse.json(
+          { source: retried, importJob: retried.importJob },
+          { status: 200 }
+        );
+      }
+
       return NextResponse.json(
         { source: existing, importJob: existing.importJob },
         { status: 200 }

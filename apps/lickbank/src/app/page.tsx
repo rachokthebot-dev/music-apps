@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useState, useEffect, useCallback } from "react";
+import { Suspense, useState, useCallback } from "react";
 import useSWR from "swr";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
@@ -12,15 +12,68 @@ import {
   DialogTitle,
   DialogDescription,
   DialogFooter,
-  DialogTrigger,
 } from "@music-apps/ui";
-import { AppSwitcher } from "@music-apps/shared/app-switcher";
+import { AppShell, SidebarItem, SidebarMenuButton, SidebarSection } from "@music-apps/shared/app-shell";
 import { YouTubeSearchPanel } from "@music-apps/shared/youtube-search-panel";
-import { LickCard } from "@/components/LickCard";
-import { SourceCard } from "@/components/SourceCard";
+import {
+  ArrowSquareOutIcon,
+  ClockCounterClockwiseIcon,
+  FolderIcon,
+  FolderOpenIcon,
+  FolderSimpleIcon,
+  GuitarIcon,
+  MagnifyingGlassIcon,
+  PaperPlaneTiltIcon,
+  PencilSimpleIcon,
+  PlayIcon,
+  TrashIcon,
+  YoutubeLogoIcon,
+} from "@phosphor-icons/react";
+import { SongCard, type SongCardLick } from "@/components/SongCard";
+import { SwipeRow } from "@/components/SwipeRow";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
-import type { Lick, Source, Folder } from "@/components/LickCard";
-import type { SourceItem } from "@/components/SourceCard";
+
+interface Source {
+  id: string;
+  title: string;
+  artist: string | null;
+  thumbnailUrl: string | null;
+  durationSec: number | null;
+}
+
+interface Folder {
+  id: string;
+  name: string;
+  orderIndex: number;
+  _count: { lickFolders: number; sourceFolders: number };
+}
+
+interface Lick {
+  id: string;
+  name: string;
+  sourceId: string;
+  startSec: number;
+  endSec: number;
+  durationSec: number;
+  lastTempo: number;
+  lastPracticedAt: string | null;
+  folders: { folderId: string; folder: { id: string; name: string } }[];
+  createdAt: string;
+  source: Source;
+}
+
+interface SourceItem {
+  id: string;
+  title: string;
+  artist: string | null;
+  youtubeUrl: string;
+  thumbnailUrl: string | null;
+  processingStatus: string;
+  durationSec: number | null;
+  createdAt: string;
+  _count: { licks: number };
+  folders: { folderId: string; folder: { id: string; name: string } }[];
+}
 
 interface ImportJob {
   id: string;
@@ -32,50 +85,16 @@ interface ImportJob {
 
 type Tab = "licks" | "sources";
 
-// Color-code licks by source song
-const SOURCE_COLORS = [
-  "border-l-blue-500", "border-l-emerald-500", "border-l-amber-500",
-  "border-l-rose-500", "border-l-violet-500", "border-l-cyan-500",
-  "border-l-orange-500", "border-l-pink-500", "border-l-teal-500", "border-l-indigo-500",
-];
+/** Sidebar pseudo-folder: licks practised in the last two weeks. */
+const RECENT = "recent";
+const RECENT_DAYS = 14;
 
-function buildColorMaps(licks: Lick[], folders: Folder[]) {
-  const sourceColorMap = new Map<string, string>();
-  const sourcesWithMultipleLicks = new Set<string>();
-  const sourceCountMap = new Map<string, number>();
+// Folders wear a dot in a fixed colour by their order.
 
-  for (const l of licks) {
-    sourceCountMap.set(l.sourceId, (sourceCountMap.get(l.sourceId) ?? 0) + 1);
-  }
-  for (const [sid, count] of sourceCountMap) {
-    if (count > 1) sourcesWithMultipleLicks.add(sid);
-  }
-  let colorIdx = 0;
-  for (const l of licks) {
-    if (sourcesWithMultipleLicks.has(l.sourceId) && !sourceColorMap.has(l.sourceId)) {
-      sourceColorMap.set(l.sourceId, SOURCE_COLORS[colorIdx % SOURCE_COLORS.length]);
-      colorIdx++;
-    }
-  }
-
-  const folderColorMap = new Map<string, string>();
-  for (const folder of folders) {
-    const folderLicks = licks.filter((l) => l.folders.some((f) => f.folderId === folder.id));
-    const srcCounts = new Map<string, number>();
-    for (const l of folderLicks) {
-      srcCounts.set(l.sourceId, (srcCounts.get(l.sourceId) ?? 0) + 1);
-    }
-    let maxCount = 0;
-    let dominantSrc = "";
-    for (const [sid, count] of srcCounts) {
-      if (count > maxCount) { maxCount = count; dominantSrc = sid; }
-    }
-    if (dominantSrc && sourceColorMap.has(dominantSrc)) {
-      folderColorMap.set(folder.id, sourceColorMap.get(dominantSrc)!);
-    }
-  }
-
-  return { sourceColorMap, folderColorMap };
+function formatTime(sec: number): string {
+  const m = Math.floor(sec / 60);
+  const s = Math.floor(sec % 60);
+  return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
 export default function LibraryPageWrapper() {
@@ -107,14 +126,11 @@ function LibraryPage() {
     if (folderId) params.set("folder", folderId);
     if (activeTab !== "licks") params.set("tab", activeTab);
     const qs = params.toString();
-    window.history.replaceState(null, "", qs ? `/?${qs}` : "/");
+    // Relative to the current path, so the /lickbank basePath survives a reload.
+    window.history.replaceState(null, "", qs ? `?${qs}` : window.location.pathname);
   }, [activeTab]);
-  const [darkMode, setDarkMode] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
 
-  // Three-dot menus
-  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
-  const [openSourceMenuId, setOpenSourceMenuId] = useState<string | null>(null);
 
   // Import dialog
   const [importOpen, setImportOpen] = useState(false);
@@ -138,36 +154,20 @@ function LibraryPage() {
   const [selectedFolderIds, setSelectedFolderIds] = useState<Set<string>>(new Set());
 
   // Mobile sidebar
-  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   // Rename source/lick
   const [renamingSource, setRenamingSource] = useState<SourceItem | null>(null);
   const [renamingLick, setRenamingLick] = useState<Lick | null>(null);
   const [renameValue, setRenameValue] = useState("");
 
+  // Swipe actions (one open song row at a time) and the lick action sheet
+  const [swipedId, setSwipedId] = useState<string | null>(null);
+  const [lickMenu, setLickMenu] = useState<Lick | null>(null);
+
   // Import to Shreddy
   const [shreddyImporting, setShreddyImporting] = useState<string | null>(null);
   const [shreddyMessage, setShreddyMessage] = useState<{ id: string; type: "success" | "error"; text: string } | null>(null);
 
-  useEffect(() => {
-    const isDark = document.documentElement.classList.contains("dark");
-    setDarkMode(isDark);
-  }, []);
-
-  // Close three-dot menus on outside click
-  useEffect(() => {
-    if (!openMenuId && !openSourceMenuId) return;
-    function handleClick() { setOpenMenuId(null); setOpenSourceMenuId(null); }
-    document.addEventListener("click", handleClick);
-    return () => document.removeEventListener("click", handleClick);
-  }, [openMenuId, openSourceMenuId]);
-
-  const toggleDarkMode = useCallback(() => {
-    const next = !darkMode;
-    setDarkMode(next);
-    document.documentElement.classList.toggle("dark", next);
-    localStorage.setItem("theme", next ? "dark" : "light");
-  }, [darkMode]);
 
   const fetchData = useCallback(() => {
     mutateLicks();
@@ -221,7 +221,7 @@ function LibraryPage() {
             setYoutubeUrl("");
             setImportStatus(null);
             router.push(`/sources/${job.sourceId}`);
-          } else if (job.status === "failed") {
+          } else if (job.status === "error") {
             clearInterval(poll);
             setImportError(job.errorMessage || "Import failed");
             setImporting(false);
@@ -369,8 +369,14 @@ function LibraryPage() {
   };
 
   const searchLower = searchQuery.toLowerCase();
+  const recentCutoff = Date.now() - RECENT_DAYS * 86_400_000;
+  const practicedAt = (l: Lick) => (l.lastPracticedAt ? new Date(l.lastPracticedAt).getTime() : 0);
+  const recentLicks = licks.filter((l) => practicedAt(l) >= recentCutoff);
+
   const filteredLicks = licks.filter((l) => {
-    if (selectedFolder && !l.folders.some((f) => f.folderId === selectedFolder)) return false;
+    if (selectedFolder === RECENT) {
+      if (practicedAt(l) < recentCutoff) return false;
+    } else if (selectedFolder && !l.folders.some((f) => f.folderId === selectedFolder)) return false;
     if (searchQuery && !l.name.toLowerCase().includes(searchLower) && !l.source.title.toLowerCase().includes(searchLower)) return false;
     return true;
   });
@@ -381,336 +387,403 @@ function LibraryPage() {
     return true;
   });
 
-  const selectedFolderName = selectedFolder
-    ? folders.find((f) => f.id === selectedFolder)?.name
-    : "All Licks";
+  // Every song's licks in song order — the strip on each card shows them all.
+  const licksBySource = new Map<string, Lick[]>();
+  for (const l of licks) {
+    const list = licksBySource.get(l.sourceId) ?? [];
+    list.push(l);
+    licksBySource.set(l.sourceId, list);
+  }
+  for (const list of licksBySource.values()) list.sort((a, b) => a.startSec - b.startSec);
 
-  const { sourceColorMap, folderColorMap } = buildColorMaps(licks, folders);
+  // The Licks tab groups matching licks by song: newest lick first, or most
+  // recently practised in Recent.
+  const songGroups: { source: Source; visible: Set<string> }[] = [];
+  const groupIndex = new Map<string, number>();
+  const ordered = selectedFolder === RECENT
+    ? [...filteredLicks].sort((a, b) => practicedAt(b) - practicedAt(a))
+    : filteredLicks;
+  for (const l of ordered) {
+    let i = groupIndex.get(l.sourceId);
+    if (i === undefined) {
+      i = songGroups.length;
+      groupIndex.set(l.sourceId, i);
+      songGroups.push({ source: l.source, visible: new Set() });
+    }
+    songGroups[i].visible.add(l.id);
+  }
+
+  // The last lick practised, for the Continue card.
+  const continueLick = licks.reduce<Lick | null>(
+    (best, l) => (practicedAt(l) > (best ? practicedAt(best) : 0) ? l : best),
+    null
+  );
+  const showContinue = activeTab === "licks" && !selectedFolder && !searchQuery && continueLick;
+
+  const folderName = selectedFolder === RECENT
+    ? "Recent"
+    : selectedFolder
+      ? folders.find((f) => f.id === selectedFolder)?.name ?? "Folder"
+      : activeTab === "licks" ? "All licks" : "All songs";
+  const shownCount = activeTab === "licks" ? filteredLicks.length : filteredSources.length;
+
+  const openLickMenu = (cardLick: SongCardLick) => {
+    const lick = licks.find((l) => l.id === cardLick.id);
+    if (lick) setLickMenu(lick);
+  };
+
+  const songActions = (source: SourceItem | undefined, fallback: Source) => [
+    {
+      label: "Rename",
+      icon: <PencilSimpleIcon className="size-5" />,
+      className: "bg-zinc-500",
+      onSelect: () => {
+        if (!source) return;
+        setRenamingSource(source);
+        setRenameValue(source.title);
+      },
+    },
+    {
+      label: "Folders",
+      icon: <FolderSimpleIcon className="size-5" />,
+      className: "bg-blue-500",
+      onSelect: () => source && openFoldersForSource(source),
+    },
+    {
+      label: shreddyImporting === fallback.id ? "Sending" : "Shreddy",
+      icon: <PaperPlaneTiltIcon className="size-5" />,
+      className: "bg-violet-500",
+      onSelect: () => source && handleImportToShreddy(source),
+    },
+    ...(source?.youtubeUrl
+      ? [{
+          label: "YouTube",
+          icon: <ArrowSquareOutIcon className="size-5" />,
+          className: "bg-red-500",
+          onSelect: () => window.open(source.youtubeUrl, "_blank", "noopener"),
+        }]
+      : []),
+  ];
+
+
+  const emptyState = (() => {
+    if (searchQuery) {
+      return {
+        title: `No matches for “${searchQuery}”`,
+        body: "Search looks at lick names and song titles.",
+        action: <Button variant="outline" className="h-11 rounded-full px-5" onClick={() => setSearchQuery("")}>Clear search</Button>,
+      };
+    }
+    if (selectedFolder === RECENT) {
+      return {
+        title: "Nothing practised lately",
+        body: `Licks you play show up here for ${RECENT_DAYS} days.`,
+        action: <Button variant="outline" className="h-11 rounded-full px-5" onClick={() => setSelectedFolder(null)}>Browse all licks</Button>,
+      };
+    }
+    if (selectedFolder) {
+      return {
+        title: `Nothing in ${folderName} yet`,
+        body: activeTab === "licks"
+          ? "Press and hold a lick, then choose Folders to add it here."
+          : "Swipe a song left and choose Folders to add it here.",
+        action: <Button variant="outline" className="h-11 rounded-full px-5" onClick={() => setSelectedFolder(null)}>Browse everything</Button>,
+      };
+    }
+    return {
+      title: activeTab === "licks" ? "No licks yet" : "No songs yet",
+      body: "Import a YouTube lesson, then tap its sections to cut licks.",
+      action: (
+        <Button className="h-11 rounded-full px-5 gap-2" onClick={() => setImportOpen(true)}>
+          <YoutubeLogoIcon className="size-5" weight="fill" />
+          Import from YouTube
+        </Button>
+      ),
+    };
+  })();
 
   return (
-    <div className="flex flex-col h-screen">
-      {/* Header */}
-      <header className="flex items-center justify-between px-4 py-2 border-b border-border bg-card">
-        <div className="flex items-center gap-3">
-          <button
-            className="lg:hidden p-2 rounded-lg hover:bg-muted"
-            onClick={() => setSidebarOpen(!sidebarOpen)}
-          >
-            <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M3 5h14M3 10h14M3 15h14" />
-            </svg>
-          </button>
-          <h1 className="hidden sm:block text-xl font-bold tracking-tight">LickBank</h1>
-          <div className="flex items-center gap-1 ml-2">
-            <button
-              className={`px-3 py-1 rounded-full text-sm font-medium transition-colors ${
-                activeTab === "licks"
-                  ? "bg-primary text-primary-foreground"
-                  : "text-muted-foreground hover:text-foreground hover:bg-muted"
-              }`}
-              onClick={() => { setActiveTab("licks"); setSearchQuery(""); }}
-            >
-              Licks
-            </button>
-            <button
-              className={`px-3 py-1 rounded-full text-sm font-medium transition-colors ${
-                activeTab === "sources"
-                  ? "bg-primary text-primary-foreground"
-                  : "text-muted-foreground hover:text-foreground hover:bg-muted"
-              }`}
-              onClick={() => { setActiveTab("sources"); setSearchQuery(""); }}
-            >
-              Songs
-            </button>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button variant="ghost" size="icon" onClick={toggleDarkMode}>
-            {darkMode ? (
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="12" cy="12" r="5" />
-                <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
-              </svg>
-            ) : (
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
-              </svg>
-            )}
-          </Button>
-
-          <Dialog
-            open={importOpen}
-            onOpenChange={(open: boolean) => {
-              setImportOpen(open);
-              // The picker resets when it unmounts; drop the selection with it,
-              // or reopening would import whatever was chosen last time.
-              if (!open) { setYoutubeUrl(""); setImportError(null); setImportStatus(null); }
-            }}
-          >
-            <DialogTrigger render={<Button variant="default" />}>
-              <span className="sm:hidden">Import</span>
-              <span className="hidden sm:inline">Import from YouTube</span>
-            </DialogTrigger>
-            <DialogContent className="sm:max-w-xl">
-              <DialogHeader>
-                <DialogTitle>Import from YouTube</DialogTitle>
-                <DialogDescription>
-                  Search for a lesson video, or paste a YouTube URL directly.
-                </DialogDescription>
-              </DialogHeader>
-              <div className="flex flex-col gap-3 min-w-0">
-                <YouTubeSearchPanel
-                  endpoint="/lickbank/api/youtube-search"
-                  selectedUrl={youtubeUrl}
-                  onSelect={setYoutubeUrl}
-                  onSubmit={handleImport}
-                  disabled={importing}
-                />
-                {importStatus && (
-                  <p className="text-sm text-muted-foreground">{importStatus}</p>
-                )}
-                {importError && (
-                  <p className="text-sm text-destructive">{importError}</p>
-                )}
-              </div>
-              <DialogFooter>
-                <Button onClick={handleImport} disabled={importing || !youtubeUrl.trim()}>
-                  {importing ? "Importing..." : "Import"}
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-          <AppSwitcher currentAppId="lickbank" />
-        </div>
-      </header>
-
-
-      <div className="flex flex-1 overflow-hidden">
-        {/* Sidebar */}
-        <aside
-          className={`${
-            sidebarOpen ? "translate-x-0" : "-translate-x-full"
-          } lg:translate-x-0 fixed lg:static inset-y-0 left-0 z-40 w-64 bg-card border-r border-border transition-transform duration-200 flex flex-col pt-14 lg:pt-0`}
-        >
-          {/* Overlay for mobile */}
-          {sidebarOpen && (
-            <div
-              className="fixed inset-0 bg-black/30 lg:hidden -z-10"
-              onClick={() => setSidebarOpen(false)}
+    <AppShell
+      appId="lickbank"
+      title="LickBank"
+      sidebar={
+        <>
+            <div className="grid grid-cols-2 p-1 mb-3 rounded-2xl bg-muted" role="tablist">
+              {(["licks", "sources"] as const).map((tab) => (
+                <button
+                  key={tab}
+                  role="tab"
+                  aria-selected={activeTab === tab}
+                  className={`h-10 rounded-xl text-sm font-semibold transition-all duration-300 ease-spring ${
+                    activeTab === tab ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+                  }`}
+                  onClick={() => {
+                    setActiveTab(tab);
+                    setSearchQuery("");
+                    if (selectedFolder === RECENT) setSelectedFolder(null);
+                  }}
+                >
+                  {tab === "licks" ? "Licks" : "Songs"}
+                </button>
+              ))}
+            </div>
+          <SidebarItem
+            active={selectedFolder === null}
+            icon={<GuitarIcon className="size-5" />}
+            label={activeTab === "licks" ? "All licks" : "All songs"}
+            count={activeTab === "licks" ? licks.length : sources.length}
+            onClick={() => setSelectedFolder(null)}
+          />
+          {activeTab === "licks" && (
+            <SidebarItem
+              active={selectedFolder === RECENT}
+              icon={<ClockCounterClockwiseIcon className="size-5" />}
+              label="Recent"
+              count={recentLicks.length}
+              onClick={() => setSelectedFolder(RECENT)}
             />
           )}
-          {/* Search */}
-          <div className="p-3 border-b border-border">
-            <div className="relative">
-              <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="11" cy="11" r="8" />
-                <path d="M21 21l-4.35-4.35" />
-              </svg>
+
+          <SidebarSection label="Folders" onAdd={() => setFolderDialogOpen(true)} addLabel="New folder" />
+          {folders
+            // In the Songs tab, only show folders that actually contain songs —
+            // lick-only folders (0 songs) just duplicate song names and clutter.
+            .filter((folder) =>
+              activeTab === "licks" ? true : folder._count.sourceFolders > 0
+            )
+            .map((folder) => (
+              <SidebarItem
+                key={folder.id}
+                active={selectedFolder === folder.id}
+                icon={selectedFolder === folder.id ? <FolderOpenIcon className="size-5" /> : <FolderIcon className="size-5" />}
+                label={folder.name}
+                count={activeTab === "licks" ? folder._count.lickFolders : folder._count.sourceFolders}
+                onClick={() => setSelectedFolder(folder.id)}
+              />
+            ))}
+        </>
+      }
+    >
+      {/* Main content */}
+      <main>
+        <div className="max-w-5xl mx-auto px-4 lg:px-8 py-4 lg:py-6 space-y-5">
+          <div className="flex items-center gap-3">
+            <SidebarMenuButton />
+            <div className="relative flex-1">
+              <MagnifyingGlassIcon className="absolute left-4 top-1/2 -translate-y-1/2 size-5 text-muted-foreground pointer-events-none" />
               <input
-                type="text"
-                placeholder={activeTab === "licks" ? "Search licks..." : "Search songs..."}
+                type="search"
+                placeholder={activeTab === "licks" ? "Search licks and songs" : "Search songs"}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-9 pr-3 py-1.5 rounded-lg bg-muted text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                className="w-full h-12 pl-12 pr-4 rounded-full bg-card border border-border text-base text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
               />
             </div>
-          </div>
-          <div className="p-3 border-b border-border">
-            <Dialog open={folderDialogOpen} onOpenChange={setFolderDialogOpen}>
-              <DialogTrigger render={<Button variant="outline" className="w-full" size="sm" />}>
-                + New Folder
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Create Folder</DialogTitle>
-                </DialogHeader>
-                <Input
-                  placeholder="Folder name"
-                  value={newFolderName}
-                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewFolderName(e.target.value)}
-                  onKeyDown={(e: React.KeyboardEvent) => {
-                    if (e.key === "Enter") handleCreateFolder();
-                  }}
-                />
-                <DialogFooter>
-                  <Button onClick={handleCreateFolder} disabled={!newFolderName.trim()}>
-                    Create
-                  </Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
-          </div>
-          <nav className="flex-1 overflow-y-auto p-2">
             <button
-              onClick={() => {
-                setSelectedFolder(null);
-                setSidebarOpen(false);
-              }}
-              className={`w-full text-left px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                selectedFolder === null
-                  ? "bg-primary text-primary-foreground"
-                  : "hover:bg-muted text-foreground"
-              }`}
+              className="h-12 shrink-0 px-5 rounded-full bg-primary text-primary-foreground flex items-center gap-2 text-sm font-semibold active:scale-95 transition-all duration-200 ease-spring"
+              onClick={() => setImportOpen(true)}
             >
-              {activeTab === "licks" ? "All Licks" : "All Songs"}
-              <span className="ml-auto float-right text-xs opacity-60">
-                {activeTab === "licks" ? licks.length : sources.length}
+              <YoutubeLogoIcon className="size-5" weight="fill" />
+              <span className="hidden sm:inline">Import from YouTube</span>
+              <span className="sm:hidden">Import</span>
+            </button>
+          </div>
+
+          <ErrorBoundary>
+          {showContinue && continueLick && (
+            <button
+              className="w-full flex items-center gap-4 p-4 rounded-3xl bg-card border border-border text-left active:scale-[0.99] transition-transform duration-300 ease-spring"
+              onClick={() => router.push(`/licks/${continueLick.id}`)}
+            >
+              <div className="w-36 md:w-56 shrink-0 aspect-video rounded-2xl overflow-hidden bg-muted">
+                {continueLick.source.thumbnailUrl && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={continueLick.source.thumbnailUrl} alt="" className="w-full h-full object-cover" />
+                )}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-bold uppercase tracking-wider text-loop">Continue</p>
+                <p className="text-xl md:text-2xl font-semibold tracking-tight truncate mt-1">{continueLick.name}</p>
+                <p className="text-sm text-muted-foreground truncate mt-1">
+                  {[
+                    continueLick.source.title,
+                    continueLick.source.artist,
+                    `${formatTime(continueLick.startSec)} to ${formatTime(continueLick.endSec)}`,
+                    continueLick.lastTempo !== 1 ? `at ${continueLick.lastTempo}×` : null,
+                  ].filter(Boolean).join(" · ")}
+                </p>
+              </div>
+              <span className="size-16 shrink-0 rounded-full bg-primary text-primary-foreground grid place-items-center shadow-lg">
+                <PlayIcon className="size-7 translate-x-0.5" weight="fill" />
               </span>
             </button>
-            {folders
-              // In the Songs tab, only show folders that actually contain songs —
-              // lick-only folders (0 songs) just duplicate song names and clutter.
-              .filter((folder) =>
-                activeTab === "licks" ? true : folder._count.sourceFolders > 0
-              )
-              .map((folder) => {
-              const fColor = folderColorMap.get(folder.id);
-              const count = activeTab === "licks"
-                ? folder._count.lickFolders
-                : folder._count.sourceFolders;
-              return (
-                <button
-                  key={folder.id}
-                  onClick={() => {
-                    setSelectedFolder(folder.id);
-                    setSidebarOpen(false);
-                  }}
-                  className={`w-full text-left px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                    selectedFolder === folder.id
-                      ? "bg-primary text-primary-foreground"
-                      : "hover:bg-muted text-foreground"
-                  } ${fColor && selectedFolder !== folder.id ? `border-l-2 ${fColor}` : ""}`}
-                >
-                  {folder.name}
-                  <span className="ml-auto float-right text-xs opacity-60">
-                    {count}
-                  </span>
-                </button>
-              );
-            })}
-            {activeTab === "sources" && sources.length > 0 && (
-              <>
-                <div className="px-3 pt-4 pb-1 text-[11px] font-semibold text-muted-foreground uppercase tracking-widest">
-                  Songs
-                </div>
-                {sources.map((source) => {
-                  const color = sourceColorMap.get(source.id);
-                  return (
-                    <button
-                      key={source.id}
-                      onClick={() => router.push(`/sources/${source.id}`)}
-                      className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors hover:bg-muted truncate ${
-                        color ? `border-l-2 ${color}` : ""
-                      }`}
-                    >
-                      <span className="font-medium truncate block">{source.title}</span>
-                      <span className="text-xs text-muted-foreground">{source._count.licks} licks</span>
-                    </button>
-                  );
-                })}
-              </>
-            )}
-          </nav>
-        </aside>
+          )}
 
-        {/* Main content */}
-        <main className="flex-1 overflow-y-auto p-4 lg:p-6">
-          <ErrorBoundary>
-          {activeTab === "licks" ? (
-            <>
-              <div className="mb-4">
-                <h2 className="text-lg font-semibold">{selectedFolderName}</h2>
-              </div>
+          <div className="flex items-baseline gap-3">
+            <h2 className="text-2xl font-semibold tracking-tight">{folderName}</h2>
+            <span className="text-sm text-muted-foreground">
+              {shownCount} {activeTab === "licks" ? (shownCount === 1 ? "lick" : "licks") : (shownCount === 1 ? "song" : "songs")}
+            </span>
+          </div>
 
-              {loading ? (
-                <div className="flex items-center justify-center h-48">
-                  <p className="text-muted-foreground">Loading...</p>
+          {loading ? (
+            <div className="space-y-3">
+              {[0, 1, 2].map((i) => (
+                <div key={i} className="flex gap-4 p-4 rounded-3xl bg-card">
+                  <div className="w-32 md:w-44 aspect-video rounded-xl bg-muted animate-pulse" />
+                  <div className="flex-1 space-y-3 pt-1">
+                    <div className="h-5 w-1/3 rounded-full bg-muted animate-pulse" />
+                    <div className="h-1.5 w-full rounded-full bg-muted animate-pulse" />
+                    <div className="flex gap-2">
+                      <div className="h-11 w-28 rounded-xl bg-muted animate-pulse" />
+                      <div className="h-11 w-24 rounded-xl bg-muted animate-pulse" />
+                    </div>
+                  </div>
                 </div>
-              ) : filteredLicks.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-48 gap-3">
-                  <p className="text-muted-foreground">
-                    {selectedFolder ? "No licks in this folder." : "No licks yet."}
-                  </p>
-                  <p className="text-sm text-muted-foreground">
-                    Import a YouTube video to get started.
-                  </p>
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-                  {filteredLicks.map((lick) => (
-                    <LickCard
-                      key={lick.id}
-                      lick={lick}
-                      colorClass={sourceColorMap.get(lick.sourceId)}
-                      isMenuOpen={openMenuId === lick.id}
-                      onMenuToggle={() => setOpenMenuId(openMenuId === lick.id ? null : lick.id)}
-                      onRename={() => {
-                        setRenamingLick(lick);
-                        setRenameValue(lick.name);
-                        setOpenMenuId(null);
-                      }}
-                      onMove={() => {
-                        openFoldersForLick(lick);
-                        setOpenMenuId(null);
-                      }}
-                      onDelete={() => {
-                        setDeleteTarget(lick);
-                        setOpenMenuId(null);
-                      }}
-                      onClick={() => router.push(`/licks/${lick.id}`)}
-                    />
-                  ))}
-                </div>
-              )}
-            </>
+              ))}
+            </div>
+          ) : shownCount === 0 ? (
+            <div className="flex flex-col items-center text-center py-16 px-6 rounded-3xl border border-dashed border-border">
+              <GuitarIcon className="size-10 text-muted-foreground" />
+              <p className="text-lg font-semibold mt-4">{emptyState.title}</p>
+              <p className="text-sm text-muted-foreground mt-1 max-w-sm">{emptyState.body}</p>
+              <div className="mt-5">{emptyState.action}</div>
+            </div>
           ) : (
-            /* Sources Tab */
-            <>
-              {loading ? (
-                <div className="flex items-center justify-center h-48">
-                  <p className="text-muted-foreground">Loading...</p>
-                </div>
-              ) : filteredSources.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-48 gap-3">
-                  <p className="text-muted-foreground">No songs imported yet.</p>
-                  <p className="text-sm text-muted-foreground">
-                    Import a YouTube video to get started.
-                  </p>
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-                  {filteredSources.map((source) => (
-                    <SourceCard
-                      key={source.id}
-                      source={source}
-                      colorClass={sourceColorMap.get(source.id)}
-                      isMenuOpen={openSourceMenuId === source.id}
-                      onMenuToggle={() => setOpenSourceMenuId(openSourceMenuId === source.id ? null : source.id)}
-                      onRename={() => {
-                        setRenamingSource(source);
-                        setRenameValue(source.title);
-                        setOpenSourceMenuId(null);
-                      }}
-                      onMoveFolders={() => {
-                        openFoldersForSource(source);
-                        setOpenSourceMenuId(null);
-                      }}
-                      onImportToShreddy={() => {
-                        handleImportToShreddy(source);
-                        setOpenSourceMenuId(null);
-                      }}
-                      shreddyImporting={shreddyImporting === source.id}
-                      shreddyMessage={shreddyMessage?.id === source.id ? shreddyMessage : null}
-                      onClick={() => router.push(`/sources/${source.id}`)}
+            <ul className="space-y-3">
+              {(activeTab === "licks"
+                ? songGroups.map((g) => ({ source: g.source, item: sources.find((s) => s.id === g.source.id), visible: g.visible }))
+                : filteredSources.map((s) => ({ source: s as Source, item: s, visible: undefined }))
+              ).map(({ source, item, visible }) => {
+                const songLicks = licksBySource.get(source.id) ?? [];
+                const meta = visible && visible.size !== songLicks.length
+                  ? `${visible.size} of ${songLicks.length} licks`
+                  : `${songLicks.length} ${songLicks.length === 1 ? "lick" : "licks"}`;
+                return (
+                  <SwipeRow
+                    key={source.id}
+                    className="rounded-3xl border border-border"
+                    actions={item?.processingStatus === "ready" || !item ? songActions(item, source) : []}
+                    open={swipedId === source.id}
+                    onOpenChange={(open) => setSwipedId(open ? source.id : null)}
+                  >
+                    <SongCard
+                      song={{ ...source, processingStatus: item?.processingStatus }}
+                      licks={songLicks}
+                      visibleIds={visible}
+                      meta={meta}
+                      onOpenSong={() => router.push(`/sources/${source.id}`)}
+                      onOpenLick={(l) => router.push(`/licks/${l.id}`)}
+                      onLickMenu={openLickMenu}
                     />
-                  ))}
-                </div>
-              )}
-            </>
+                  </SwipeRow>
+                );
+              })}
+            </ul>
           )}
           </ErrorBoundary>
-        </main>
-      </div>
+        </div>
+      </main>
+
+      {/* Toast for Send to Shreddy */}
+      {shreddyMessage && (
+        <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-50 px-5 h-12 rounded-full flex items-center text-sm font-semibold shadow-2xl ${
+          shreddyMessage.type === "success" ? "bg-primary text-primary-foreground" : "bg-destructive text-white"
+        }`}>
+          {shreddyMessage.text}
+        </div>
+      )}
+
+      {/* Lick actions — opened by holding a lick chip */}
+      <Dialog open={lickMenu !== null} onOpenChange={(open) => !open && setLickMenu(null)}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>{lickMenu?.name}</DialogTitle>
+            <DialogDescription>{lickMenu?.source.title}</DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-2">
+            {lickMenu && [
+              { label: "Rename", icon: <PencilSimpleIcon className="size-5" />, run: () => { setRenamingLick(lickMenu); setRenameValue(lickMenu.name); } },
+              { label: "Folders", icon: <FolderSimpleIcon className="size-5" />, run: () => openFoldersForLick(lickMenu) },
+              { label: "Open song", icon: <ArrowSquareOutIcon className="size-5" />, run: () => router.push(`/sources/${lickMenu.sourceId}`) },
+              { label: "Delete", icon: <TrashIcon className="size-5" />, run: () => setDeleteTarget(lickMenu), danger: true },
+            ].map((a) => (
+              <button
+                key={a.label}
+                className={`h-12 px-4 rounded-xl flex items-center gap-3 text-base font-medium bg-muted hover:bg-accent active:scale-[0.98] transition-all ${
+                  a.danger ? "text-destructive" : ""
+                }`}
+                onClick={() => { setLickMenu(null); a.run(); }}
+              >
+                {a.icon}
+                {a.label}
+              </button>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Import from YouTube */}
+      <Dialog
+        open={importOpen}
+        onOpenChange={(open: boolean) => {
+          setImportOpen(open);
+          // The picker resets when it unmounts; drop the selection with it,
+          // or reopening would import whatever was chosen last time.
+          if (!open) { setYoutubeUrl(""); setImportError(null); setImportStatus(null); }
+        }}
+      >
+        <DialogContent className="sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Import from YouTube</DialogTitle>
+            <DialogDescription>
+              Search for a lesson video, or paste a YouTube URL directly.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-3 min-w-0">
+            <YouTubeSearchPanel
+              endpoint="/lickbank/api/youtube-search"
+              selectedUrl={youtubeUrl}
+              onSelect={setYoutubeUrl}
+              onSubmit={handleImport}
+              disabled={importing}
+            />
+            {importStatus && (
+              <p className="text-sm text-muted-foreground">{importStatus}</p>
+            )}
+            {importError && (
+              <p className="text-sm text-destructive">{importError}</p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button onClick={handleImport} disabled={importing || !youtubeUrl.trim()}>
+              {importing ? "Importing..." : "Import"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Create folder */}
+      <Dialog open={folderDialogOpen} onOpenChange={setFolderDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Create Folder</DialogTitle>
+          </DialogHeader>
+          <Input
+            placeholder="Folder name"
+            value={newFolderName}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewFolderName(e.target.value)}
+            onKeyDown={(e: React.KeyboardEvent) => {
+              if (e.key === "Enter") handleCreateFolder();
+            }}
+          />
+          <DialogFooter>
+            <Button onClick={handleCreateFolder} disabled={!newFolderName.trim()}>
+              Create
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Delete confirm dialog */}
       <Dialog open={deleteTarget !== null} onOpenChange={(open) => !open && setDeleteTarget(null)}>
@@ -834,6 +907,6 @@ function LibraryPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </AppShell>
   );
 }

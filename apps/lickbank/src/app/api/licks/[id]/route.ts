@@ -26,7 +26,9 @@ export async function GET(
     const lick = await prisma.lick.findUnique({
       where: { id },
       include: {
-        source: { select: { id: true, title: true, artist: true, thumbnailUrl: true } },
+        // durationSec + waveformData let the player draw this lick's slice
+        // of the song's waveform.
+        source: { select: { id: true, title: true, artist: true, thumbnailUrl: true, durationSec: true, waveformData: true } },
         folders: {
           orderBy: { orderIndex: "asc" },
           include: { folder: { select: { id: true, name: true } } },

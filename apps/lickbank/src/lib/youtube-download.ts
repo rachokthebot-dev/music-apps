@@ -97,11 +97,17 @@ export async function downloadAndProcess(sourceId: string, url: string) {
       data: { status: "processing", progressMessage: "Downloading video..." },
     });
 
+    // yt-dlp ramps progress exponentially (0.1, 0.2, 0.4, 0.8, 1.6, 3.3, 6.6...)
+    // and rarely lands on an exact multiple of 10, so throttle on the bucket
+    // crossing rather than on the value itself.
+    let lastBucket = -1;
     const { videoPath, audioPath } = await downloadVideo(sourceId, url, async (percent) => {
-      if (Math.floor(percent) % 10 === 0) {
+      const bucket = Math.floor(percent / 10);
+      if (bucket > lastBucket) {
+        lastBucket = bucket;
         await prisma.importJob.update({
           where: { sourceId },
-          data: { progressMessage: `Downloading: ${Math.floor(percent)}%` },
+          data: { progressMessage: `Downloading: ${bucket * 10}%` },
         }).catch(() => {});
       }
     });
